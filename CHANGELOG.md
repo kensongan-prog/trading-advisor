@@ -114,8 +114,7 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 ---
 
-<!-- The link targets below are specific to the author's personal fork at
-     github.com/kensongan-prog/trading-advisor. If you maintain your own fork
-     or backup, update these to point at your own remote, or delete them. -->
+<!-- Link targets below point at the canonical public repo. If you maintain
+     your own fork, update or delete these as appropriate for your setup. -->
 [Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.0...HEAD
 [v1.0]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.0
