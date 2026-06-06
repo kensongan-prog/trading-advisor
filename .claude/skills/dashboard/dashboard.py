@@ -1692,6 +1692,7 @@ td.dim { color: var(--dim); }
 .sim-stat .v { font-size: 15px; margin-top: 3px; font-weight: bold; }
 .sim-stat .v.green { color: var(--green); }
 .sim-stat .v.red { color: var(--red); }
+.sim-substat { color: var(--dim); font-size: 11px; margin-top: 2px; font-weight: normal; }
 .sim-gates { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-top: 12px; font-size: 12px; }
 .sim-prosp { margin-top: 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--bord);
   border-left: 3px solid var(--green); border-radius: 4px; }
@@ -2113,6 +2114,13 @@ document.querySelectorAll('table').forEach(t => {
     const risk = parseFloat(eIn.value) - parseFloat(sIn.value);
     t1In.value = (parseFloat(eIn.value) + 2 * risk).toFixed(dp);
     t2In.value = '';
+    // Prefill Size to the doctrine maximum so the field is always an editable starting point.
+    // Use the same formula compute() uses below; lot_size is honored as-is (0 = crypto fractional).
+    const fxNow = fxFactor(t.market || 'us');
+    const rpsUSD = risk * ((t.market === 'klse' && fxNow == null) ? 1 : (fxNow || 1));
+    const lot = t.lot_size ?? 1;
+    const maxShares = roundToLot((sim.config.account * sim.config.risk_pct) / rpsUSD, lot);
+    szIn.value = (t.market === 'crypto') ? maxShares.toFixed(6).replace(/\.?0+$/, '') : maxShares.toString();
     // Update field labels to reflect detected market currency
     updateFormLabels(t);
     compute();
@@ -2121,8 +2129,7 @@ document.querySelectorAll('table').forEach(t => {
     const cur = (t && t.currency) || 'USD';
     const symbol = curSymbol(cur);
     document.querySelectorAll('.sim-cur-label').forEach(el => { el.textContent = symbol; });
-    const unitLbl = (t && t.market === 'crypto') ? 'units' : 'sh';
-    document.querySelectorAll('.sim-unit-label').forEach(el => { el.textContent = unitLbl; });
+    document.querySelectorAll('.sim-unit-label').forEach(el => { el.textContent = unitLabel(t && t.market); });
     const banner = document.getElementById('sim-market-banner');
     if (!banner) return;
     if (!t) { banner.textContent = ''; return; }
@@ -2172,7 +2179,7 @@ document.querySelectorAll('table').forEach(t => {
     // Market context
     const market   = (t && t.market) || 'us';
     const currency = (t && t.currency) || 'USD';
-    const lotSize  = (t && t.lot_size) || 1;
+    const lotSize  = (t && t.lot_size != null) ? t.lot_size : 1;  // 0 = crypto fractional; default 1 for unknown markets
     const fxAvail  = market === 'klse' ? ((sim.fx && sim.fx.MYR_USD) || null) : 1.0;
     // Sizing math — entry/stop are in LOCAL currency; account is USD.
     // Convert risk-per-share to USD, derive shares from max_risk_USD, then round to lot.
@@ -2181,38 +2188,32 @@ document.querySelectorAll('table').forEach(t => {
     const maxRiskUSD = acct * riskPct;
     const riskPerShareLocal = entry - stop;
     const riskPerShareUSD = riskPerShareLocal * (fxAvail || 1);
-    // Doctrine §5: derive the MAXIMUM position size that keeps trade-risk ≤ 2% account equity.
-    // The operator chooses the actual size; sim's job is to verify it stays within doctrine.
-    let doctrineMaxShares, fxMissing = false;
-    if (market === 'klse' && fxAvail == null) {
-      fxMissing = true;
-      doctrineMaxShares = roundToLot(maxRiskUSD / riskPerShareLocal, lotSize);
-    } else {
-      doctrineMaxShares = roundToLot(maxRiskUSD / riskPerShareUSD, lotSize);
-    }
+    // Doctrine §5: derive the MAXIMUM position size that keeps trade-risk ≤ riskPct of equity.
+    // Operator chooses the actual size in the Size field (auto-prefilled to the max);
+    // sim's job is to verify it stays within doctrine. Single sizing path for all markets.
+    const fxMissing = market === 'klse' && fxAvail == null;
+    const riskPerShareForSize = fxMissing ? riskPerShareLocal : riskPerShareUSD;
+    const doctrineMaxShares = roundToLot(maxRiskUSD / riskPerShareForSize, lotSize);
 
-    // Operator override — read raw size input (empty = use doctrine max)
-    const sizeRaw = parseFloat((szIn && szIn.value) || '');
-    const operatorOverride = !isNaN(sizeRaw) && sizeRaw > 0;
-    // If operator entered a size, honor it (subject to doctrine-max validation in gates).
-    // If they didn't, default to the doctrine max.
-    let shares = operatorOverride ? sizeRaw : doctrineMaxShares;
-    if (market !== 'crypto' && operatorOverride) {
-      shares = roundToLot(shares, lotSize);  // enforce lot-size for non-fractional markets
-    }
-    const oversize = operatorOverride && shares > doctrineMaxShares + 1e-9;
+    // Size field is always prefilled with doctrineMaxShares (see prefillFromTicker).
+    // Treat the field as a plain editable number; only fall back to the max if it's empty/invalid.
+    const sizeRaw = parseFloat(szIn && szIn.value);
+    const shares = isNaN(sizeRaw) || sizeRaw <= 0
+      ? doctrineMaxShares
+      : roundToLot(sizeRaw, lotSize);
+    const oversize = shares > doctrineMaxShares + 1e-9;
 
-    let actualRiskUSD, notionalLocal, notionalUSD;
-    if (market === 'klse' && fxAvail == null) {
-      actualRiskUSD = shares * riskPerShareLocal;
-      notionalLocal = shares * entry;
-      notionalUSD = null;
-    } else {
-      actualRiskUSD = shares * riskPerShareUSD;
-      notionalLocal = shares * entry;
-      notionalUSD = market === 'us' ? notionalLocal : notionalLocal * fxAvail;
-    }
+    const actualRiskUSD = shares * riskPerShareForSize;
+    const notionalLocal = shares * entry;
+    const notionalUSD   = fxMissing ? null
+                        : market === 'us' ? notionalLocal
+                        : notionalLocal * fxAvail;
+    // Format share count consistently (fractional for crypto, integer-grouped for stocks).
+    const fmtShares = (s) => market === 'crypto'
+      ? s.toLocaleString(undefined, {maximumFractionDigits: 6, minimumFractionDigits: Math.min(6, Math.max(2, 6 - Math.floor(Math.log10(Math.max(s, 1e-9)))))})
+      : s.toLocaleString();
     const actualRiskPct = (actualRiskUSD / acct) * 100;
+    const capPct = riskPct * 100;
     const notionalPctEquity = ((notionalUSD ?? notionalLocal) / acct) * 100;
     const rrTp1 = (tp1 - entry) / riskPerShareLocal;
     const rrTp2 = isNaN(tp2) ? null : (tp2 - entry) / riskPerShareLocal;
@@ -2489,21 +2490,13 @@ document.querySelectorAll('table').forEach(t => {
     g(rrOk ? 'ok' : 'bad', `R:R floor (${rrFloor}R)`,
       `R:R to TP1 = ${rrTp1.toFixed(2)}R ${rrOk ? '≥' : '<'} ${rrFloor}R required under ${sim.regime.label}`);
 
-    // 10. Doctrine per-trade risk cap — §5: trade-risk must not exceed 2% account equity.
-    //     If operator entered a size that breaches it, fail this gate hard.
-    if (oversize) {
-      const overPct = (actualRiskUSD / acct * 100);
-      g('bad', 'Per-trade risk cap (§5)',
-        `your size ${shares.toLocaleString()} ${unitLabel(market)} ⇒ $${actualRiskUSD.toFixed(0)} risk = ${overPct.toFixed(2)}% account, ABOVE the ${(riskPct*100).toFixed(1)}% doctrine cap. Max permitted at this entry/stop: ${doctrineMaxShares.toLocaleString()} ${unitLabel(market)}.`);
-    } else if (operatorOverride) {
-      const usedPct = (actualRiskUSD / acct * 100);
-      const maxPct  = (riskPct * 100);
-      g('ok', 'Per-trade risk cap (§5)',
-        `your size ${shares.toLocaleString()} ${unitLabel(market)} = $${actualRiskUSD.toFixed(0)} risk = ${usedPct.toFixed(2)}% of ${maxPct.toFixed(1)}% cap (under ceiling — voluntary down-sizing)`);
-    } else {
-      g('ok', 'Per-trade risk cap (§5)',
-        `sized at doctrine max: ${doctrineMaxShares.toLocaleString()} ${unitLabel(market)} = $${actualRiskUSD.toFixed(0)} risk = ${(riskPct*100).toFixed(1)}% (at ceiling — enter your own size to size down)`);
-    }
+    // 10. Doctrine per-trade risk cap — §5: trade-risk must not exceed riskPct of equity.
+    const u = unitLabel(market);
+    const capTail = oversize
+      ? `ABOVE the ${capPct.toFixed(1)}% cap (max permitted: ${fmtShares(doctrineMaxShares)} ${u})`
+      : `within the ${capPct.toFixed(1)}% cap`;
+    g(oversize ? 'bad' : 'ok', 'Per-trade risk cap (§5)',
+      `${fmtShares(shares)} ${u} = $${actualRiskUSD.toFixed(0)} risk = ${actualRiskPct.toFixed(2)}% account, ${capTail}`);
 
     // 11. Heat headroom (all currencies normalized to USD via fx)
     const heatOk = heatAfter <= sim.config.heat_max;
@@ -2554,9 +2547,7 @@ document.querySelectorAll('table').forEach(t => {
     const notionalDisplay = (market === 'klse' && notionalUSD != null)
       ? `MYR ${notionalLocal.toLocaleString(undefined,{maximumFractionDigits:0})} <span style="font-weight:normal;color:var(--dim);font-size:11px">≈ $${notionalUSD.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
       : `${sym}${notionalLocal.toLocaleString(undefined,{maximumFractionDigits:0})} <span style="font-weight:normal;color:var(--dim);font-size:11px">(${notionalPctEquity.toFixed(1)}% acct)</span>`;
-    const sharesDisplay = market === 'crypto'
-      ? shares.toLocaleString(undefined,{maximumFractionDigits:6, minimumFractionDigits:Math.min(6, Math.max(2, 6 - Math.floor(Math.log10(Math.max(shares,1e-9)))))})
-      : shares.toLocaleString();
+    const sharesDisplay = fmtShares(shares);
     const unit = unitLabel(market);
     // Build the "Create prospectus" command (only enabled when verdict is GO or GO-WITH-CAVEATS)
     function shqSim(s){ if(s==null) return "''"; return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
@@ -2603,7 +2594,7 @@ document.querySelectorAll('table').forEach(t => {
       <div class="sim-verdict ${verdictClass}">${verdictText}</div>
       <div class="sim-blurb">${verdictBlurb}</div>
       <div class="sim-grid">
-        <div class="sim-stat"><div class="l">Position size${operatorOverride ? ' <span style="font-weight:normal;color:var(--dim);font-size:11px">(your choice)</span>' : ' <span style="font-weight:normal;color:var(--dim);font-size:11px">(doctrine max)</span>'}</div><div class="v ${oversize ? 'red' : ''}">${sharesDisplay} ${unit}${lotNote}</div><div style="color:var(--dim);font-size:11px;margin-top:2px">doctrine max: ${doctrineMaxShares.toLocaleString()} ${unit}</div></div>
+        <div class="sim-stat"><div class="l">Position size</div><div class="v ${oversize ? 'red' : ''}">${sharesDisplay} ${unit}${lotNote}</div>${shares !== doctrineMaxShares ? `<div class="sim-substat">doctrine max: ${fmtShares(doctrineMaxShares)} ${unit}</div>` : ''}</div>
         <div class="sim-stat"><div class="l">Notional</div><div class="v">${notionalDisplay}</div></div>
         <div class="sim-stat"><div class="l">$ at risk (USD)</div><div class="v">$${actualRiskUSD.toFixed(0)} <span style="font-weight:normal;color:var(--dim);font-size:11px"> (${actualRiskPct.toFixed(2)}%)</span></div></div>
         <div class="sim-stat"><div class="l">R:R to TP1</div><div class="v ${rrOk ? 'green' : 'red'}">${rrTp1.toFixed(2)}R</div></div>
@@ -3275,7 +3266,7 @@ def render_html(ctx):
   </div>
   <div class="sim-result" id="sim-result">
     <div class="sim-verdict pending">PENDING — pick a ticker and fill in entry, stop, TP1</div>
-    <div class="sim-blurb">The simulator uses the dashboard's cached technicals (RSI, SMAs, ATR, volume), per-market event gates (US earnings + macro halt, KLSE Bursa-filing window, crypto perp funding + ATR%), and regime tilt. Account stays in USD; KLSE auto-converts via MYR/USD FX, crypto is USD-native (fractional units). Token-unlock checks for crypto still require running the `crypto-unlocks` skill manually. Does NOT make live API calls — refresh the dashboard for the freshest numbers.</div>
+    <div class="sim-blurb">You pick entry / stop / TP / size; the sim verifies the trade is doctrine-compliant (per-trade risk cap §5, portfolio heat, regime R:R floor, technical confluence, event-window halts). The Size field is auto-prefilled to the doctrine maximum — edit it down for partial conviction, correlation tax, or partial-fill plans. Sim uses the dashboard's cached technicals; refresh the dashboard for the freshest numbers.</div>
   </div>
 </div>
 <script>
