@@ -51,7 +51,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-_(No changes since v1.1. Add entries here as you build, under one of the category headings below.)_
+_(No changes since v1.2. Add entries here as you build, under one of the category headings below.)_
 
 ### Added
 
@@ -64,6 +64,22 @@ _(No changes since v1.1. Add entries here as you build, under one of the categor
 ### Deprecated
 
 ### Security
+
+---
+
+## [v1.2] — 2026-06-06
+
+Install-experience polish. Anyone landing on the GitHub front page can now follow the README to a working dashboard without hitting a 404 on the clone command or wondering whether they need Claude Code.
+
+### Added
+
+- README Quick Start now opens with a "What you need" block — Python 3.9+, Claude Code (recommended), and ~15 minutes for free API key sign-ups. Sets expectations before the first command.
+- A "Verify it worked" section right after the 8-step install lists the six panels you should see in the dashboard, with a fallback hint if anything's missing.
+- Trailing link to PROJECT_LOG.md now anchors directly to `#replication-steps` so users land on the full walkthrough instead of the file's top.
+
+### Fixed
+
+- **README clone command was unusable.** The Quick Start said `git clone https://github.com/YOUR_USERNAME/trading-advisor.git` — a fresh user copy-pasting this got a 404. Corrected to the canonical repo path.
 
 ---
 
@@ -136,6 +152,7 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 <!-- Link targets below point at the canonical public repo. If you maintain
      your own fork, update or delete these as appropriate for your setup. -->
-[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.1...HEAD
+[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.2...HEAD
+[v1.2]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.2
 [v1.1]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.1
 [v1.0]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.0

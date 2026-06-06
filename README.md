@@ -31,16 +31,21 @@ Subsequent refreshes are sub-second when caches are warm.
 
 ## Quick start
 
+**What you need:**
+- Python 3.9+ and `pip3`
+- [Claude Code](https://claude.ai/code) (recommended — the project is built as Claude Code skills and the agent-only WebFetch skills require it). The static HTML dashboard and CLI tools work standalone with just Python, but you'll lose the agent workflow (live KLSE quotes, crypto unlock fetches, conversational recommendations).
+- ~15 minutes to register for 5 free API keys (no credit card required for any of them)
+
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USERNAME/trading-advisor.git
+git clone https://github.com/kensongan-prog/trading-advisor.git
 cd trading-advisor
 
 # 2. Dependencies
 pip3 install pandas yfinance
 
 # 3. Sign up for free API keys (~15 min total)
-#    See PROJECT_LOG.md → "Step 2: Sign up for the API keys"
+#    Full URLs + step-by-step: see PROJECT_LOG.md (link below)
 #    Required: FRED, Alpha Vantage, Finnhub, Twelve Data, FMP
 #    Optional: CoinGecko Pro
 
@@ -59,11 +64,24 @@ python3 .claude/skills/watchlist/wl.py add NVDA --thesis "AI semis"
 # 7. Seed crypto unlock baseline (if using crypto)
 python3 .claude/skills/crypto-unlocks-cache/crypto_unlocks_cache.py baseline
 
-# 8. First dashboard build (the first run scans 176 names ~22 min)
+# 8. First dashboard build (the first run scans 176 names ~22 min; subsequent are sub-second)
 python3 .claude/skills/dashboard/dashboard.py --with-discovery && open dashboard.html
 ```
 
-Full setup walkthrough including cross-platform notes (macOS / Linux / WSL): **[PROJECT_LOG.md](PROJECT_LOG.md)**.
+### Verify it worked
+
+After step 8, opening `dashboard.html` in a browser, you should see:
+
+1. **Header strip** — US macro regime (e.g. "CAUTIOUS") + crypto regime + halt-window timeline + budget bar (AV / TD / FMP usage)
+2. **Risk Simulator panel** — pick any watchlist ticker; entry/stop/TP1/Size fields auto-prefill; gates show 12 doctrine checks
+3. **US grid** — your watchlist tickers with RSI · ATR% · vs SMA50/200 · status badges
+4. **🔭 Discovery panel** — sector rotation heat strip on top, 1-20 candidates tagged 💎/🏆/💰/⚡ below
+5. **Watchlist Manager** — inline form to add/remove/update tickers
+6. **Live quote buttons** — click 🔄 next to any US price → Finnhub real-time quote appears inline
+
+If any panel is missing or shows "no data" warnings: check the corresponding `.env` file has its API key, then re-run step 8.
+
+**Full setup walkthrough** including cross-platform notes (macOS / Linux / WSL), troubleshooting, and the bootstrap prompt for new agents: **[PROJECT_LOG.md](PROJECT_LOG.md#replication-steps)**.
 
 ## Project structure
 
