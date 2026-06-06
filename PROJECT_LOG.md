@@ -576,17 +576,40 @@ Trading Advisor/
 When opening this project in Claude Code (or any agent) for the first time:
 
 ```
-"Read PROJECT_LOG.md and CLAUDE.md. Then check the .env files for any missing 
-API keys, run a test dashboard build, and tell me what's working and what's 
-missing. Don't make any recommendations until I've confirmed the setup is 
-complete."
+"Read PROJECT_LOG.md, CLAUDE.md, and CHANGELOG.md. Then check the .env files
+for any missing API keys, run a test dashboard build, and tell me what's
+working and what's missing. Don't make any recommendations until I've
+confirmed the setup is complete."
 ```
 
 The agent should:
-1. Read both context files
+1. Read all three context files (doctrine + replication + version history)
 2. List which API keys are configured vs missing
 3. Try a build (will fail gracefully on missing keys)
 4. Report status + ask for missing pieces
+
+---
+
+## Versioning + changelog
+
+The project uses a **`MAJOR.MINOR`** scheme tagged in git as `vX.Y`:
+
+| Bump | When |
+|---|---|
+| **MINOR** (e.g. v1.0 → v1.1) | Backward-compatible changes — bug fixes, optimizations, new columns, threshold tuning, documentation, new data sources for existing functionality |
+| **MAJOR** (e.g. v1.x → v2.0) | Doctrine changes, breaking interface changes, new asset class, phase unlock changes, architectural rewrites |
+
+**Every code change must update `CHANGELOG.md` before commit.** Add entries under `## [Unreleased]` at the top, categorized as `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security`. Write entries from the user's perspective, past tense.
+
+When releasing: rename `[Unreleased]` to the new version, create a fresh empty `[Unreleased]` above, commit, then:
+
+```bash
+git tag -a vX.Y -m "Short release summary"
+git push origin vX.Y
+gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changelog>"
+```
+
+Full policy + procedure live in `CHANGELOG.md`. **If you're unsure whether a change is MAJOR or MINOR, ask the operator. Never silently break a published interface or doctrine.**
 
 ---
 

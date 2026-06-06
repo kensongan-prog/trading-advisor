@@ -116,6 +116,10 @@ Never fabricate a number. Every price, indicator, fundamental, sentiment, or flo
 
 [Claude Code](https://claude.ai/code) — the project is structured as a collection of Claude Code skills with shared cache and doctrine. Any Claude Code instance with this repository checked out and API keys in place will produce identical behavior.
 
+## Changelog
+
+Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses a `MAJOR.MINOR` scheme: minor bumps (e.g. v1.0 → v1.1) for backward-compatible changes; major bumps (v1.x → v2.0) for doctrine or interface-breaking changes. Any agent or operator making code changes must update the changelog before committing.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for the full text and the trading-specific disclaimer.
