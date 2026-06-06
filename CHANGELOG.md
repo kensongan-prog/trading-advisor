@@ -51,11 +51,15 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-_(No changes since v1.0. Add entries here as you build, under one of the category headings below.)_
-
 ### Added
 
+- Risk Simulator now lets the operator define their own position size. Doctrine §5 says the formula derives the maximum permitted size, not the obligatory size — operators routinely want to size down (correlation tax, lower conviction, partial-fill caution). The new "Size" field is optional: leave it blank to sit at the doctrine ceiling (previous behavior), or enter your own number to size below the cap.
+- New "Per-trade risk cap (§5)" gate that explicitly verifies the operator's chosen size doesn't exceed the doctrine ceiling. Sizing above the 2% per-trade risk cap hard-fails the gate (clearly explaining the doctrine max at the current entry/stop); sizing under it passes with "voluntary down-sizing" annotation.
+- Position-size display in the result block now shows both the chosen size and the doctrine maximum alongside it, so the ceiling is always visible without needing to mentally re-derive the formula.
+
 ### Changed
+
+- The simulator's role is now framed honestly: it tells you whether *your* proposed trade is doctrine-compliant and whether your portfolio is at risk, rather than dictating the size for you.
 
 ### Fixed
 

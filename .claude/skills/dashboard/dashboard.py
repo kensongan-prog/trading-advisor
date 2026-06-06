@@ -2052,6 +2052,7 @@ document.querySelectorAll('table').forEach(t => {
   const sIn = document.getElementById('sim-stop');
   const t1In = document.getElementById('sim-tp1');
   const t2In = document.getElementById('sim-tp2');
+  const szIn = document.getElementById('sim-size');
   const reset = document.getElementById('sim-prefill');
   if (!sel) return;
   // Populate ticker dropdown — group by market for clarity
@@ -2120,6 +2121,8 @@ document.querySelectorAll('table').forEach(t => {
     const cur = (t && t.currency) || 'USD';
     const symbol = curSymbol(cur);
     document.querySelectorAll('.sim-cur-label').forEach(el => { el.textContent = symbol; });
+    const unitLbl = (t && t.market === 'crypto') ? 'units' : 'sh';
+    document.querySelectorAll('.sim-unit-label').forEach(el => { el.textContent = unitLbl; });
     const banner = document.getElementById('sim-market-banner');
     if (!banner) return;
     if (!t) { banner.textContent = ''; return; }
@@ -2142,7 +2145,7 @@ document.querySelectorAll('table').forEach(t => {
   }
   sel.addEventListener('change', prefillFromTicker);
   if (reset) reset.addEventListener('click', prefillFromTicker);
-  [eIn, sIn, t1In, t2In].forEach(i => i.addEventListener('input', compute));
+  [eIn, sIn, t1In, t2In, szIn].forEach(i => i.addEventListener('input', compute));
 
   function compute() {
     const out = document.getElementById('sim-result');
@@ -2178,18 +2181,33 @@ document.querySelectorAll('table').forEach(t => {
     const maxRiskUSD = acct * riskPct;
     const riskPerShareLocal = entry - stop;
     const riskPerShareUSD = riskPerShareLocal * (fxAvail || 1);
-    let shares, actualRiskUSD, notionalLocal, notionalUSD, fxMissing = false;
+    // Doctrine §5: derive the MAXIMUM position size that keeps trade-risk ≤ 2% account equity.
+    // The operator chooses the actual size; sim's job is to verify it stays within doctrine.
+    let doctrineMaxShares, fxMissing = false;
     if (market === 'klse' && fxAvail == null) {
-      // Fallback: size as if MYR=USD (will overstate risk in USD). Flag this.
       fxMissing = true;
-      const sharesRaw = maxRiskUSD / riskPerShareLocal;
-      shares = roundToLot(sharesRaw, lotSize);
+      doctrineMaxShares = roundToLot(maxRiskUSD / riskPerShareLocal, lotSize);
+    } else {
+      doctrineMaxShares = roundToLot(maxRiskUSD / riskPerShareUSD, lotSize);
+    }
+
+    // Operator override — read raw size input (empty = use doctrine max)
+    const sizeRaw = parseFloat((szIn && szIn.value) || '');
+    const operatorOverride = !isNaN(sizeRaw) && sizeRaw > 0;
+    // If operator entered a size, honor it (subject to doctrine-max validation in gates).
+    // If they didn't, default to the doctrine max.
+    let shares = operatorOverride ? sizeRaw : doctrineMaxShares;
+    if (market !== 'crypto' && operatorOverride) {
+      shares = roundToLot(shares, lotSize);  // enforce lot-size for non-fractional markets
+    }
+    const oversize = operatorOverride && shares > doctrineMaxShares + 1e-9;
+
+    let actualRiskUSD, notionalLocal, notionalUSD;
+    if (market === 'klse' && fxAvail == null) {
       actualRiskUSD = shares * riskPerShareLocal;
       notionalLocal = shares * entry;
       notionalUSD = null;
     } else {
-      const sharesRaw = maxRiskUSD / riskPerShareUSD;
-      shares = roundToLot(sharesRaw, lotSize);
       actualRiskUSD = shares * riskPerShareUSD;
       notionalLocal = shares * entry;
       notionalUSD = market === 'us' ? notionalLocal : notionalLocal * fxAvail;
@@ -2471,7 +2489,23 @@ document.querySelectorAll('table').forEach(t => {
     g(rrOk ? 'ok' : 'bad', `R:R floor (${rrFloor}R)`,
       `R:R to TP1 = ${rrTp1.toFixed(2)}R ${rrOk ? '≥' : '<'} ${rrFloor}R required under ${sim.regime.label}`);
 
-    // 10. Heat headroom (all currencies normalized to USD via fx)
+    // 10. Doctrine per-trade risk cap — §5: trade-risk must not exceed 2% account equity.
+    //     If operator entered a size that breaches it, fail this gate hard.
+    if (oversize) {
+      const overPct = (actualRiskUSD / acct * 100);
+      g('bad', 'Per-trade risk cap (§5)',
+        `your size ${shares.toLocaleString()} ${unitLabel(market)} ⇒ $${actualRiskUSD.toFixed(0)} risk = ${overPct.toFixed(2)}% account, ABOVE the ${(riskPct*100).toFixed(1)}% doctrine cap. Max permitted at this entry/stop: ${doctrineMaxShares.toLocaleString()} ${unitLabel(market)}.`);
+    } else if (operatorOverride) {
+      const usedPct = (actualRiskUSD / acct * 100);
+      const maxPct  = (riskPct * 100);
+      g('ok', 'Per-trade risk cap (§5)',
+        `your size ${shares.toLocaleString()} ${unitLabel(market)} = $${actualRiskUSD.toFixed(0)} risk = ${usedPct.toFixed(2)}% of ${maxPct.toFixed(1)}% cap (under ceiling — voluntary down-sizing)`);
+    } else {
+      g('ok', 'Per-trade risk cap (§5)',
+        `sized at doctrine max: ${doctrineMaxShares.toLocaleString()} ${unitLabel(market)} = $${actualRiskUSD.toFixed(0)} risk = ${(riskPct*100).toFixed(1)}% (at ceiling — enter your own size to size down)`);
+    }
+
+    // 11. Heat headroom (all currencies normalized to USD via fx)
     const heatOk = heatAfter <= sim.config.heat_max;
     g(heatOk ? 'ok' : 'bad', 'Heat headroom',
       `$${actualRiskUSD.toFixed(0)} USD added → $${heatAfter.toFixed(0)} of $${sim.config.heat_max} ceiling (headroom $${heatHeadroom.toFixed(0)})`);
@@ -2569,7 +2603,7 @@ document.querySelectorAll('table').forEach(t => {
       <div class="sim-verdict ${verdictClass}">${verdictText}</div>
       <div class="sim-blurb">${verdictBlurb}</div>
       <div class="sim-grid">
-        <div class="sim-stat"><div class="l">Position size</div><div class="v">${sharesDisplay} ${unit}${lotNote}</div></div>
+        <div class="sim-stat"><div class="l">Position size${operatorOverride ? ' <span style="font-weight:normal;color:var(--dim);font-size:11px">(your choice)</span>' : ' <span style="font-weight:normal;color:var(--dim);font-size:11px">(doctrine max)</span>'}</div><div class="v ${oversize ? 'red' : ''}">${sharesDisplay} ${unit}${lotNote}</div><div style="color:var(--dim);font-size:11px;margin-top:2px">doctrine max: ${doctrineMaxShares.toLocaleString()} ${unit}</div></div>
         <div class="sim-stat"><div class="l">Notional</div><div class="v">${notionalDisplay}</div></div>
         <div class="sim-stat"><div class="l">$ at risk (USD)</div><div class="v">$${actualRiskUSD.toFixed(0)} <span style="font-weight:normal;color:var(--dim);font-size:11px"> (${actualRiskPct.toFixed(2)}%)</span></div></div>
         <div class="sim-stat"><div class="l">R:R to TP1</div><div class="v ${rrOk ? 'green' : 'red'}">${rrTp1.toFixed(2)}R</div></div>
@@ -3236,6 +3270,7 @@ def render_html(ctx):
     <div><label>Stop (<span class="sim-cur-label">$</span>)</label><input id="sim-stop" type="number" step="0.0001" placeholder="stop" /></div>
     <div><label>TP1 (<span class="sim-cur-label">$</span>)</label><input id="sim-tp1" type="number" step="0.0001" placeholder="TP1" /></div>
     <div><label>TP2 (optional)</label><input id="sim-tp2" type="number" step="0.0001" placeholder="TP2" /></div>
+    <div><label>Size (<span class="sim-unit-label">sh</span>, optional)</label><input id="sim-size" type="number" step="0.000001" placeholder="auto = doctrine max" title="Optional. Leave blank to size at the doctrine maximum (2% account risk). Enter a number to size your own position; sim will verify it doesn't exceed the cap and check heat headroom." /></div>
     <button id="sim-prefill" type="button" title="Reset to suggested entry/stop/TP1 from cached data">↻ Suggest</button>
   </div>
   <div class="sim-result" id="sim-result">
