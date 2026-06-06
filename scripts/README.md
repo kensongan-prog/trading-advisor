@@ -29,66 +29,30 @@ git remote -v
 
 If there are no new commits since the last run, the script exits cleanly with "Everything up-to-date" in the log.
 
-## `com.kenson.trading-advisor-backup.plist`
+### Scheduled usage (Claude-managed)
 
-A macOS LaunchAgent that runs `sync-backup.sh` automatically every hour (and once at load time). **Installing it is a deliberate maintainer choice; the script also works fine as a manual or cron-driven job on other platforms.**
+The maintainer's setup uses Claude Code's built-in scheduler (`CronCreate`) to run this script on a daily schedule. To set it up in your own Claude Code session, ask Claude:
 
-### Install (macOS)
+> "Set up a daily backup task that runs `./scripts/sync-backup.sh` from this project. Use CronCreate with durable=true, recurring=true, at a reasonable work-hour time, and remind me to re-schedule it before the 7-day expiry."
 
-```bash
-# 1. Edit the plist if your project path is different from the default
-#    (currently hardcoded to /Users/aiagent/Documents/Claude/Projects/Trading Advisor/)
-$EDITOR scripts/com.kenson.trading-advisor-backup.plist
+The scheduler is session-aware: jobs only fire while a Claude Code session is open. If you go several days without opening Claude Code, the backup won't fire — re-open Claude and the next scheduled tick will catch up.
 
-# 2. Copy into your user LaunchAgents directory
-cp scripts/com.kenson.trading-advisor-backup.plist ~/Library/LaunchAgents/
+**Limitations of the Claude scheduler:**
+- Jobs auto-expire after 7 days (need to re-schedule weekly)
+- Jobs only fire while Claude is running and the REPL is idle
+- If Claude is closed at fire time, the run is skipped (not queued)
 
-# 3. Load it (registers + starts the agent)
-launchctl load -w ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
+### Scheduled usage (system cron — alternative for headless setups)
 
-# 4. Verify it's registered
-launchctl list | grep trading-advisor-backup
-# Should show a line ending in com.kenson.trading-advisor-backup
-
-# 5. Tail the log to confirm the first run worked
-tail -f .git/sync-backup.log
-```
-
-### Pause / uninstall
+If you want the backup to run even when Claude isn't open, you can add a system cron entry (any platform with cron):
 
 ```bash
-# Pause (keep installed but stop running)
-launchctl unload ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
-
-# Permanently remove
-launchctl unload ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
-rm ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
+crontab -e
+# Add this line for daily 8:23am local:
+23 8 * * * /full/path/to/trading-advisor/scripts/sync-backup.sh
 ```
 
-### Adjust frequency
-
-Edit `StartInterval` in the plist (value is seconds):
-
-| Interval | Value |
-|---|---|
-| Every 15 minutes | `900` |
-| Every 30 minutes | `1800` |
-| Every hour (default) | `3600` |
-| Every 4 hours | `14400` |
-| Every 12 hours | `43200` |
-
-After editing, reload:
-```bash
-launchctl unload ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
-launchctl load -w ~/Library/LaunchAgents/com.kenson.trading-advisor-backup.plist
-```
-
-### Linux / WSL equivalent (cron)
-
-```bash
-# Add this line to your crontab (crontab -e) for hourly runs
-0 * * * * /path/to/trading-advisor/scripts/sync-backup.sh
-```
+This option exists for completeness; the project maintainer prefers the Claude-managed approach.
 
 ### What it does NOT do
 
