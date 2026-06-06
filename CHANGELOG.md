@@ -19,22 +19,33 @@ Versions are tagged in git as `vX.Y` (e.g. `v1.0`, `v1.1`, `v2.0`) and mirrored 
 
 ## Procedure for adding a changelog entry
 
-**Any agent or operator making code changes MUST update this file before committing.** The workflow is:
+This file is a manually-maintained log. **The workflow applies whether or not you use git/GitHub.** Maintaining the changelog is good practice for traceability; whether you back up to a public repo, a private repo, a local-only git folder, or no version control at all is entirely your choice. The project ships with **no automatic git or GitHub operations** — nothing in this repository will push anywhere on your behalf.
 
-1. **Before staging your changes**, add a new entry under `## [Unreleased]` at the top of this file (below the policy section).
+### Steps
+
+1. **Whenever you make a meaningful change**, add an entry under `## [Unreleased]` at the top of this file (below the policy section).
 2. **Categorize each change** under one of: `### Added`, `### Changed`, `### Fixed`, `### Removed`, `### Deprecated`, `### Security`.
 3. **Write entries in the past tense, from the user's perspective**, not the developer's. Example:
    - ✓ Good: `Status badges now show a hover tooltip explaining what the state means and what action it implies.`
    - ✗ Bad: `Added tooltip rendering logic to badge HTML in render_us_grid().`
-4. When ready to release, **rename `[Unreleased]` to the new version + ISO date**, then create a fresh empty `[Unreleased]` section above it. Commit the changelog change with your release.
-5. Tag the commit:
-   ```bash
-   git tag -a vX.Y -m "Short release summary"
-   git push origin vX.Y
-   gh release create vX.Y --title "vX.Y — <theme>" --notes-file <(sed -n '/## \[vX.Y\]/,/## \[/p' CHANGELOG.md | head -n -1)
-   ```
+4. When you decide a batch of changes constitutes a release, **rename `[Unreleased]` to the new version + ISO date**, then create a fresh empty `[Unreleased]` section above it.
 
-**Doctrinal rule:** if you are not sure whether a change is MAJOR or MINOR, ask the operator. **Never silently break a published interface or doctrine.**
+### Optional: tag + publish (only if you use git/GitHub)
+
+If you maintain a git repository for this project and want to mark the release with a tag (and optionally a GitHub release), the workflow is:
+
+```bash
+git add CHANGELOG.md
+git commit -m "Release vX.Y"
+git tag -a vX.Y -m "Short release summary"
+git push                # only if you have a remote configured
+git push origin vX.Y    # only if you have a remote configured
+gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changelog>"  # only if you use gh
+```
+
+**None of these steps are required to use the project.** They're conveniences for operators who want a public or backed-up release history.
+
+**Doctrinal rule:** if you are not sure whether a change is MAJOR or MINOR, ask the operator (or, if you are the operator, sit with the question for a moment). **Never silently break a published interface or doctrine.**
 
 ---
 
@@ -103,5 +114,8 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 ---
 
+<!-- The link targets below are specific to the author's personal fork at
+     github.com/kensongan-prog/trading-advisor. If you maintain your own fork
+     or backup, update these to point at your own remote, or delete them. -->
 [Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.0...HEAD
 [v1.0]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.0

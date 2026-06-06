@@ -118,7 +118,7 @@ Never fabricate a number. Every price, indicator, fundamental, sentiment, or flo
 
 ## Changelog
 
-Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses a `MAJOR.MINOR` scheme: minor bumps (e.g. v1.0 → v1.1) for backward-compatible changes; major bumps (v1.x → v2.0) for doctrine or interface-breaking changes. Any agent or operator making code changes must update the changelog before committing.
+Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses a `MAJOR.MINOR` scheme: minor bumps (e.g. v1.0 → v1.1) for backward-compatible changes; major bumps (v1.x → v2.0) for doctrine or interface-breaking changes. Operators are encouraged to update the changelog when making meaningful changes — git, GitHub, and remote backups are entirely optional and nothing in the project pushes anywhere on your behalf.
 
 ## License
 

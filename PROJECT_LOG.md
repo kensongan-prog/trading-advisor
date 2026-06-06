@@ -599,15 +599,9 @@ The project uses a **`MAJOR.MINOR`** scheme tagged in git as `vX.Y`:
 | **MINOR** (e.g. v1.0 → v1.1) | Backward-compatible changes — bug fixes, optimizations, new columns, threshold tuning, documentation, new data sources for existing functionality |
 | **MAJOR** (e.g. v1.x → v2.0) | Doctrine changes, breaking interface changes, new asset class, phase unlock changes, architectural rewrites |
 
-**Every code change must update `CHANGELOG.md` before commit.** Add entries under `## [Unreleased]` at the top, categorized as `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security`. Write entries from the user's perspective, past tense.
+**When you make a meaningful change, update `CHANGELOG.md`.** Add entries under `## [Unreleased]` at the top, categorized as `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security`. Write entries from the user's perspective, past tense. When ready to release, rename `[Unreleased]` to the new version and create a fresh empty `[Unreleased]` above it.
 
-When releasing: rename `[Unreleased]` to the new version, create a fresh empty `[Unreleased]` above, commit, then:
-
-```bash
-git tag -a vX.Y -m "Short release summary"
-git push origin vX.Y
-gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changelog>"
-```
+**Git, GitHub, and remote backups are entirely optional.** The project ships with no automatic git or GitHub operations — nothing pushes anywhere on your behalf. You can use the changelog policy with or without version control. If you do maintain a git repository, you can optionally tag and publish releases (`git tag -a vX.Y` + `git push origin vX.Y` + `gh release create vX.Y` — see `CHANGELOG.md` for the full optional workflow).
 
 Full policy + procedure live in `CHANGELOG.md`. **If you're unsure whether a change is MAJOR or MINOR, ask the operator. Never silently break a published interface or doctrine.**
 
