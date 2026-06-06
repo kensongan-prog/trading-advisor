@@ -16,3 +16,7 @@ venv/
 # Dashboard build output + cache
 dashboard.html
 .claude/cache/
+
+# Claude runtime artifacts
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
