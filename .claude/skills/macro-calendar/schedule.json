@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "description": "Maintained schedule of US macro release dates for the doctrine's §5 halt-window check. ALL times in US Eastern (America/New_York). Re-verify quarterly against the official sources listed below. The 'verified_through' date below tells the script how far to trust this catalog.",
+    "verified_through": "2026-12-31",
+    "last_updated": "2026-06-03",
+    "sources": {
+      "FOMC": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "CPI": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "NFP_jobs_report": "https://www.bls.gov/schedule/news_release/empsit.htm (Employment Situation)",
+      "PCE": "https://www.bea.gov/news/schedule"
+    },
+    "rules_of_thumb": {
+      "NFP": "First Friday of each month, 8:30 AM ET",
+      "CPI": "Mid-month (usually 10th-15th), 8:30 AM ET, references prior month",
+      "PCE": "Late month (usually last Friday or Thursday), 8:30 AM ET, references prior month",
+      "FOMC": "Two-day meeting, decision statement at 2:00 PM ET on second day, presser at 2:30 PM ET"
+    }
+  },
+  "events": [
+    {"type": "FOMC", "date": "2026-06-17", "time_et": "14:00", "note": "June FOMC decision"},
+    {"type": "NFP",  "date": "2026-06-05", "time_et": "08:30", "note": "May Jobs Report"},
+    {"type": "CPI",  "date": "2026-06-10", "time_et": "08:30", "note": "May CPI"},
+    {"type": "PCE",  "date": "2026-06-26", "time_et": "08:30", "note": "May PCE"},
+
+    {"type": "NFP",  "date": "2026-07-03", "time_et": "08:30", "note": "June Jobs Report"},
+    {"type": "CPI",  "date": "2026-07-15", "time_et": "08:30", "note": "June CPI"},
+    {"type": "PCE",  "date": "2026-07-31", "time_et": "08:30", "note": "June PCE"},
+    {"type": "FOMC", "date": "2026-07-29", "time_et": "14:00", "note": "July FOMC decision"},
+
+    {"type": "NFP",  "date": "2026-08-07", "time_et": "08:30", "note": "July Jobs Report"},
+    {"type": "CPI",  "date": "2026-08-12", "time_et": "08:30", "note": "July CPI"},
+    {"type": "PCE",  "date": "2026-08-28", "time_et": "08:30", "note": "July PCE"},
+
+    {"type": "NFP",  "date": "2026-09-04", "time_et": "08:30", "note": "August Jobs Report"},
+    {"type": "CPI",  "date": "2026-09-10", "time_et": "08:30", "note": "August CPI"},
+    {"type": "PCE",  "date": "2026-09-25", "time_et": "08:30", "note": "August PCE"},
+    {"type": "FOMC", "date": "2026-09-16", "time_et": "14:00", "note": "September FOMC decision"},
+
+    {"type": "NFP",  "date": "2026-10-02", "time_et": "08:30", "note": "September Jobs Report"},
+    {"type": "CPI",  "date": "2026-10-14", "time_et": "08:30", "note": "September CPI"},
+    {"type": "PCE",  "date": "2026-10-30", "time_et": "08:30", "note": "September PCE"},
+    {"type": "FOMC", "date": "2026-10-28", "time_et": "14:00", "note": "October FOMC decision"},
+
+    {"type": "NFP",  "date": "2026-11-06", "time_et": "08:30", "note": "October Jobs Report"},
+    {"type": "CPI",  "date": "2026-11-12", "time_et": "08:30", "note": "October CPI"},
+    {"type": "PCE",  "date": "2026-11-25", "time_et": "08:30", "note": "October PCE (Wed before Thanksgiving)"},
+
+    {"type": "NFP",  "date": "2026-12-04", "time_et": "08:30", "note": "November Jobs Report"},
+    {"type": "CPI",  "date": "2026-12-09", "time_et": "08:30", "note": "November CPI"},
+    {"type": "PCE",  "date": "2026-12-23", "time_et": "08:30", "note": "November PCE"},
+    {"type": "FOMC", "date": "2026-12-09", "time_et": "14:00", "note": "December FOMC decision"}
+  ]
+}

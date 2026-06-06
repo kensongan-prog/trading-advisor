@@ -1,0 +1,21 @@
+{
+  "_comment": "Curated US discovery universe — liquid, recognizable names across all 11 sectors. ~180 tickers. Edit freely: add names you'd consider trading, remove ones you wouldn't. Universe is intentionally smaller than full S&P 500 (faster scans, less noise). When in doubt, prefer megacap + recognized sector leaders + 5+ years public history.",
+  "_last_updated": "2026-06-05",
+  "_changelog": [
+    "2026-06-05: removed SQ (renamed XYZ), HES (merged into CVX), K (split into KLG). Added XYZ as successor; KLG also fails yfinance lookup — dropped for now, re-add if Yahoo backend resolves it."
+  ],
+  "_size_target": "150-200 names",
+  "sectors": {
+    "Technology": ["AAPL","MSFT","GOOGL","META","NVDA","AMZN","TSLA","AVGO","ORCL","ADBE","CRM","NFLX","AMD","INTC","QCOM","TXN","AMAT","LRCX","MU","NOW","INTU","IBM","CSCO","ACN","SNPS","CDNS","ANET","KLAC","FTNT","PANW","CRWD","ZS","NET","DDOG","SNOW","MDB","SHOP","WDAY","TEAM","XYZ","PYPL","UBER","ABNB","ASML","TSM","ARM"],
+    "Healthcare": ["UNH","JNJ","LLY","PFE","MRK","ABBV","TMO","ABT","DHR","BMY","AMGN","GILD","ISRG","REGN","VRTX","ELV","CI","CVS","HUM","MDT","SYK","BSX","BDX"],
+    "Financials": ["JPM","BAC","WFC","GS","MS","C","BLK","AXP","V","MA","SCHW","COF","USB","PNC","SPGI","ICE","CME","MCO","TFC"],
+    "Consumer Discretionary": ["HD","MCD","NKE","SBUX","LOW","TJX","BKNG","CMG","ORLY","DPZ","YUM","RCL","CCL","MAR","HLT","F","GM"],
+    "Consumer Staples": ["PG","KO","PEP","COST","WMT","MO","PM","MDLZ","EL","CL","KMB","GIS","STZ","TGT"],
+    "Energy": ["XOM","CVX","COP","EOG","SLB","PSX","MPC","OXY","FANG","WMB","ENB"],
+    "Industrials": ["GE","CAT","BA","HON","DE","UPS","RTX","LMT","NOC","MMM","UNP","CSX","FDX","ETN","EMR","ITW","CMI"],
+    "Materials": ["LIN","APD","SHW","NEM","FCX","ECL","DD"],
+    "Utilities": ["NEE","SO","DUK","AEP","SRE","D","XEL"],
+    "Real Estate": ["AMT","PLD","CCI","EQIX","SPG","O","WELL","PSA"],
+    "Communication Services": ["DIS","CMCSA","T","VZ","TMUS","WBD","CHTR"]
+  }
+}

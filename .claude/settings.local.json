@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Massive_Market_Data__search_endpoints",
+      "mcp__Massive_Market_Data__call_api"
+    ]
+  }
+}
