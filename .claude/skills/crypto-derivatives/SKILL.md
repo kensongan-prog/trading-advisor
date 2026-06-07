@@ -1,6 +1,6 @@
 ---
 name: crypto-derivatives
-description: Fetch real, timestamped crypto derivatives positioning data from Binance Futures public API — funding rates (per-8h + annualized), open interest with trend, long/short account ratios (top traders vs retail), taker buy/sell ratio, and divergence flags. Use whenever a crypto recommendation needs a positioning/flow read — i.e. is the market crowded long, is there flush risk, is there a smart-money-vs-retail divergence. Required as part of crypto pre-trade confluence per CLAUDE.md §4 (positioning is the "flow" leg) and §5 (flush risk on leveraged crowded books).
+description: Fetch real, timestamped crypto derivatives positioning data from Binance Futures public API — funding rates (per-8h + annualized), open interest with trend, long/short account ratios (top traders vs retail), taker buy/sell ratio, and divergence flags. Use whenever a crypto recommendation needs a positioning/flow read — i.e. is the market crowded long, is there flush risk, is there a smart-money-vs-retail divergence. Required as part of crypto pre-trade confluence per AGENTS.md §4 (positioning is the "flow" leg) and §5 (flush risk on leveraged crowded books).
 ---
 
 # Crypto Derivatives Skill (Binance Futures Positioning)
@@ -19,7 +19,7 @@ Do NOT trigger this skill on US equities, KLSE, or any non-crypto asset.
 
 ## Why this exists
 
-Funding rates, open interest, and long/short ratios are first-class signals for crypto. CoinGecko (the `crypto-coingecko` skill) gives sentiment votes and dev activity but NOT derivatives positioning. Massive's crypto coverage is spot-focused. Without this skill, the "flow" leg of CLAUDE.md §4 confluence is missing for crypto.
+Funding rates, open interest, and long/short ratios are first-class signals for crypto. CoinGecko (the `crypto-coingecko` skill) gives sentiment votes and dev activity but NOT derivatives positioning. Massive's crypto coverage is spot-focused. Without this skill, the "flow" leg of AGENTS.md §4 confluence is missing for crypto.
 
 ## Source
 
@@ -105,7 +105,7 @@ Higher fidelity than OI alone for "are buyers reaching across the spread right n
 
 2. **Single-exchange caveat.** This data is Binance only. For BTC/ETH/SOL it's the dominant venue and the read is robust. For altcoins where Binance is a minority of futures volume, cross-check with Bybit/OKX before trusting the signal (skill does not currently do this — flag as a confidence reduction in the recommendation).
 
-3. **CLAUDE.md §5 flush-risk rule:** when funding is in "VERY CROWDED LONG" territory AND you're entering a long, size DOWN and acknowledge the cascade risk explicitly. When entering a long against "VERY CROWDED SHORT," the squeeze probability is in your favor but you still need a price trigger.
+3. **AGENTS.md §5 flush-risk rule:** when funding is in "VERY CROWDED LONG" territory AND you're entering a long, size DOWN and acknowledge the cascade risk explicitly. When entering a long against "VERY CROWDED SHORT," the squeeze probability is in your favor but you still need a price trigger.
 
 4. **If FETCH FAILED, the positioning leg of confluence is unavailable.** Drop confidence one level and explicitly say so in the recommendation. Do not fill from memory.
 

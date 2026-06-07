@@ -19,7 +19,7 @@ Do NOT use for:
 
 ## Why this exists
 
-CLAUDE.md §5 hard rule: **"Crypto: 48h before a scheduled token unlock > 1% of float"** — no new directional exposure.
+AGENTS.md §5 hard rule: **"Crypto: 48h before a scheduled token unlock > 1% of float"** — no new directional exposure.
 
 Tokenomist.ai is the canonical unlock data source, but it's a Next.js SPA — page HTML is mostly empty, all data fetches happen client-side. Direct `urllib`/`requests` scraping returns no usable JSON. DeFiLlama emissions API moved behind a paid plan (HTTP 402). CoinGecko/CryptoRank don't expose unlock schedules on their free tiers.
 

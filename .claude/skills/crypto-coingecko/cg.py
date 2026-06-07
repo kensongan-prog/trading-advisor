@@ -513,7 +513,7 @@ def cmd_regime(args):
         regime = "NEUTRAL — no crypto-specific regime tilt"
     print(f"REGIME READ:     {regime}")
     print()
-    print("Apply to crypto recommendation logic (CLAUDE.md §4 + §5):")
+    print("Apply to crypto recommendation logic (AGENTS.md §4 + §5):")
     print("  - F&G is a contrarian signal — extremes can persist; do NOT fade without a price trigger.")
     print("  - BTC dominance > 60 → avoid alts unless idiosyncratic. < 45 → alts viable per playbook.")
     print("  - Combine with `crypto-derivatives snapshot` for positioning (flush risk) and")

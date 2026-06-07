@@ -236,7 +236,7 @@ def cmd_earnings(args):
         if revenue_estimate is not None:
             print(f"  Revenue estimate:     {fmt_money(revenue_estimate)}")
         print()
-        print("EVENT-WINDOW STATUS (CLAUDE.md §5: 24h pre-earnings halt)")
+        print("EVENT-WINDOW STATUS (AGENTS.md §5: 24h pre-earnings halt)")
         if 0 <= hours_until <= args.halt_window_hours:
             print(f"  *** WITHIN {args.halt_window_hours}h HALT WINDOW ***")
             print(f"  Per doctrine: NO new directional exposure on this name.")
@@ -284,7 +284,7 @@ def main():
     pe = sub.add_parser("earnings", help="Next earnings date + recent history + halt-window check")
     pe.add_argument("--ticker", required=True)
     pe.add_argument("--halt-window-hours", type=int, default=24,
-                    help="Halt window in hours before earnings (CLAUDE.md §5 default: 24).")
+                    help="Halt window in hours before earnings (AGENTS.md §5 default: 24).")
     pe.set_defaults(func=cmd_earnings)
 
     args = p.parse_args()

@@ -2,7 +2,7 @@
 
 A doctrine-driven trading research agent that produces grounded, risk-managed recommendations across US equities, KLSE (Bursa Malaysia), and crypto — all backed by real, current data pulled at recommendation time.
 
-Built as a Claude Code project. Outputs a self-contained static HTML dashboard plus a journaled record of every prospectus, live position, and closed trade.
+Built as a cross-agent project — works with **[Claude Code](https://claude.ai/code)** (auto-loads doctrine via `CLAUDE.md` pointer → `AGENTS.md`) and **[Codex](https://github.com/openai/codex)** or any agent that follows the `AGENTS.md` convention. Outputs a self-contained static HTML dashboard plus a journaled record of every prospectus, live position, and closed trade.
 
 > ⚠️ **Research tool, not financial advice.** This software does not execute trades and does not provide personalized investment recommendations. See [LICENSE](LICENSE) for the full disclaimer.
 
@@ -11,7 +11,7 @@ Built as a Claude Code project. Outputs a self-contained static HTML dashboard p
 ## What it does
 
 - **Pulls real-time technical, fundamental, news, and macro data** from 7+ providers (FRED, Twelve Data, FMP, yfinance, CoinGecko, Binance, Alpha Vantage, Finnhub)
-- **Enforces a written risk doctrine** (see [`CLAUDE.md`](CLAUDE.md)) on every recommendation — bounded downside, R-multiples, position sizing math, event-window halts (FOMC/CPI/NFP/earnings/token unlocks)
+- **Enforces a written risk doctrine** (see [`AGENTS.md`](AGENTS.md)) on every recommendation — bounded downside, R-multiples, position sizing math, event-window halts (FOMC/CPI/NFP/earnings/token unlocks)
 - **Phased ramp** unlocks complex structures only after enough logged trades prove out (paper-only Phase 1 → defined-risk options Phase 2 → full doctrine Phase 3)
 - **Daily discovery scan** of a 176-name US universe with Buffett-style quality + value tagging (`💎 BUFFETT` / `🏆 QUALITY` / `💰 VALUE` / `⚡ TECH`)
 - **Risk Simulator** with 12-gate doctrine check + R:R + heat math + one-click prospectus generation
@@ -33,7 +33,7 @@ Subsequent refreshes are sub-second when caches are warm.
 
 **What you need:**
 - Python 3.9+ and `pip3`
-- [Claude Code](https://claude.ai/code) (recommended — the project is built as Claude Code skills and the agent-only WebFetch skills require it). The static HTML dashboard and CLI tools work standalone with just Python, but you'll lose the agent workflow (live KLSE quotes, crypto unlock fetches, conversational recommendations).
+- An AI coding agent — **[Claude Code](https://claude.ai/code)** or **[Codex](https://github.com/openai/codex)** (recommended for the full doctrine-driven workflow). Both will auto-load `AGENTS.md` (Codex natively; Claude via the `CLAUDE.md` pointer). The static HTML dashboard and CLI tools work standalone with just Python, but you'll lose the agent workflow (live KLSE quotes, crypto unlock fetches, conversational recommendations).
 - ~15 minutes to register for 5 free API keys (no credit card required for any of them)
 
 ```bash
@@ -56,7 +56,7 @@ echo "FINNHUB_API_KEY=YOUR_KEY"      > .claude/skills/finnhub/.env
 echo "TWELVE_DATA_API_KEY=YOUR_KEY"  > .claude/skills/twelve-data/.env
 echo "FMP_API_KEY=YOUR_KEY"          > .claude/skills/fmp/.env
 
-# 5. Edit CLAUDE.md USER CONFIG block (account size, risk %, phase, etc.)
+# 5. Edit AGENTS.md USER CONFIG block (account size, risk %, phase, etc.)
 
 # 6. Edit watchlist.md with your tickers, or use the CLI:
 python3 .claude/skills/watchlist/wl.py add NVDA --thesis "AI semis"
@@ -87,7 +87,7 @@ If any panel is missing or shows "no data" warnings: check the corresponding `.e
 
 ```
 trading-advisor/
-├── CLAUDE.md              # Doctrine: risk management, phased ramp, output format (read first)
+├── AGENTS.md              # Doctrine: risk management, phased ramp, output format (read first)
 ├── PROJECT_LOG.md         # Replication guide: setup, API keys, gotchas, T3 optimization diffs
 ├── README.md              # This file
 ├── LICENSE                # MIT + trading disclaimer
@@ -120,7 +120,7 @@ trading-advisor/
 
 ## Doctrine in one paragraph
 
-Never fabricate a number. Every price, indicator, fundamental, sentiment, or flow figure must come from a tool call this session — never from memory. Every recommendation states its invalidation level (the price/condition that proves the thesis wrong) and is sized so the dollar loss at that stop is bounded and known before entry. R-multiples beat dollar P&L; doctrine compliance beats individual outcomes. When in doubt, "no trade" is a valid output. Read [`CLAUDE.md`](CLAUDE.md) for the full ten-section doctrine.
+Never fabricate a number. Every price, indicator, fundamental, sentiment, or flow figure must come from a tool call this session — never from memory. Every recommendation states its invalidation level (the price/condition that proves the thesis wrong) and is sized so the dollar loss at that stop is bounded and known before entry. R-multiples beat dollar P&L; doctrine compliance beats individual outcomes. When in doubt, "no trade" is a valid output. Read [`AGENTS.md`](AGENTS.md) for the full ten-section doctrine.
 
 ## What this project is *not*
 
@@ -130,9 +130,17 @@ Never fabricate a number. Every price, indicator, fundamental, sentiment, or flo
 - A backtesting framework — calibration happens forward-only via the journaled trade record
 - A market-data API — it consumes data from third parties; it does not provide one
 
-## Built with
+## Supported agents
 
-[Claude Code](https://claude.ai/code) — the project is structured as a collection of Claude Code skills with shared cache and doctrine. Any Claude Code instance with this repository checked out and API keys in place will produce identical behavior.
+The project follows the emerging **`AGENTS.md`** convention so multiple coding agents can adopt it without forking.
+
+| Agent | Status | How it loads the doctrine | Notes |
+|---|---|---|---|
+| **[Claude Code](https://claude.ai/code)** | ✓ Primary (built here) | Auto-loads `CLAUDE.md`, which points at `AGENTS.md` | All 21 skills tested. WebFetch skills (klse-*, crypto-unlocks) use Claude's WebFetch tool. |
+| **[Codex](https://github.com/openai/codex)** | ✓ Compatible | Auto-loads `AGENTS.md` directly | Agent-only WebFetch skills will use whatever browsing tool Codex provides. Python CLI skills work identically. |
+| Other agents | Should work | Read `AGENTS.md` first | Any agent that supports project-level instruction files and can invoke shell scripts can drive this project. |
+
+The Python codebase, dashboard, data integrations, CLI tools, and doctrine are all platform-agnostic. Only the agent orchestration layer (which web-fetch tool, which scheduler) differs between platforms — and those are noted where they matter.
 
 ## Changelog
 

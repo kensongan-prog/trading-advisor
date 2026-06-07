@@ -9,7 +9,7 @@ description: Fetch recent US-equity news headlines with per-ticker sentiment sco
 
 Trigger this skill on any US-listed ticker when the analysis needs:
 
-- **Sentiment confluence** with technicals (per CLAUDE.md Section 4: a high-conviction call requires technicals + at least one of {sentiment, fundamentals, flow}).
+- **Sentiment confluence** with technicals (per AGENTS.md Section 4: a high-conviction call requires technicals + at least one of {sentiment, fundamentals, flow}).
 - **Catalyst detection**: M&A, earnings reactions, guidance changes, regulatory actions, analyst rating shifts.
 - **Pre-trade event-window check** for non-earnings catalysts (FDA decisions, conference talks, product launches).
 - **Sanity check on a price move**: is the move news-driven or noise?
@@ -21,7 +21,7 @@ Do NOT use this skill for:
 
 ## Why this exists
 
-Massive MCP gives prices and indicators, not news/sentiment. Per CLAUDE.md Section 4, technicals alone are not enough — confluence requires sentiment OR fundamentals OR flow. Without a news source, every US recommendation would be flying half-blind on confluence. Alpha Vantage's NEWS_SENTIMENT is the fastest, cheapest way to close that gap; it ships per-article ticker-level sentiment scores that AV pre-computes, plus topic tags, plus relevance scores per ticker.
+Massive MCP gives prices and indicators, not news/sentiment. Per AGENTS.md Section 4, technicals alone are not enough — confluence requires sentiment OR fundamentals OR flow. Without a news source, every US recommendation would be flying half-blind on confluence. Alpha Vantage's NEWS_SENTIMENT is the fastest, cheapest way to close that gap; it ships per-article ticker-level sentiment scores that AV pre-computes, plus topic tags, plus relevance scores per ticker.
 
 ## Setup — one-time
 
@@ -108,9 +108,9 @@ For any US-equity recommendation, run in order:
 2. Massive `/v1/indicators/rsi/{TICKER}` → RSI(14). Repeat for SMA20/50/200 if playbook requires (Massive has individual indicator endpoints).
 3. **`us-news`** (`--hours 48 --limit 15 --min-relevance 0.3`) → recent sentiment + catalyst check.
 4. Fundamentals: NOT YET WIRED — flag any thesis that depends on P/E, earnings growth, or DCF as "fundamentals unverified, lowered confidence."
-5. Confluence verdict per CLAUDE.md §4.
+5. Confluence verdict per AGENTS.md §4.
 6. Gate check per `rules/risk-doctrine.md` §7.
-7. Output in CLAUDE.md format, citing the AV `Fetched (UTC)` timestamp in the data snapshot.
+7. Output in AGENTS.md format, citing the AV `Fetched (UTC)` timestamp in the data snapshot.
 
 ## What this skill does NOT cover
 

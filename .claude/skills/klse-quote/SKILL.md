@@ -17,7 +17,7 @@ Do NOT use this skill for US tickers, crypto, or anything Massive already covers
 
 ## Why this exists
 
-The project's primary data MCP (`mcp_massive`) does not cover Bursa Malaysia. Per `CLAUDE.md` Section 2 ("Never fabricate a number"), any KLSE recommendation without this skill must return **NO-TRADE: data source missing**. This skill is the only sanctioned data path for KLSE tickers in this project.
+The project's primary data MCP (`mcp_massive`) does not cover Bursa Malaysia. Per `AGENTS.md` Section 2 ("Never fabricate a number"), any KLSE recommendation without this skill must return **NO-TRADE: data source missing**. This skill is the only sanctioned data path for KLSE tickers in this project.
 
 ## How to use
 
@@ -52,7 +52,7 @@ The project's primary data MCP (`mcp_massive`) does not cover Bursa Malaysia. Pe
 
 3. **Timestamp the fetch.** Record the wall-clock time of the WebFetch call in your response — this is the "data freshness" timestamp the user needs to judge intraday vs end-of-day.
 
-4. **Return in this exact format** (so it composes cleanly with the CLAUDE.md recommendation block):
+4. **Return in this exact format** (so it composes cleanly with the AGENTS.md recommendation block):
 
    ```
    KLSE QUOTE — {NAME} ({CODE})

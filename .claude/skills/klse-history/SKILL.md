@@ -106,4 +106,4 @@ For any KLSE recommendation:
 2. Run `klse-history` with `--indicators rsi,sma20,sma50,sma200,atr14 --period 2y` → get OHLCV, structure, computed indicators, ATR for stops.
 3. Confluence check: independently-computed RSI (this skill) vs page-RSI (quote skill). If they disagree by > ~5 points, investigate before trading.
 4. Place stop at `entry − 1.5 × ATR14` or just beyond the relevant swing — whichever is wider, per risk doctrine.
-5. Output in the standard CLAUDE.md recommendation block, with the `Fetched (UTC)` timestamps from both skills cited as the data snapshot.
+5. Output in the standard AGENTS.md recommendation block, with the `Fetched (UTC)` timestamps from both skills cited as the data snapshot.

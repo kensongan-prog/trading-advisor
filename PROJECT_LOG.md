@@ -2,13 +2,13 @@
 
 This file is the **replication guide**. Hand it (along with everything in the project folder) to another AI agent + operator pair and they should be able to stand up an identical instance.
 
-**Read this together with `CLAUDE.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
+**Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
 ---
 
 ## TL;DR — what this project is
 
-A Claude Code agent that produces grounded trading research and risk-managed recommendations across **US equities, KLSE (Bursa Malaysia) equities, and crypto**. Every recommendation must be backed by real, current data pulled this session via the project's wired skills — never fabricated. Operates under a Phase 1 / 2 / 3 ramp that unlocks more complex structures only after enough logged trades prove out.
+An AI-coding-agent project (Claude Code, Codex, or compatible) that produces grounded trading research and risk-managed recommendations across **US equities, KLSE (Bursa Malaysia) equities, and crypto**. Every recommendation must be backed by real, current data pulled this session via the project's wired skills — never fabricated. Operates under a Phase 1 / 2 / 3 ramp that unlocks more complex structures only after enough logged trades prove out.
 
 Output medium: a self-contained static HTML dashboard at `dashboard.html` plus a journal of timestamped prospectus / live / closed entries.
 
@@ -86,7 +86,7 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 
 ```
                             ┌────────────────────────────────┐
-                            │       CLAUDE.md (doctrine)     │
+                            │       AGENTS.md (doctrine)     │
                             │    + USER CONFIG block         │
                             └───────────────┬────────────────┘
                                             │
@@ -140,7 +140,7 @@ Refresh model: **operator-driven** (no cron, no auto-poll). The dashboard's refr
 Take the entire `Trading Advisor/` directory and place it under whatever project root the brother prefers (e.g. `~/Documents/Claude/Projects/Trading Advisor/`).
 
 **Files to copy:**
-- `CLAUDE.md`
+- `AGENTS.md`
 - `PROJECT_LOG.md` (this file)
 - `.gitignore`
 - `.claude/skills/` (all 21 skill folders)
@@ -182,9 +182,9 @@ echo "FMP_API_KEY=YOUR_KEY"          > .claude/skills/fmp/.env
 
 Each skill's `.env.template` shows the expected variable name.
 
-### Step 3: Fill in `CLAUDE.md` USER CONFIG
+### Step 3: Fill in `AGENTS.md` USER CONFIG
 
-Open `CLAUDE.md` and scroll to the bottom — the `USER CONFIG` block. Edit:
+Open `AGENTS.md` and scroll to the bottom — the `USER CONFIG` block. Edit:
 
 - **Account size** (currently set to a placeholder)
 - **Max risk per trade %** (doctrine default 2%)
@@ -502,7 +502,7 @@ def load_universe(include_watchlist=True):
 ### Stretch goals
 
 - **Crypto screener** (mirror us-screener for top-100 alts using CoinGecko + Binance)
-- **Options chain wiring for Phase 3** (currently dark — see CLAUDE.md PHASED RAMP)
+- **Options chain wiring for Phase 3** (currently dark — see AGENTS.md PHASED RAMP)
 - **Perp simulator** (Phase 3 unlock — leverage + liquidation math)
 - **Sector ETF correlation matrix** in Discovery panel
 - **Phase progression tracker** (count closed trades + R-multiple toward Phase 2 gate)
@@ -513,7 +513,7 @@ def load_universe(include_watchlist=True):
 
 ```
 Trading Advisor/
-├── CLAUDE.md                      # Doctrine + USER CONFIG (10 sections)
+├── AGENTS.md                      # Doctrine + USER CONFIG (10 sections)
 ├── PROJECT_LOG.md                 # This file
 ├── .gitignore                     # Excludes .env, dashboard.html, caches
 ├── watchlist.md                   # Source of truth for tracked tickers
@@ -521,7 +521,7 @@ Trading Advisor/
 ├── dashboard.html                 # Generated artifact (don't edit)
 ├── rules/
 │   ├── playbooks.md               # Named pre-approved setups (P1, P2, P3)
-│   └── risk-doctrine.md           # Operational expansion of CLAUDE.md §5-6
+│   └── risk-doctrine.md           # Operational expansion of AGENTS.md §5-6
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
@@ -554,7 +554,7 @@ Trading Advisor/
 
 ---
 
-## Doctrine summary (read `CLAUDE.md` for full text)
+## Doctrine summary (read `AGENTS.md` for full text)
 
 1. **Never fabricate a number.** Every price, indicator, IV, Greek, sentiment, fundamental must come from a tool call this session.
 2. **Always timestamp data.** Stale data is fine if labeled; silent staleness is not.
@@ -576,7 +576,7 @@ Trading Advisor/
 When opening this project in Claude Code (or any agent) for the first time:
 
 ```
-"Read PROJECT_LOG.md, CLAUDE.md, and CHANGELOG.md. Then check the .env files
+"Read PROJECT_LOG.md, AGENTS.md, and CHANGELOG.md. Then check the .env files
 for any missing API keys, run a test dashboard build, and tell me what's
 working and what's missing. Don't make any recommendations until I've
 confirmed the setup is complete."

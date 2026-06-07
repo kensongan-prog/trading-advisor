@@ -409,7 +409,7 @@ def cmd_regime(args, api_key):
     print(f"COMPOSITE SCORE: {score:+.1f}")
     print(f"REGIME READ:     {regime}")
     print()
-    print("Apply to recommendation logic per CLAUDE.md §4:")
+    print("Apply to recommendation logic per AGENTS.md §4:")
     print("  - RISK-OFF / CAUTIOUS  → bias toward defensive sectors (RGLD-type), avoid high-beta longs,")
     print("                            tighten R:R floors (prefer 2R+), shrink position sizes.")
     print("  - RISK-ON / CONSTRUCTIVE → standard sizing OK; high-beta/growth names viable per playbook P1.")

@@ -1,6 +1,6 @@
 ---
 name: us-fundamentals
-description: Fetch US equity fundamentals (P/E, P/B, ROE, margins, growth, balance sheet, analyst targets) AND earnings calendar (next earnings date with 24h-halt-window check, plus recent earnings history with beat/miss surprise %) via yfinance. REQUIRED before any US-equity recommendation that cites valuation, growth, or quality, and as part of every US pre-trade event-risk check (CLAUDE.md §5 24h pre-earnings halt).
+description: Fetch US equity fundamentals (P/E, P/B, ROE, margins, growth, balance sheet, analyst targets) AND earnings calendar (next earnings date with 24h-halt-window check, plus recent earnings history with beat/miss surprise %) via yfinance. REQUIRED before any US-equity recommendation that cites valuation, growth, or quality, and as part of every US pre-trade event-risk check (AGENTS.md §5 24h pre-earnings halt).
 ---
 
 # US Fundamentals & Earnings Calendar Skill
@@ -14,7 +14,7 @@ Trigger on any US-equity recommendation that needs:
 - **Growth** — revenue and earnings YoY / QoQ.
 - **Balance sheet health** — debt/equity, current ratio, cash position.
 - **Analyst consensus** — recommendation, target prices, implied upside.
-- **Earnings event-risk check** — mandatory per CLAUDE.md §5 (24h pre-earnings halt on new directional exposure).
+- **Earnings event-risk check** — mandatory per AGENTS.md §5 (24h pre-earnings halt on new directional exposure).
 - **Earnings track record** — beat/miss history is a quality signal.
 
 Do NOT use this skill for KLSE (use `klse-quote`), crypto, or non-US tickers. yfinance can resolve some international tickers but the data quality is inconsistent.
@@ -24,7 +24,7 @@ Do NOT use this skill for KLSE (use `klse-quote`), crypto, or non-US tickers. yf
 Two gaps closed by one skill:
 
 1. **US fundamentals** — Massive gives prices and indicators but no fundamentals; `us-news` gives sentiment but not the underlying business. Without fundamentals, every US thesis citing valuation or growth is "unverified."
-2. **US earnings calendar** — CLAUDE.md §5 forbids new directional exposure within 24h of earnings. Without an earnings-date source, this rule silently couldn't be enforced.
+2. **US earnings calendar** — AGENTS.md §5 forbids new directional exposure within 24h of earnings. Without an earnings-date source, this rule silently couldn't be enforced.
 
 yfinance covers both with no API key required.
 
@@ -56,10 +56,10 @@ python3 .claude/skills/us-fundamentals/us_fundamentals.py earnings --ticker NVDA
 Returns:
 - **Next earnings date** with hours-from-now math.
 - **EPS / revenue estimates** for the upcoming report.
-- **Event-window status**: explicit "WITHIN HALT WINDOW" / "outside halt window" / "earnings already passed" verdict aligned with CLAUDE.md §5.
+- **Event-window status**: explicit "WITHIN HALT WINDOW" / "outside halt window" / "earnings already passed" verdict aligned with AGENTS.md §5.
 - **Recent earnings history**: last 8 announced quarters with EPS estimate, reported EPS, and surprise %. A string of beats or misses is a quality / momentum signal.
 
-`--halt-window-hours` defaults to 24 (CLAUDE.md §5 default). Push to 48 for the stricter "Conservative" aggression profile.
+`--halt-window-hours` defaults to 24 (AGENTS.md §5 default). Push to 48 for the stricter "Conservative" aggression profile.
 
 ## Hard rules
 
@@ -86,9 +86,9 @@ For any US-equity recommendation, run in order:
 3. **`us-fundamentals fundamentals`** → valuation, quality, growth, analyst targets.
 4. **`us-fundamentals earnings`** → next earnings date + halt-window gate + history.
 5. **`us-news --hours 48 --min-relevance 0.3`** → sentiment + catalyst confluence.
-6. Confluence verdict per CLAUDE.md §4 (technicals + sentiment + fundamentals).
+6. Confluence verdict per AGENTS.md §4 (technicals + sentiment + fundamentals).
 7. Gate check per `rules/risk-doctrine.md` §7 — including the §5 earnings halt.
-8. Output in CLAUDE.md format with all four `Fetched (UTC)` timestamps cited.
+8. Output in AGENTS.md format with all four `Fetched (UTC)` timestamps cited.
 
 ## What this skill does NOT cover
 

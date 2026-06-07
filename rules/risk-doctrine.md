@@ -1,6 +1,6 @@
 # Risk Doctrine
 
-Operational expansion of CLAUDE.md Section 5–6. **These rules are not negotiable mid-trade.** If a rule blocks a setup, the setup loses — never the rule.
+Operational expansion of AGENTS.md Section 5–6. **These rules are not negotiable mid-trade.** If a rule blocks a setup, the setup loses — never the rule.
 
 ## 1. Sizing formula (show this math every time)
 
@@ -45,7 +45,7 @@ where `max_loss_per_contract = premium_paid` (long option / debit spread) or
 - Preferred: **≥ 2R** to TP1 with a runner targeting 3R+.
 - If the only way to hit 2R is to tighten the stop into noise, **do not take the trade**. Bad R:R is not fixed by hope.
 
-## 5. Asymmetric structure preference (Section 6 of CLAUDE.md, applied)
+## 5. Asymmetric structure preference (Section 6 of AGENTS.md, applied)
 
 Among structures expressing the same thesis, rank by:
 1. **Bounded max loss** in dollars (must be finite and known before entry).

@@ -1,6 +1,6 @@
 ---
 name: crypto-unlocks
-description: Check upcoming token unlock events for any crypto asset via Tokenomist.ai (formerly TokenUnlocks). Returns the next unlock date, type (cliff vs linear), estimated size, and a YES/NO on whether the unlock falls inside the doctrine's 48-hour halt window. REQUIRED before any new directional crypto position per CLAUDE.md §5 — entering a long inside the 48h pre-unlock window for an unlock > 1% of float is a doctrine violation.
+description: Check upcoming token unlock events for any crypto asset via Tokenomist.ai (formerly TokenUnlocks). Returns the next unlock date, type (cliff vs linear), estimated size, and a YES/NO on whether the unlock falls inside the doctrine's 48-hour halt window. REQUIRED before any new directional crypto position per AGENTS.md §5 — entering a long inside the 48h pre-unlock window for an unlock > 1% of float is a doctrine violation.
 ---
 
 # Crypto Token Unlocks Skill
@@ -20,7 +20,7 @@ Do NOT trigger for:
 
 ## Why this exists
 
-CLAUDE.md §5 (event-halt rule): **"Crypto: 48h before a scheduled token unlock > 1% of float"** — no new directional exposure. Without an unlock data source, every alt recommendation would silently violate this rule. This skill is the source of truth for the gate.
+AGENTS.md §5 (event-halt rule): **"Crypto: 48h before a scheduled token unlock > 1% of float"** — no new directional exposure. Without an unlock data source, every alt recommendation would silently violate this rule. This skill is the source of truth for the gate.
 
 ## Source
 
@@ -87,7 +87,7 @@ If the slug doesn't resolve, try the CoinGecko ID, then the lowercase coin name 
 
 ## Hard rules
 
-1. **If the next unlock is within 48 hours AND sizing is unknown (Pro-gated), treat as inside the halt window.** Per CLAUDE.md §5 doctrine: unknown defaults to halt, not to "probably small." NO-TRADE on new directional exposure; existing positions get a risk-doctrine review (consider trimming or hedging).
+1. **If the next unlock is within 48 hours AND sizing is unknown (Pro-gated), treat as inside the halt window.** Per AGENTS.md §5 doctrine: unknown defaults to halt, not to "probably small." NO-TRADE on new directional exposure; existing positions get a risk-doctrine review (consider trimming or hedging).
 
 2. **If the next unlock is within 48 hours AND sizing is < 1% of float**, technically it doesn't trigger the halt rule. BUT: state this explicitly in the recommendation, lower confidence one level, and note "supply event during trade — exit if price weakness coincides."
 
@@ -106,8 +106,8 @@ For any crypto recommendation, run in order:
 3. WebFetch on `coingecko.com/en/coins/{id}` → news.
 4. `crypto-derivatives snapshot` → funding + OI + L/S divergence.
 5. **`crypto-unlocks` per-token check** → 48h gate (THIS SKILL).
-6. Apply CLAUDE.md §5/§7 doctrine gates.
-7. Output in CLAUDE.md recommendation format with all `Fetched (UTC)` timestamps cited.
+6. Apply AGENTS.md §5/§7 doctrine gates.
+7. Output in AGENTS.md recommendation format with all `Fetched (UTC)` timestamps cited.
 
 ## What this skill does NOT cover
 

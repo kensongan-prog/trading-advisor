@@ -1,6 +1,6 @@
 ---
 name: macro-calendar
-description: US scheduled-macro-event calendar (FOMC, CPI, NFP/Employment Situation, PCE) with §5 halt-window enforcement. Returns the next event of each type with hours-until, lists upcoming events in any window, and checks whether a specific entry time falls inside a 12h or 24h halt window. REQUIRED before any new US-equity or US-options directional entry, per CLAUDE.md §5: "12h before FOMC / CPI / NFP". Without this skill, the §5 halt rule is unenforceable and the doctrine is unverified.
+description: US scheduled-macro-event calendar (FOMC, CPI, NFP/Employment Situation, PCE) with §5 halt-window enforcement. Returns the next event of each type with hours-until, lists upcoming events in any window, and checks whether a specific entry time falls inside a 12h or 24h halt window. REQUIRED before any new US-equity or US-options directional entry, per AGENTS.md §5: "12h before FOMC / CPI / NFP". Without this skill, the §5 halt rule is unenforceable and the doctrine is unverified.
 ---
 
 # US Macro Calendar Skill (FOMC / CPI / NFP / PCE)
@@ -20,9 +20,9 @@ Do NOT use this skill for:
 
 ## Why this exists
 
-CLAUDE.md §5 states unambiguously: **"Macro: 12h before FOMC / CPI / NFP"** — no new directional exposure within that window. The skill turns that rule from doctrine decoration into enforced behavior. Without it, every trade implicitly assumed "no macro event imminent," and recent history (Apr 2024 CPI shock, Jun 2024 surprise NFP) shows that's a real and unmodeled loss generator.
+AGENTS.md §5 states unambiguously: **"Macro: 12h before FOMC / CPI / NFP"** — no new directional exposure within that window. The skill turns that rule from doctrine decoration into enforced behavior. Without it, every trade implicitly assumed "no macro event imminent," and recent history (Apr 2024 CPI shock, Jun 2024 surprise NFP) shows that's a real and unmodeled loss generator.
 
-The §5 rule says 12h. This skill defaults to 12h but exposes a `--window-hours` flag (use 24h for the conservative-aggression profile per CLAUDE.md USER CONFIG, or for trades with high macro sensitivity like long-duration / RGLD-type names).
+The §5 rule says 12h. This skill defaults to 12h but exposes a `--window-hours` flag (use 24h for the conservative-aggression profile per AGENTS.md USER CONFIG, or for trades with high macro sensitivity like long-duration / RGLD-type names).
 
 ## Source
 

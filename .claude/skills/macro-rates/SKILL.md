@@ -15,7 +15,7 @@ Trigger this skill when a recommendation, watchlist sweep, or daily review needs
 - **Labor** — unemployment rate, last NFP delta.
 - **Dollar trend** — 30d move on the broad trade-weighted USD (EM/crypto/gold headwind/tailwind).
 - **Vol regime** — VIX level (option premium rich/cheap; equity risk-on/off).
-- **Composite regime read** — one-line verdict that should bias every recommendation per CLAUDE.md §4.
+- **Composite regime read** — one-line verdict that should bias every recommendation per AGENTS.md §4.
 
 Recommended cadence:
 - **Daily** before opening any new position (`snapshot` once).
@@ -27,7 +27,7 @@ Do NOT use for non-US macro (BNM, ECB, BOJ). Different sources needed for those.
 
 ## Why this exists
 
-CLAUDE.md §4 specifies confluence across {technicals + sentiment OR fundamentals OR flow}, but the doctrine also assumes regime-awareness: e.g., §5 says "12h before FOMC/CPI/NFP" no new exposure on macro names. Without a macro feed, regime context is unverified — every recommendation is implicitly assuming "macro is fine." This skill makes the macro state observable.
+AGENTS.md §4 specifies confluence across {technicals + sentiment OR fundamentals OR flow}, but the doctrine also assumes regime-awareness: e.g., §5 says "12h before FOMC/CPI/NFP" no new exposure on macro names. Without a macro feed, regime context is unverified — every recommendation is implicitly assuming "macro is fine." This skill makes the macro state observable.
 
 It also makes the doctrine's risk-on/off bias explicit. The `regime` subcommand outputs a composite read that should adjust position sizing and conviction in every recommendation downstream.
 

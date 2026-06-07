@@ -8,7 +8,7 @@ Each playbook is a contract: **conditions to enter, where the stop lives, where 
 
 ## Phase gating (read first)
 
-These playbooks are restricted by the **PHASED RAMP** block at the bottom of CLAUDE.md. Current state:
+These playbooks are restricted by the **PHASED RAMP** block at the bottom of AGENTS.md. Current state:
 
 - **Phase 1 (now)**: only **P1 SPOT** is live. P2 and P3 are DARK until the phase gate clears.
 - Re-read the ramp block before promoting yourself.
@@ -39,7 +39,7 @@ These playbooks are restricted by the **PHASED RAMP** block at the bottom of CLA
 - **Phase 1 (current):** SPOT LONG ONLY. No options of any kind, regardless of IV. This is the only setup live during the paper/spot ramp.
 - **Phase 2+:** Debit call spread also acceptable if IV is in the bottom third of 1Y range.
 
-**Status:** _Untested in this account. Phase 1 = paper trade until 20 closed trades logged with ≥0R cumulative expectancy. See ramp block in CLAUDE.md._
+**Status:** _Untested in this account. Phase 1 = paper trade until 20 closed trades logged with ≥0R cumulative expectancy. See ramp block in AGENTS.md._
 
 ---
 

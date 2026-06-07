@@ -12,7 +12,7 @@ Subcommands:
 
 Times in schedule.json are US Eastern (America/New_York); script normalizes to UTC for math.
 
-Per CLAUDE.md §5: 12-hour halt window before any FOMC / CPI / NFP scheduled event.
+Per AGENTS.md §5: 12-hour halt window before any FOMC / CPI / NFP scheduled event.
 This script ALSO treats PCE the same way (Fed's preferred inflation gauge).
 
 Usage:
@@ -38,7 +38,7 @@ except ImportError:
     ET = timezone(timedelta(hours=-4))
 
 
-DEFAULT_HALT_WINDOW_HOURS = 12  # CLAUDE.md §5 default
+DEFAULT_HALT_WINDOW_HOURS = 12  # AGENTS.md §5 default
 EXTENDED_HALT_WINDOW_HOURS = 24  # for Conservative aggression profile or high-conviction trades
 
 
@@ -214,7 +214,7 @@ def cmd_check(args):
     for hrs, ev, dt in sorted(in_halts):
         print(f"  - {ev['type']} on {dt.astimezone(ET).strftime('%Y-%m-%d %H:%M ET')}  ({fmt_hours(hrs)})  {ev.get('note','')}")
     print()
-    print("Doctrine action (per CLAUDE.md §5):")
+    print("Doctrine action (per AGENTS.md §5):")
     print("  - NO new directional exposure on US single-name equity within this window.")
     print("  - Defined-risk options structures only IF the event IS the thesis (currently DARK in Phase 1).")
     print("  - Existing positions: review and consider trim/hedge before event.")

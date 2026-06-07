@@ -51,7 +51,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-_(No changes since v1.2. Add entries here as you build, under one of the category headings below.)_
+_(No changes since v1.3. Add entries here as you build, under one of the category headings below.)_
 
 ### Added
 
@@ -64,6 +64,28 @@ _(No changes since v1.2. Add entries here as you build, under one of the categor
 ### Deprecated
 
 ### Security
+
+---
+
+## [v1.3] — 2026-06-07
+
+Cross-agent compatibility. The project now follows the `AGENTS.md` convention so Codex (and any other agent that adopts the same convention) can pick up the doctrine alongside Claude Code.
+
+### Changed
+
+- **Doctrine file renamed `CLAUDE.md` → `AGENTS.md`**, following the emerging cross-agent standard so Codex auto-loads it natively. `CLAUDE.md` remains as a one-line pointer file so Claude Code (which auto-loads `CLAUDE.md`) still finds the doctrine. All internal references (`§5`, `§6`, etc., across 22 files) updated to read "AGENTS.md".
+- `README.md` "Built with" section replaced by a "Supported agents" table covering Claude Code, Codex, and other agents that read `AGENTS.md`.
+- `AGENTS.md` opens with an agent-agnostic intro paragraph addressing whoever's reading (Claude Code, Codex, or similar) — instead of presuming a single platform.
+- `PROJECT_LOG.md` TL;DR rewritten as "an AI-coding-agent project (Claude Code, Codex, or compatible)" instead of "a Claude Code agent."
+
+### Added
+
+- README's `## Supported agents` table documents what works on each platform: Claude Code (primary, built here) and Codex (compatible via native `AGENTS.md` auto-load). Python code, dashboard, data integrations, and CLIs are platform-agnostic; only the agent orchestration layer differs.
+
+### Backward compatibility
+
+- Anyone with existing references to `CLAUDE.md` (forks, external links, notes) is unaffected — `CLAUDE.md` still exists as a pointer file and Claude Code still finds it.
+- The Python codebase has no naming changes — only docstring and comment references updated. No code paths break.
 
 ---
 
@@ -109,7 +131,7 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 ### Added
 
-- **Doctrine** — `CLAUDE.md` (10 sections) covering role/mission, hard rules, data sources, analytical framework, risk doctrine, asymmetric strategy construction, decision process, output format, calibration, and tone. Includes the PHASED RAMP from Phase 1 (paper + spot only) through Phase 3 (full doctrine).
+- **Doctrine** — `AGENTS.md` (10 sections) covering role/mission, hard rules, data sources, analytical framework, risk doctrine, asymmetric strategy construction, decision process, output format, calibration, and tone. Includes the PHASED RAMP from Phase 1 (paper + spot only) through Phase 3 (full doctrine).
 - **Replication guide** — `PROJECT_LOG.md` with cross-platform setup instructions, all six API key sign-up URLs (FRED, Alpha Vantage, Finnhub, Twelve Data, FMP, optional CoinGecko Pro), and known caveats from real operational experience.
 - **21 self-contained skills** under `.claude/skills/`:
   - **Data fetchers**: `macro-rates` (FRED), `macro-calendar` (curated FOMC/CPI/NFP/PCE), `us-news` (Alpha Vantage with budget queue), `us-fundamentals` (yfinance), `klse-quote` / `klse-history` / `klse-news` (Bursa Malaysia), `klse-refresh` / `klse-announcements` (Python-callable caches), `crypto-coingecko`, `crypto-derivatives` (Binance funding/OI), `crypto-unlocks` + `crypto-unlocks-cache` (§5 48h halt gate), `hyperliquid-flow`, `finnhub` (live US quotes), `twelve-data` (bulk historical), `fmp` (fundamentals).
@@ -152,7 +174,8 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 <!-- Link targets below point at the canonical public repo. If you maintain
      your own fork, update or delete these as appropriate for your setup. -->
-[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.2...HEAD
+[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.3...HEAD
+[v1.3]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.3
 [v1.2]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.2
 [v1.1]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.1
 [v1.0]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.0

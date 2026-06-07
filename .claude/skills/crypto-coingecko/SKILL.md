@@ -11,7 +11,7 @@ Trigger this skill on any crypto-related request:
 
 - A coin symbol (BTC, ETH, SOL, ONDO, etc.) or CoinGecko ID (`bitcoin`, `ondo-finance`).
 - Phrases like "is X overbought," "what's the sentiment on Y," "any recent news on Z."
-- Pre-trade confluence check on a crypto thesis (CLAUDE.md §4 requires sentiment + technicals).
+- Pre-trade confluence check on a crypto thesis (AGENTS.md §4 requires sentiment + technicals).
 - Multi-coin comparison: "BTC vs ETH vs SOL momentum."
 
 Do NOT use this skill for:
@@ -172,11 +172,11 @@ For any crypto recommendation, run in order:
 7. **`hyperliquid-flow asset --coin {COIN}`** or `compare` → on-chain positioning + venue divergence.
 8. **`crypto-unlocks` per-token check** → 48h supply-event halt gate.
 9. **Check `cg.py quote` dev stats**: a "trending alt" with 0 commits in 4 weeks is a major flag. Real projects ship code.
-10. Apply CLAUDE.md §5 risk doctrine. Note crypto-specific rules:
+10. Apply AGENTS.md §5 risk doctrine. Note crypto-specific rules:
    - Weekend gap risk: spot crypto stops can blow through overnight/weekend. Size down or cap loss with a defined sleeve allocation.
    - Funding rate / open-interest flush risk: not in CoinGecko free; flag as unverified.
-   - **Token unlocks within 48h** (CLAUDE.md §5 event halt rule): not directly in CoinGecko free — you'll need a separate unlock-schedule check (TokenUnlocks.app, or manual).
-7. Recommendation in CLAUDE.md format with all `Fetched (UTC)` timestamps cited.
+   - **Token unlocks within 48h** (AGENTS.md §5 event halt rule): not directly in CoinGecko free — you'll need a separate unlock-schedule check (TokenUnlocks.app, or manual).
+7. Recommendation in AGENTS.md format with all `Fetched (UTC)` timestamps cited.
 
 ## Hard rules
 
@@ -188,7 +188,7 @@ For any crypto recommendation, run in order:
 
 4. **Cross-check price against Massive for majors.** CoinGecko's price feed aggregates across exchanges; Massive uses different sources. Material disagreement (>1%) on a major like BTC = data-integrity issue, stop and investigate before trading.
 
-5. **Token-unlock event risk is NOT covered by this skill.** CLAUDE.md §5 requires checking unlocks within 48h of entry; this is a manual external check until a dedicated source is wired.
+5. **Token-unlock event risk is NOT covered by this skill.** AGENTS.md §5 requires checking unlocks within 48h of entry; this is a manual external check until a dedicated source is wired.
 
 ## What this skill does NOT cover
 

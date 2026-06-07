@@ -18,7 +18,7 @@ Do NOT use this skill for US tickers (use Alpha Vantage news once wired), crypto
 
 ## Why this exists
 
-CLAUDE.md Section 4 requires confluence across {technicals + sentiment OR fundamentals OR flow}. The `klse-quote` and `klse-history` skills cover price/fundamentals/technicals. This skill is the third leg — news, sentiment, and the event calendar — without which we cannot honor Section 5's event-halt rules ("no new directional exposure within 24h before earnings") on KLSE names.
+AGENTS.md Section 4 requires confluence across {technicals + sentiment OR fundamentals OR flow}. The `klse-quote` and `klse-history` skills cover price/fundamentals/technicals. This skill is the third leg — news, sentiment, and the event calendar — without which we cannot honor Section 5's event-halt rules ("no new directional exposure within 24h before earnings") on KLSE names.
 
 ## Two endpoints
 
@@ -123,7 +123,7 @@ For any KLSE recommendation, run in order:
 3. `klse-news` → sentiment + event calendar + earnings-window check.
 4. Confluence verdict: technicals + (sentiment OR fundamentals) align?
 5. Gate check per `rules/risk-doctrine.md` §7. Any unchecked box → NO-TRADE.
-6. Output in CLAUDE.md format with all three `Fetched (UTC)` timestamps cited.
+6. Output in AGENTS.md format with all three `Fetched (UTC)` timestamps cited.
 
 ## What this skill does NOT cover
 
