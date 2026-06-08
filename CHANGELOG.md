@@ -98,8 +98,16 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### In flight (as of 2026-06-08 end-of-session)
 
-- **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.env` after Reddit's developer-app review (2-4 weeks). Will cut as a PATCH once verified.
-- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags across the watchlist; v1.6.0's Contrarian Setups panel narrowed that to 2 actionable setups (CIFR, PURR). v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
+**🚢 v1.7.1 is staged locally but NOT yet pushed.** Commit `33d277c` + tag `v1.7.1` exist; `origin/main` is still at v1.7.0 (`11541c2`). No GitHub release for v1.7.1 yet. **To finish the ship:**
+```
+git push origin main && git push origin v1.7.1
+gh release create v1.7.1 --title "v1.7.1 — audit cleanup PATCH" --notes "$(awk '/^## \\[v1.7.1\\]/,/^---/' CHANGELOG.md | sed '1d;$d')"
+```
+v1.7.1 is an audit-cleanup PATCH from spinning up four parallel review agents (visual/CSS, formatting/TZ, doctrine/text, code health) and folding everything actionable they found. Headline operator-impacting fix: every absolute UTC timestamp on the dashboard now reformats into the viewer's browser timezone via `Intl.DateTimeFormat` — not just the v1.7.0 "Built at" stamp. See the v1.7.1 block below for the full list. The session was paused right at the "want me to push to main?" prompt.
+
+**Other carry-over threads (unchanged from v1.7.0):**
+- **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total). Will cut as a PATCH once verified.
+- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
 
 ### Added
 
