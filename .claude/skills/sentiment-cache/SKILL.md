@@ -1,6 +1,6 @@
 ---
 name: sentiment-cache
-description: LLM-score raw retail-sentiment data (from reddit-sentiment and stocktwits-sentiment caches) into a composite per-ticker sentiment read with contrarian flag. Uses OpenRouter free models (Gemma 4 31B IT primary, GPT-OSS 120B fallback) — no metered API spend. Output is the canonical sentiment.json that the dashboard reads. Step 2 of Phase A — consumes the raw fetchers, produces the §4 contrarian-filter signal. Manual by design — no automatic refresh, no cron.
+description: LLM-score raw retail-sentiment data (from reddit-sentiment and stocktwits-sentiment caches) into a composite per-ticker sentiment read with contrarian flag. Uses OpenRouter free models (Gemma 4 31B IT primary, GPT-OSS 120B fallback) — no metered API spend. Output is the canonical sentiment.json that the dashboard reads. Final leg of the retail-sentiment build — consumes the raw fetchers, produces the §4 contrarian-filter signal. Manual by design — no automatic refresh, no cron.
 ---
 
 # Sentiment Cache Skill

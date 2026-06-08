@@ -1467,11 +1467,13 @@ def _ago_span(dt):
 
 
 def fmt_fetched(iso_ts_or_str):
-    """Return '<span class="ago">X min ago</span> · 14:23 UTC' from an ISO timestamp.
+    """Return '<span class="ago">X min ago</span> · <span class="fetched-at-utc">14:23 UTC</span>'.
 
-    The relative-age span has a data-ts attribute; embedded JS ticks it every
-    15 seconds so the displayed age stays accurate across page reloads without
-    needing to rebuild the dashboard.
+    Both age and absolute clock are kept in the markup so they survive a stale page reload.
+    The relative-age span's text is recomputed every 15s via JS (tickAgo). The absolute UTC
+    span carries data-utc so the same Intl.DateTimeFormat reformatter that handles "Built at"
+    converts it to the viewer's local timezone on page load. Original UTC string is in the
+    tooltip via title="..." as a fallback.
     """
     if not iso_ts_or_str:
         return "—"
@@ -1483,11 +1485,16 @@ def fmt_fetched(iso_ts_or_str):
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         age_s = (datetime.now(timezone.utc) - dt).total_seconds()
+        utc_dt = dt.astimezone(timezone.utc)
         if age_s < 86400:
-            abs_str = dt.astimezone(timezone.utc).strftime("%H:%M UTC")
+            abs_str = utc_dt.strftime("%H:%M UTC")
         else:
-            abs_str = dt.astimezone(timezone.utc).strftime("%b %d %H:%M UTC")
-        return f'{_ago_span(dt)} · {abs_str}'
+            abs_str = utc_dt.strftime("%b %d %H:%M UTC")
+        iso_z = utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return (
+            f'{_ago_span(dt)} · '
+            f'<span class="fetched-at-utc" data-utc="{iso_z}" title="UTC: {abs_str}">{abs_str}</span>'
+        )
     except Exception:
         return "—"
 
@@ -1596,8 +1603,8 @@ td.dim { color: var(--dim); }
 .b-red { background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid var(--red); }
 .b-yellow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
 .b-dim { background: var(--panel-2); color: var(--dim); border: 1px solid var(--bord); }
-.sent-fade { background: rgba(248, 113, 113, 0.08); }
-.sent-buy { background: rgba(74, 222, 128, 0.08); }
+.sent-fade { background: rgba(248, 113, 113, 0.16); border-left: 3px solid rgba(248, 113, 113, 0.6); }
+.sent-buy { background: rgba(74, 222, 128, 0.16); border-left: 3px solid rgba(74, 222, 128, 0.6); }
 .sent-flag-fade { color: var(--red); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
 .sent-flag-buy { color: var(--green); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
 .pm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
@@ -1616,7 +1623,7 @@ td.dim { color: var(--dim); }
 
 .cs-explainer { font-size: 11px; margin: 4px 0 12px; padding: 8px 12px; background: var(--bg); border-left: 3px solid var(--yellow); border-radius: 0 4px 4px 0; line-height: 1.5; }
 .cs-rows { display: flex; flex-direction: column; gap: 10px; }
-.cs-row { background: var(--bg); border: 1px solid var(--bord); border-radius: 4px; padding: 10px 12px; display: grid; grid-template-columns: 30px 60px 70px 60px 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.cs-row { background: var(--bg); border: 1px solid var(--bord); border-radius: 4px; padding: 10px 12px; display: grid; grid-template-columns: 30px 60px 70px 60px 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
 .cs-badge { font-size: 18px; text-align: center; }
 .cs-flag { font-weight: bold; font-size: 10px; letter-spacing: 0.5px; text-align: center; }
 .cs-ticker { font-weight: bold; font-size: 13px; }
@@ -1829,18 +1836,36 @@ function tickAgo() {
 tickAgo();
 setInterval(tickAgo, 15000);  // tick every 15s
 
-// Header "Built at" timestamp — reformat the UTC ISO into the viewer's browser TZ.
-// Future-proof for when the dashboard is built on one host and viewed on another.
+// Reformat absolute UTC timestamps into the viewer's browser TZ everywhere they appear.
+// Each element opts in via a class + data-utc attribute. The original ET/UTC text is
+// preserved in the tooltip via title="..." so the source-of-truth is still visible.
 (function() {
-  const fmt = new Intl.DateTimeFormat([], {
+  const fmtFull = new Intl.DateTimeFormat([], {
     year: 'numeric', month: 'short', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, timeZoneName: 'short',
+  });
+  const fmtShort = new Intl.DateTimeFormat([], {
+    month: 'short', day: '2-digit', weekday: 'short',
+    hour: '2-digit', minute: '2-digit',
     hour12: false, timeZoneName: 'short',
   });
   document.querySelectorAll('.built-at[data-utc]').forEach(el => {
     const dt = new Date(el.dataset.utc);
     if (isNaN(dt.getTime())) return;
-    el.textContent = fmt.format(dt);
+    el.textContent = fmtFull.format(dt);
+  });
+  document.querySelectorAll('.event-time[data-utc]').forEach(el => {
+    const dt = new Date(el.dataset.utc);
+    if (isNaN(dt.getTime())) return;
+    el.textContent = fmtShort.format(dt);
+  });
+  // fetched-at chips (rendered by fmt_fetched in Python): the absolute clock portion
+  // is a child <span class="fetched-at-utc" data-utc="..."> that we reformat in place.
+  document.querySelectorAll('.fetched-at-utc[data-utc]').forEach(el => {
+    const dt = new Date(el.dataset.utc);
+    if (isNaN(dt.getTime())) return;
+    el.textContent = fmtShort.format(dt);
   });
 })();
 
@@ -3170,7 +3195,7 @@ def render_html(ctx):
     for ev in cal.get("events", [])[:10]:
         halt_class = " halt" if ev["in_halt"] else ""
         when = f"{ev['hours_until']:.1f}h" if ev["hours_until"] < 24 else f"{ev['hours_until']/24:.1f}d"
-        events_html += f'<div class="event{halt_class}"><span class="type">{ev["type"]}</span> {html.escape(ev["date_et"])}<br><span class="when">in {when}{" 🛑" if ev["in_halt"] else ""}</span></div>'
+        events_html += f'<div class="event{halt_class}"><span class="type">{ev["type"]}</span> <span class="event-time" data-utc="{html.escape(ev.get("date_iso",""), quote=True)}" title="ET (source): {html.escape(ev["date_et"], quote=True)}">{html.escape(ev["date_et"])}</span><br><span class="when">in {when}{" 🛑" if ev["in_halt"] else ""}</span></div>'
     halt_panel = f"""
 <div class="panel">
   <h2>Macro Halt-Window Timeline <span class="stale">static schedule (loaded {fmt_fetched(now_dt.isoformat())}) · verified through {html.escape(str(cal.get('verified_through','—')))}</span></h2>
@@ -3686,10 +3711,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                   Equity                       Crypto
         BTFD 🩸  drop ≤ −7%, vol ≥ 2.5×, RSI≤30   drop ≤ −12%, vol ≥ 3×,   RSI≤25
         BTFD 💧  drop ≤ −4%, vol ≥ 1.8×, RSI≤40   drop ≤ −7%,  vol ≥ 2×,   RSI≤35
-        BTFD 📉  drop ≤ −2%, vol ≥ 1.3×           drop ≤ −4%,  vol ≥ 1.5×
+        BTFD ⬇️  drop ≤ −2%, vol ≥ 1.3×           drop ≤ −4%,  vol ≥ 1.5×
         STR  🚀  rip  ≥ +7%, vol ≥ 2.5×, RSI≥70   rip  ≥ +12%, vol ≥ 3×,   RSI≥75
         STR  💸  rip  ≥ +4%, vol ≥ 1.8×, RSI≥60   rip  ≥ +7%,  vol ≥ 2×,   RSI≥65
-        STR  📈  rip  ≥ +2%, vol ≥ 1.3×           rip  ≥ +4%,  vol ≥ 1.5×
+        STR  ⬆️  rip  ≥ +2%, vol ≥ 1.3×           rip  ≥ +4%,  vol ≥ 1.5×
 
         Cross-signals layered on top (boosts/warnings, do not change tier classification):
           - 🧊 BUY sentiment on a BTFD-flagged name = high-conviction capitulation
@@ -3701,28 +3726,31 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         flow} before any entry. The panel surfaces *where to look*, not *what to do*.
         """
         # Tier thresholds, indexed by asset_class and direction
+        # Tier emoji choice: 🩸/💧/⬇️ for dips, 🚀/💸/⬆️ for rips. The arrow emojis
+        # (⬇️/⬆️) avoid colliding with 📉/📈 used by the retail-sentiment column for
+        # BEAR/BULL — both can appear in the same row and 📉/📈 would be ambiguous.
         BTFD = {
             "equity": [
                 ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
                 ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
-                ("📉 LIGHT DIP",    "btfd-light",-2.0, 1.3, None),
+                ("⬇️ LIGHT DIP",   "btfd-light",-2.0, 1.3, None),
             ],
             "crypto": [
                 ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
                 ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
-                ("📉 LIGHT DIP",    "btfd-light", -4.0,  1.5, None),
+                ("⬇️ LIGHT DIP",   "btfd-light", -4.0,  1.5, None),
             ],
         }
         STR_TIERS = {
             "equity": [
                 ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
                 ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
-                ("📈 LIGHT RIP", "str-light", 2.0, 1.3, None),
+                ("⬆️ LIGHT RIP","str-light", 2.0, 1.3, None),
             ],
             "crypto": [
                 ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
                 ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
-                ("📈 LIGHT RIP", "str-light", 4.0,  1.5, None),
+                ("⬆️ LIGHT RIP","str-light", 4.0,  1.5, None),
             ],
         }
 
@@ -4234,7 +4262,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{atr_pct or 0}" title="Daily Average True Range as % of price — typical 1-day move. Used for stop-distance sizing.">{fmt_num(atr_pct,2)}%</td>
   <td class="num" data-sort="{v50 or 0}">{fmt_pct(v50,1)}</td>
   <td class="num" data-sort="{v200 or 0}">{fmt_pct(v200,1)}</td>
-  <td class="dim" data-sort="{ne}">{ne} <span class="dim">{days_to_e}</span></td>
+  <td class="dim" data-sort="{ne}" title="Earnings calendar date as reported by yfinance — company-local calendar date (typically NY for US listings), not a timestamp. The 'in Xd' is days from today UTC.">{ne} <span class="dim">{days_to_e}</span></td>
   <td class="num {news_cls}" data-sort="{news_sort}">{news_txt}</td>
   {sentiment_cell(tk)[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
@@ -4777,6 +4805,11 @@ def _refresh_sentiment_for(tickers, label):
             if r.returncode != 0:
                 print(f"[sentiment] {name} step failed (rc={r.returncode}): {r.stderr.strip()[:200]}", flush=True)
                 ok = False
+        except subprocess.TimeoutExpired:
+            print(f"[sentiment] {name} step timed out (>300s) — partial cache may be left; "
+                  f"re-run `python3 .claude/skills/dashboard/dashboard.py --refresh-sentiment` to retry.",
+                  flush=True)
+            ok = False
         except Exception as e:
             print(f"[sentiment] {name} step crashed: {e}", flush=True)
             ok = False
@@ -5080,7 +5113,10 @@ def main():
         skip_sentiment=args.no_sentiment,
     )
     if args.open:
-        subprocess.run(["open", str(OUTPUT_HTML)])
+        try:
+            subprocess.run(["open", str(OUTPUT_HTML)], check=False)
+        except Exception as e:
+            print(f"  (warning: could not auto-open dashboard: {type(e).__name__}: {e})", file=sys.stderr)
     return 0
 
 

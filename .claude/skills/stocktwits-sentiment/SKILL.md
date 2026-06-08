@@ -1,6 +1,6 @@
 ---
 name: stocktwits-sentiment
-description: Manually refresh retail sentiment for watchlist tickers from StockTwits — per-ticker bull%/bear% from user-tagged messages, message volume, watcher count. Free public API (no auth). Step 1 sibling of `reddit-sentiment` in Phase A; together they form the raw retail-sentiment layer that LLM scoring consumes. Manual by design — no automatic refresh, no cron. Covers US equities + crypto (with `.X` suffix); KLSE returns 404 gracefully and stores as no-coverage.
+description: Manually refresh retail sentiment for watchlist tickers from StockTwits — per-ticker bull%/bear% from user-tagged messages, message volume, watcher count. Free public API (no auth). Sibling of `reddit-sentiment`; together they form the raw retail-sentiment layer that LLM scoring (in `sentiment-cache`) consumes. Manual by design — no automatic refresh, no cron. Covers US equities + crypto (with `.X` suffix); KLSE returns 404 gracefully and stores as no-coverage.
 ---
 
 # StockTwits Sentiment Skill
@@ -20,7 +20,7 @@ Do NOT trigger for:
 
 ## Why this exists
 
-StockTwits is the practical retail-sentiment alternative to FinTwit. The X API ($100/mo basic, $5k+ for real data) was deprioritized in our Phase A plan; StockTwits provides the same signal class (bull% / bear% / message velocity from retail traders) via a free, unauthenticated public API.
+StockTwits is the practical retail-sentiment alternative to FinTwit. The X API ($100/mo basic, $5k+ for real data) was deprioritized during the build; StockTwits provides the same signal class (bull% / bear% / message velocity from retail traders) via a free, unauthenticated public API.
 
 Many StockTwits messages carry **user-tagged sentiment** (Bullish / Bearish badge the poster sets when composing). Roughly 40-60% of messages are tagged on liquid US names. Untagged messages will be LLM-scored downstream by the `sentiment-cache` layer (next step).
 
@@ -88,7 +88,7 @@ KLSE entries store `no_coverage: true` with empty messages — distinguishes "we
 
 ## What this skill is NOT
 
-- Not a sentiment classifier — LLM scoring layers on top (next step in Phase A)
+- Not a sentiment classifier — LLM scoring layers on top (see `sentiment-cache` skill)
 - Not a real-time stream — manual refresh only
 - Not a substitute for `us-news` — that's professional + Alpha Vantage sentiment; this is retail self-tagged
 - Not authoritative on its own — the bull% can be gamed; combine with Reddit + LLM-scored body text for confluence

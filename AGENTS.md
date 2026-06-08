@@ -138,8 +138,10 @@ flow}. A single signal is not a trade.
       gate.
     - **🧊 BUY** — `bear_score ≥ 0.80` AND `conviction ≥ 0.70`. Retail
       capitulation. Action: **upgrade conviction one tier on already-
-      constructive P1 setups** (RSI 35-50, base building, holding key MA).
-      Does NOT fire on a falling knife — constructive structure is the gate.
+      constructive P1 setups** (RSI 35-55 AND -5% ≤ vs SMA50 ≤ +10%,
+      base building, holding key MA). Note: P1 entry band is 35-50; the
+      35-55 window is the *sentiment-aligned* band specifically. Does
+      NOT fire on a falling knife — constructive structure is the gate.
 - **What retail sentiment is NOT:** a trade signal on its own. A FADE flag
   with no extended technicals is just a popular stock in a bull market.
   A BUY flag with no constructive P1 is just doom-posting at lower lows.

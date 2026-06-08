@@ -313,27 +313,6 @@ def reddit_search(sub, query, token, lookback_days=DEFAULT_LOOKBACK_DAYS, timeou
         return posts, err
     return reddit_search_rss(sub, query, lookback_days=lookback_days, timeout=timeout)
 
-    children = data.get("data", {}).get("children", []) or []
-    posts = []
-    cutoff_ts = time.time() - (lookback_days * 86400)
-    for child in children:
-        d = child.get("data", {}) or {}
-        created = d.get("created_utc") or 0
-        if created < cutoff_ts:
-            continue
-        body = d.get("selftext", "") or ""
-        posts.append({
-            "id": d.get("id"),
-            "subreddit": d.get("subreddit") or sub,
-            "title": (d.get("title") or "").strip(),
-            "score": int(d.get("score") or 0),
-            "num_comments": int(d.get("num_comments") or 0),
-            "created_utc": int(created),
-            "url": f"https://reddit.com{d.get('permalink', '')}",
-            "selftext_excerpt": body[:500].strip(),
-        })
-    return posts, None
-
 
 # ── Aggregate per ticker ───────────────────────────────────────────────────
 def fetch_ticker(ticker, token, lookback_days=DEFAULT_LOOKBACK_DAYS, delay=DEFAULT_DELAY_SEC, verbose=True):

@@ -186,9 +186,10 @@ def _apply_deltas(current, prior_snapshot):
                 if m.get("yes_price") is not None:
                     prior_prices[key] = m["yes_price"]
 
-    for cat_data in current["categories"].values():
-        for ev in cat_data["events"]:
-            for m in ev["markets"]:
+    # Defensive — schema can drift; never crash mid-delta calc when current fetch succeeded
+    for cat_data in (current.get("categories") or {}).values():
+        for ev in (cat_data.get("events") or []):
+            for m in (ev.get("markets") or []):
                 key = (ev.get("slug"), m.get("question"))
                 prior_yes = prior_prices.get(key)
                 if prior_yes is not None and m.get("yes_price") is not None:

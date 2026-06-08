@@ -1,6 +1,6 @@
 ---
 name: polymarket-events
-description: Manually refresh prediction-market implied probabilities for macro + crypto + geopolitical events from Polymarket's Gamma public-search API. No auth, no rate limit at retail-research scale. Returns the current probability + resolution date for tracked event categories (Fed rate cuts, recession, inflation, BTC/ETH price targets, geopolitical risk). Phase B of the retail-sentiment/confluence build — feeds the dashboard's Event Probabilities panel and the §5 halt-window doctrine. Manual by design — no automatic refresh, no cron.
+description: Manually refresh prediction-market implied probabilities for macro + crypto + geopolitical events from Polymarket's Gamma public-search API. No auth, no rate limit at retail-research scale. Returns the current probability + resolution date for tracked event categories (Fed rate cuts, recession, inflation, BTC/ETH price targets, geopolitical risk). Macro-confluence leg of the §4 sentiment stack — feeds the dashboard's Event Probabilities panel and the §5 halt-window doctrine. Manual by design — no automatic refresh, no cron.
 ---
 
 # Polymarket Events Skill

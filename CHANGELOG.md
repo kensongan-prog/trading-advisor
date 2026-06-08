@@ -115,6 +115,30 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v1.7.1] — 2026-06-08
+
+Audit + cleanup PATCH. Spun up four parallel review agents (visual/CSS, formatting/TZ, doctrine/text, code health) and fixed everything actionable they found, plus dead code from the v1.5.0 Reddit OAuth refactor that the code-health agent caught.
+
+The headline operator-impacting fix: every absolute UTC timestamp on the dashboard now reformats into the viewer's browser timezone (continuing the v1.7.0 "Built at" pattern across `fmt_fetched()` chips, macro halt-window event times, and the row-level fetched-at stamps).
+
+### Changed
+
+- **Doctrine RSI band internal consistency.** AGENTS.md §4 narrative prose said BUY-aligned sentiment requires `RSI 35-50` (the P1 entry band) while the same section's threshold table said `RSI 35-55` (the sentiment-aligned band). Clarified the prose to match the table and explicitly distinguish the two bands.
+- **Phase A/B/C/D naming retired from active skill descriptions.** Renamed "Phase A" / "Phase B" references in `reddit-sentiment`, `stocktwits-sentiment`, `sentiment-cache`, `polymarket-events`, and `dashboard` SKILL.md files to descriptive prose ("retail-sentiment build", "macro-confluence leg", etc.). The build phases were transitional labels during the v1.5-v1.6 buildout and collided cognitively with AGENTS.md §7's operational ramp "Phase 1 / 2 / 3" naming. Historical CHANGELOG entries left intact as a record.
+- **BTFD/STR LIGHT-tier emoji.** Renamed `📉 LIGHT DIP` → `⬇️ LIGHT DIP` and `📈 LIGHT RIP` → `⬆️ LIGHT RIP`. The old emojis collided with the retail-sentiment column's `📈 BULL` / `📉 BEAR` badges; same row could show both with opposite meanings. Arrows are unambiguous.
+- **Sentiment contrarian-cell tint.** `.sent-fade` and `.sent-buy` background opacity bumped from 0.08 (near-invisible against dark theme) to 0.16, plus a 0.6-opacity left border to match `.b-red` / `.b-green` visual weight.
+
+### Fixed
+
+- **Contrarian Setups grid misalignment.** `.cs-row` CSS declared 6 grid columns but each row HTML had 7 children — the 7th (`.cs-tech`) was wrapping to a second grid row, breaking visual alignment of stats and tech-context cells. Grid template fixed to 7 columns.
+- **Viewer-timezone reformat now covers every absolute UTC timestamp, not just "Built at".** Macro halt-window event times (rendered as `Jun 8 (Wed) 14:00 ET` server-side) and every `fmt_fetched()` chip across the dashboard now embed a `data-utc` attribute and get rewritten in the viewer's local timezone via `Intl.DateTimeFormat` on page load. ET / UTC source-of-truth strings preserved as tooltips so the original numbers are still discoverable.
+- **Earnings-date column tooltip clarifies timezone semantics.** Adds a `title` explaining the date is the company's local calendar date (typically NY for US listings), not a UTC instant. The `(Xd)` countdown is days from today UTC.
+- **Reddit-sentiment dead code removed.** ~20 lines of unreachable code in `reddit_search()` left over from the v1.5.0 OAuth/RSS refactor that I forgot to delete (caught by the code-health audit agent).
+- **Polymarket `_apply_deltas` defensive `.get()`.** The delta-calc loop was using direct dict-indexing on `current["categories"]["events"]["markets"]` — would `KeyError` mid-pass if the Polymarket schema shifts or a prior snapshot is malformed, even though the current fetch succeeded. Now uses `.get(..., {})` / `.get(..., [])` defaults.
+- **Subprocess error handling.** `subprocess.run(["open", str(OUTPUT_HTML)])` at end of dashboard build now wrapped in try/except so a failed `open` doesn't crash the post-render cleanup. Sentiment auto-fill subprocess gets `subprocess.TimeoutExpired` handled separately from generic exceptions so the operator sees an actionable message when the OpenRouter call exceeds the 300s budget.
+
+---
+
 ## [v1.7.0] — 2026-06-08
 
 Price-volume event detection + viewer-timezone dashboard. The dashboard gains a new top-of-page "🩸 BTFD / 🚀 STR" panel that surfaces watchlist names showing large 24h moves on outsized volume — Buy The F***ing Dip candidates for entry review and Sell The Rip candidates for profit-take/trim review. Asset-class-aware thresholds (crypto wider since it moves 2-3× bigger normally). Cross-signals from the existing sentiment, halt-window, and earnings infrastructure layer in inline as boosts/warnings without overriding the tier classification.

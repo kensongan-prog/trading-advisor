@@ -90,15 +90,9 @@ Crypto uses a simpler bias read (no formal P1 playbook for crypto spot).
 4. **The watchlist is edited in `watchlist.md`, not the dashboard.** The dashboard renders what's in the file; edits go in the file.
 5. **If a skill source fails**, the section shows "data unavailable" with the error. No fabrication.
 
-## What this skill does NOT do (yet — Phase B)
+## Known limits (mostly addressed in later releases)
 
-- **Inline watchlist add/remove** — edit `watchlist.md` directly
-- **Risk simulator** (paste hypothetical entry, get doctrine verdict)
-- **Journal conversion** (PROSPECTUS → LIVE with one click writes back to .md)
-- **Alpha Vantage news per ticker** with budget-aware caching
-- **klsescreener fundamentals** in the KLSE grid (WebFetch can't be called from Python; run `klse-quote` separately)
-
-These are explicitly out of scope for Phase A. Add when you find them missed.
+This section was once a roadmap of intentional omissions. Most have since shipped — but the dashboard is still **read-only by design** for the source-of-truth files (`watchlist.md`, `journal/*.md`). The remove-row button and prospectus action buttons generate CLI commands you paste into your terminal; they do not write to disk directly. Edits to thesis lines, the doctrine, and watchlist additions all happen via the corresponding CLI skills (`wl.py`, `j.py`), not via the dashboard's HTML.
 
 ## Maintenance
 

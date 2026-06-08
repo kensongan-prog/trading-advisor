@@ -1,6 +1,6 @@
 ---
 name: reddit-sentiment
-description: Manually refresh retail sentiment for watchlist tickers from Reddit (r/wallstreetbets, r/stocks, r/investing, r/CryptoCurrency, r/Bursa_Malaysia, per-coin subs, etc.) into a local JSON cache that the dashboard reads. Returns mention count, velocity vs 7d baseline, and the top posts per ticker. Step 1 of Phase A retail-sentiment build — raw fetch only; LLM sentiment scoring layers on top (see `sentiment-cache` skill). Manual by design — no automatic refresh, no cron. REQUIRED before any §4 retail-sentiment contrarian read.
+description: Manually refresh retail sentiment for watchlist tickers from Reddit (r/wallstreetbets, r/stocks, r/investing, r/CryptoCurrency, r/Bursa_Malaysia, per-coin subs, etc.) into a local JSON cache that the dashboard reads. Returns mention count, velocity vs 7d baseline, and the top posts per ticker. Raw-fetch leg of the retail-sentiment build — sibling of `stocktwits-sentiment`; both feed the LLM scorer in `sentiment-cache`. Manual by design — no automatic refresh, no cron. REQUIRED before any §4 retail-sentiment contrarian read.
 ---
 
 # Reddit Sentiment Skill
