@@ -450,8 +450,14 @@ def fetch_fundamentals(tickers, force=False):
     print(f"  [fund] fetching {len(to_fetch)} tickers (FMP primary, yfinance fallback; budget {budget['used']}/{fmp.DAILY_CAP if fmp.is_configured() else 'n/a'})…",
           flush=True)
     fetched = 0; fmp_used = 0; yf_used = 0
+    _loop_t0 = time.time()  # defensive: timing reference for XProtect post-mortem
     for i, t in enumerate(to_fetch):
         try:
+            # Defensive trace — if XProtect kills the process mid-loop, this last-printed
+            # line tells us exactly which ticker + call # + elapsed time triggered it.
+            # See notes/learned.md for the 2026-06-07 investigation that showed the
+            # real load is 1-2 yfinance calls per run, not 130.
+            print(f"  [fund] [{i+1}/{len(to_fetch)}] {t} (yf_used={yf_used}, elapsed {time.time()-_loop_t0:.1f}s)", flush=True)
             # Try FMP first
             prof, perr = (fmp.profile(t) if fmp.is_configured() else (None, "FMP not configured"))
             rats, rerr = (fmp.ratios_ttm(t) if fmp.is_configured() else (None, "FMP not configured"))

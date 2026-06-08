@@ -4,15 +4,27 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
-### 2026-06-07 — macOS XProtect now blocks per-ticker yfinance too (not just bulk)
+### 2026-06-07 — macOS XProtect popup on dashboard build — investigated, unreproducible at real load
 
-**Symptom:** "Malicious Script Blocked" popup during `dashboard.py --with-discovery` runs. The screener subprocess gets killed silently; dashboard.html still renders using cached candidates.
+**Symptom:** Occasional "Malicious Script Blocked" popup during `dashboard.py --with-discovery`. Screener subprocess may exit early; dashboard.html still renders from cached `candidates.json`.
 
-**Root cause:** Apple has tightened XProtect signatures over 2026. Our original mitigation ("don't use yf.download bulk, per-ticker is safe") is no longer fully accurate. The screener's fundamentals fallback path (`screener.py:420`, `yf.Ticker(t).info` in a loop for ~130 non-megacap symbols) now matches an XProtect signature too.
+**What we initially thought:** XProtect tightened signatures to block per-ticker yfinance loops; ~130 sequential `yf.Ticker(t).info` calls in `screener.py:420` were matching a new signature.
 
-**Status (as of 2026-06-07):** Investigation pending. See CHANGELOG.md `[Unreleased] → In flight` for current state. Likely fix is Option B (migrate fundamentals to FMP-only, accept tech-only screening for non-megacap symbols).
+**What the data actually showed (diagnostic 2026-06-07):**
+- 2 / 10 / 50 / 130 sequential `yf.Ticker(t).info` calls all completed clean — no XProtect kill, no errors, RC=0.
+- `fetch_fundamentals` is only called for **P1-passing candidates**, not the full 188-name universe. Real load is typically **1-2 yfinance.info calls per screener run**, not 130. Today's cache showed exactly 2 P1 passers (CMI, SPY) → 1 yfinance fallback.
+- So the "130 rapid calls trip XProtect" hypothesis was based on an upper-bound that never actually happens.
 
-**Don't:** add new code paths that loop `yf.Ticker(...)` over 50+ symbols.
+**Plausible actual cause of the popup:**
+- A one-off XProtect signature push from Apple that fired transiently then got revised
+- A different process on the operator's Mac, not the screener
+- An intermittent borderline match
+
+**What's in place now:** Defensive `print(f"  [fund] [{i+1}/{len(to_fetch)}] {t} ...")` line at the top of the fundamentals loop (`screener.py` ~line 453). If XProtect fires again, the last-printed line tells us exactly which ticker, which call number, and elapsed time — actionable diagnostic data instead of guessing.
+
+**What NOT to do:** don't ship a fundamentals-path migration to FMP-only "as a precaution." The real load is ~1-2 yfinance calls; the fix would solve a phantom and lose Q+V tagging for non-megacaps.
+
+**If it happens again:** capture the terminal output (the new defensive log), check whether the popup names a specific script path, and revisit. Update this entry, don't preemptively rewrite code.
 
 ---
 

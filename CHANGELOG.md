@@ -51,22 +51,10 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-### In flight (as of 2026-06-07)
-
-**XProtect re-blocking screener (yfinance fundamentals fallback path)** — macOS XProtect has tightened signatures over 2026; per-ticker `yf.Ticker(t).info` calls in a loop (~130 non-megacap symbols in `screener.py:420`) now match a blocked pattern, not just the bulk `yf.download()` we already disabled. Investigation paused mid-discussion.
-
-Next step: run the Option C diagnostic (test whether 5/10/50 sequential yfinance calls trigger XProtect) to confirm whether it's rate-based or signature-based. Then either:
-- **Option A** (if rate-based): add throttling + cooldown — ~15 min
-- **Option B** (if signature-based): migrate fundamentals to FMP-only, accept tech-only screening for non-megacap symbols — ~1 hr, recommended
-- See conversation around the diagnostic decision for full context.
-
-The screener still fails gracefully — `dashboard.html` rebuilds from cached `candidates.json` when the subprocess dies. Operator-visible impact is stale Q+V tags for ~130 names until fix ships.
-
-Also: see `notes/learned.md` entry for this gotcha so future sessions know the landscape without re-discovering it.
-
 ### Added
 
-- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state. AGENTS.md now points new sessions at `notes/learned.md` so known landmines don't need re-discovering. Demonstrated by capturing the XProtect investigation above as an in-flight note.
+- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state. AGENTS.md now points new sessions at `notes/learned.md` so known landmines don't need re-discovering.
+- Defensive trace logging in `screener.py` fundamentals loop — prints `[fund] [i/N] {ticker} (yf_used=N, elapsed Xs)` on every iteration so if a process dies mid-loop (XProtect, OOM, network), the last-printed line tells us exactly which ticker and call number triggered it. Cost: ~one extra log line per P1-passer (typically 1-5 per run).
 
 ### Changed
 
@@ -79,6 +67,10 @@ Also: see `notes/learned.md` entry for this gotcha so future sessions know the l
 ### Deprecated
 
 ### Security
+
+### Investigated, no action
+
+- **XProtect popup during dashboard build (reported 2026-06-07)** — Diagnostic showed 130 sequential `yf.Ticker(t).info` calls complete cleanly with no XProtect interference. Further analysis revealed `fetch_fundamentals` is only called for P1-passing candidates (typically 1-5 per run), not the full 188-name universe — the "130 yfinance calls" estimate that drove the initial concern was an upper bound that never occurs in practice. Likely cause of the original popup: a transient XProtect signature update from Apple, a different process, or an intermittent match. No fix shipped; defensive trace logging added to capture actionable data if it recurs. See `notes/learned.md` for the full investigation writeup.
 
 ---
 
