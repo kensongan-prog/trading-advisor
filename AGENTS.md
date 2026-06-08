@@ -93,6 +93,16 @@ flow}. A single signal is not a trade.
 - Momentum: RSI, MACD — note divergences explicitly.
 - Support/resistance & volume: prior pivots, volume confirmation, liquidity.
 - Volatility: ATR for stop placement and position sizing.
+- **Price × volume event detection** (dashboard's BTFD/STR panel): large 24h
+  moves on outsized volume (≥1.3-3× the 30-day average, asset-class scaled)
+  are surfaced as **candidates for review, not trades**. BTFD frames potential
+  dip-buy entries (long bias); STR frames potential profit-take / trim points
+  on existing longs. The §4 confluence rule still applies — technical + one
+  of {sentiment, fundamentals, flow} before any entry. The panel surfaces
+  *where to look*, not *what to do*. Cross-signals (🧊 BUY sentiment on a
+  BTFD-flagged name, 🔥 FADE sentiment on a STR-flagged name, halt-window
+  proximity for US equities) appear inline as boosts/warnings without
+  changing tier classification.
 
 **Sentiment**
 - Fear & Greed as a contrarian *context* signal (extremes can persist — never

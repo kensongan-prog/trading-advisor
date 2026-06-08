@@ -1626,6 +1626,27 @@ td.dim { color: var(--dim); }
 .cs-tech { font-variant-numeric: tabular-nums; color: var(--yellow); font-size: 11px; padding: 2px 6px; background: rgba(251, 191, 36, 0.08); border-radius: 3px; }
 .cs-action { grid-column: 1 / -1; font-size: 11px; color: var(--text); padding-top: 6px; border-top: 1px dashed var(--bord); margin-top: 4px; }
 .cs-rationale { grid-column: 1 / -1; font-size: 10px; line-height: 1.5; }
+
+/* BTFD / STR price×volume setups panel */
+.bs-section { margin-top: 10px; }
+.bs-section-head { font-weight: bold; font-size: 12px; color: var(--text); margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--bord); }
+.bs-rows { display: flex; flex-direction: column; gap: 6px; }
+.bs-row { display: grid; grid-template-columns: 130px 60px 50px 1fr auto; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 4px; font-size: 11px; background: var(--bg); border: 1px solid var(--bord); }
+.bs-tier { font-weight: bold; font-size: 11px; }
+.bs-ticker { font-weight: bold; font-size: 12px; }
+.bs-class { color: var(--dim); font-size: 10px; text-transform: uppercase; }
+.bs-name { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-stats { font-variant-numeric: tabular-nums; color: var(--text); }
+.bs-tech { font-variant-numeric: tabular-nums; }
+.bs-cross { font-size: 10px; }
+.boost-up { color: var(--green); font-weight: bold; font-size: 10px; padding: 1px 4px; background: rgba(74,222,128,0.12); border-radius: 3px; }
+.event-warn { color: var(--yellow); font-weight: bold; font-size: 10px; padding: 1px 4px; background: rgba(251,191,36,0.12); border-radius: 3px; margin-left: 4px; }
+.btfd-cap   { border-left: 3px solid var(--red); }
+.btfd-real  { border-left: 3px solid rgba(248,113,113,0.5); }
+.btfd-light { border-left: 3px solid rgba(248,113,113,0.25); }
+.str-blow   { border-left: 3px solid var(--green); }
+.str-real   { border-left: 3px solid rgba(74,222,128,0.5); }
+.str-light  { border-left: 3px solid rgba(74,222,128,0.25); }
 .prospectus { background: var(--panel-2); padding: 12px; border-radius: 6px;
   border-left: 3px solid var(--accent); margin-bottom: 8px; }
 .prospectus .head { font-weight: bold; }
@@ -1807,6 +1828,21 @@ function tickAgo() {
 }
 tickAgo();
 setInterval(tickAgo, 15000);  // tick every 15s
+
+// Header "Built at" timestamp — reformat the UTC ISO into the viewer's browser TZ.
+// Future-proof for when the dashboard is built on one host and viewed on another.
+(function() {
+  const fmt = new Intl.DateTimeFormat([], {
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, timeZoneName: 'short',
+  });
+  document.querySelectorAll('.built-at[data-utc]').forEach(el => {
+    const dt = new Date(el.dataset.utc);
+    if (isNaN(dt.getTime())) return;
+    el.textContent = fmt.format(dt);
+  });
+})();
 
 // Watchlist remove — prompt for required reason, copy `wl.py remove` command to clipboard.
 // Dashboard is static HTML so we can't write to disk; this is the copy-then-paste pattern
@@ -3039,6 +3075,9 @@ def render_html(ctx):
     # ── Header ─────
     now_dt = datetime.now(timezone.utc)
     now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    now_iso_utc = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # for JS to re-format in viewer's TZ
+    # Server-side local string kept as a fallback if JS is disabled. Whatever the build host's
+    # tz is — likely UTC — gets shown until JS reformats it.
     now_local_str = now_dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
     budget_bar = _budget_bar_html()
     macro = ctx["macro_regime"]; macro_age = ctx["macro_regime_age"]
@@ -3635,6 +3674,211 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             cls = "dim"
         return (txt, f"{age:.1f}", cls)
 
+    def render_btfd_str_panel():
+        """Surface watchlist names showing large % moves on outsized volume.
+        BTFD = Buy The F***ing Dip (entry candidate review, long bias).
+        STR  = Sell The Rip (profit-take / trim candidate review on existing longs;
+               occasionally a Phase 2+ short candidate).
+
+        Asset-class-aware thresholds — crypto moves 2-3x bigger normally, so its
+        tiers are calibrated wider:
+
+                  Equity                       Crypto
+        BTFD 🩸  drop ≤ −7%, vol ≥ 2.5×, RSI≤30   drop ≤ −12%, vol ≥ 3×,   RSI≤25
+        BTFD 💧  drop ≤ −4%, vol ≥ 1.8×, RSI≤40   drop ≤ −7%,  vol ≥ 2×,   RSI≤35
+        BTFD 📉  drop ≤ −2%, vol ≥ 1.3×           drop ≤ −4%,  vol ≥ 1.5×
+        STR  🚀  rip  ≥ +7%, vol ≥ 2.5×, RSI≥70   rip  ≥ +12%, vol ≥ 3×,   RSI≥75
+        STR  💸  rip  ≥ +4%, vol ≥ 1.8×, RSI≥60   rip  ≥ +7%,  vol ≥ 2×,   RSI≥65
+        STR  📈  rip  ≥ +2%, vol ≥ 1.3×           rip  ≥ +4%,  vol ≥ 1.5×
+
+        Cross-signals layered on top (boosts/warnings, do not change tier classification):
+          - 🧊 BUY sentiment on a BTFD-flagged name = high-conviction capitulation
+          - 🔥 FADE sentiment on a STR-flagged name = high-conviction exhaustion
+          - Halt-window proximity (FOMC/CPI/NFP within 12-24h) = ⚠ event-risk warning
+
+        Per AGENTS.md doctrine: this panel generates CANDIDATES FOR REVIEW, not trades.
+        The §4 confluence rule still applies — technical + one of {sentiment, fundamentals,
+        flow} before any entry. The panel surfaces *where to look*, not *what to do*.
+        """
+        # Tier thresholds, indexed by asset_class and direction
+        BTFD = {
+            "equity": [
+                ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
+                ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
+                ("📉 LIGHT DIP",    "btfd-light",-2.0, 1.3, None),
+            ],
+            "crypto": [
+                ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
+                ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
+                ("📉 LIGHT DIP",    "btfd-light", -4.0,  1.5, None),
+            ],
+        }
+        STR_TIERS = {
+            "equity": [
+                ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
+                ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
+                ("📈 LIGHT RIP", "str-light", 2.0, 1.3, None),
+            ],
+            "crypto": [
+                ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
+                ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
+                ("📈 LIGHT RIP", "str-light", 4.0,  1.5, None),
+            ],
+        }
+
+        def classify(chg, vol_ratio, rsi, asset_kind):
+            """Return (tier_label, tier_cls, direction) or (None, None, None)."""
+            if chg is None or vol_ratio is None:
+                return None, None, None
+            # BTFD: chg is negative
+            for label, cls, thr_chg, thr_vol, thr_rsi in BTFD[asset_kind]:
+                if chg <= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi <= thr_rsi)):
+                    return label, cls, "BTFD"
+            # STR: chg is positive
+            for label, cls, thr_chg, thr_vol, thr_rsi in STR_TIERS[asset_kind]:
+                if chg >= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi >= thr_rsi)):
+                    return label, cls, "STR"
+            return None, None, None
+
+        # Pre-build halt-window lookup (any FOMC/CPI/NFP within 24h flags every US/equity row)
+        macro_events_local = (ctx.get("macro_calendar") or {}).get("events", []) or []
+        in_24h_halt = any(ev.get("hours_until") is not None and 0 <= ev["hours_until"] <= 24 for ev in macro_events_local)
+        next_macro_event = None
+        for ev in macro_events_local:
+            hrs = ev.get("hours_until")
+            if hrs is not None and hrs > 0:
+                next_macro_event = ev
+                break
+
+        rows_btfd = []
+        rows_str = []
+
+        def collect(ticker, asset_class, asset_kind, chg, vol_ratio, rsi, atr_pct, vs50, vs200, name="—", earnings_warning=False):
+            label, cls, direction = classify(chg, vol_ratio, rsi, asset_kind)
+            if not label:
+                return
+            # Cross-signals
+            sent = (ctx.get("sentiment") or {}).get(ticker.upper())
+            sent_flag = ((sent or {}).get("composite") or {}).get("contrarian_flag") if sent else None
+            sent_boost = ""
+            if direction == "BTFD" and sent_flag == "BUY":
+                sent_boost = ' <span class="boost-up">+ 🧊 BUY sentiment</span>'
+            elif direction == "STR" and sent_flag == "FADE":
+                sent_boost = ' <span class="boost-up">+ 🔥 FADE sentiment</span>'
+            elif sent_flag:
+                # Mention sentiment even if direction-aligned isn't true (informational)
+                sent_boost = f' <span class="dim" style="font-size:10px">· sentiment: {sent_flag}</span>'
+
+            # Event-risk warnings (US-equity halt windows only — KLSE & crypto don't use macro-calendar)
+            event_warn = ""
+            if asset_kind == "equity" and asset_class == "us":
+                if in_24h_halt and next_macro_event is not None:
+                    event_warn = f' <span class="event-warn">⚠ {html.escape(next_macro_event.get("type","event"))} in {next_macro_event["hours_until"]:.0f}h</span>'
+                if earnings_warning:
+                    event_warn += ' <span class="event-warn">⚠ earnings within 24h</span>'
+
+            atr_mult = (abs(chg) / atr_pct) if (atr_pct and atr_pct > 0) else None
+
+            # Technical context line — where is price relative to key MAs?
+            tech_ctx = []
+            if vs50 is not None:
+                tech_ctx.append(f"{vs50:+.1f}% vs SMA50")
+            if vs200 is not None and asset_kind != "crypto":  # crypto SMA200 less universal
+                tech_ctx.append(f"{vs200:+.1f}% vs SMA200")
+            tech_ctx_str = " · ".join(tech_ctx) if tech_ctx else ""
+
+            rsi_str = f"RSI {rsi:.0f}" if rsi is not None else "RSI —"
+            atr_mult_str = f"{atr_mult:.1f}× ATR" if atr_mult is not None else ""
+
+            row_html = (
+                f'<div class="bs-row {cls}">'
+                f'  <span class="bs-tier">{label}</span>'
+                f'  <span class="bs-ticker">{html.escape(ticker)}</span>'
+                f'  <span class="bs-class">{asset_class}</span>'
+                f'  <span class="bs-name dim">{html.escape((name or "")[:28])}</span>'
+                f'  <span class="bs-stats">{chg:+.1f}% · vol {vol_ratio:.1f}× · {rsi_str} {("· " + atr_mult_str) if atr_mult_str else ""}</span>'
+                f'  <span class="bs-tech dim">{tech_ctx_str}</span>'
+                f'  <span class="bs-cross">{sent_boost}{event_warn}</span>'
+                f'</div>'
+            )
+            if direction == "BTFD":
+                rows_btfd.append((label.startswith("🩸"), abs(chg), row_html))  # capitulation first, then by drop size
+            else:
+                rows_str.append((label.startswith("🚀"), chg, row_html))
+
+        # US equities
+        for entry in ctx.get("watchlist", {}).get("us", []):
+            tk = entry["ticker"]
+            t = (ctx.get("us_data") or {}).get(tk, {}) or {}
+            price = t.get("price")
+            atr_pct = (t.get("atr14") / price * 100) if (t.get("atr14") and price) else None
+            # Earnings within 24h check
+            ne = t.get("next_earnings")
+            earn_warn = False
+            if ne:
+                try:
+                    de_h = (datetime.fromisoformat(ne).replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 3600
+                    earn_warn = (0 <= de_h <= 24)
+                except Exception:
+                    pass
+            collect(tk, "us", "equity", t.get("change_pct"), t.get("vol_ratio"), t.get("rsi14"),
+                    atr_pct, t.get("vs_sma50_pct"), t.get("vs_sma200_pct"),
+                    name=t.get("name") or "—", earnings_warning=earn_warn)
+        # KLSE
+        for entry in ctx.get("watchlist", {}).get("klse", []):
+            tk = entry["ticker"]
+            t = (ctx.get("klse_data") or {}).get(tk, {}) or {}
+            price = t.get("price")
+            atr_pct = (t.get("atr14") / price * 100) if (t.get("atr14") and price) else None
+            collect(tk, "klse", "equity", t.get("change_pct"), t.get("vol_ratio"), t.get("rsi14"),
+                    atr_pct, t.get("vs_sma50_pct"), t.get("vs_sma200_pct"),
+                    name=t.get("name") or "—")
+        # Crypto — uses 24h CoinGecko change and Binance/CG-derived vol_ratio
+        for entry, r in zip(ctx.get("watchlist", {}).get("crypto", []), ctx.get("crypto_rows", [])):
+            tk = entry["ticker"]
+            ind = (ctx.get("crypto_indicators") or {}).get(tk.upper(), {}) or {}
+            chg = r.get("chg_24h")
+            vol_ratio = ind.get("vol_ratio")
+            rsi = ind.get("rsi14")
+            atr_pct = ind.get("atr_pct")
+            price = ind.get("price") or r.get("price")
+            s50 = ind.get("sma50")
+            vs50 = ((price / s50 - 1) * 100) if (price and s50) else None
+            collect(tk, "crypto", "crypto", chg, vol_ratio, rsi, atr_pct, vs50, None,
+                    name=r.get("name") or tk)
+
+        # Sort: tier severity first, then magnitude
+        rows_btfd.sort(key=lambda x: (not x[0], -x[1]))  # capitulations first, then by drop size desc
+        rows_str.sort(key=lambda x: (not x[0], -x[1]))   # blow-offs first, then by rip size desc
+
+        def render_section(title_emoji, title_text, rows, empty_msg):
+            if not rows:
+                return f'<div class="bs-section"><div class="bs-section-head">{title_emoji} {title_text}</div><div class="dim" style="padding:6px 0">{empty_msg}</div></div>'
+            return (
+                f'<div class="bs-section">'
+                f'<div class="bs-section-head">{title_emoji} {title_text} <span class="dim" style="font-size:10px">({len(rows)} candidate{"s" if len(rows)!=1 else ""})</span></div>'
+                f'<div class="bs-rows">' + "".join(r[2] for r in rows) + '</div>'
+                f'</div>'
+            )
+
+        btfd_html = render_section("🩸", "BTFD candidates — large drops on volume",  rows_btfd,
+                                   "No watchlist names showing dip + volume signature today.")
+        str_html  = render_section("🚀", "STR candidates — large rallies on volume", rows_str,
+                                   "No watchlist names showing rip + volume signature today.")
+
+        return (
+            f'<div class="panel">'
+            f'<h2>🩸 BTFD / 🚀 STR — Price × Volume Setups <span class="stale">large moves on outsized volume across the watchlist</span></h2>'
+            f'<div class="cs-explainer dim">'
+            f'  Names showing large 24h moves on volume meaningfully above their 30-day average. <b>Candidates for review, not trades.</b> '
+            f'  BTFD frames potential dip-buy entries on long bias; STR frames potential profit-take or trim points on existing longs. '
+            f'  Per §4, sentiment/news/flow confluence still required before any entry. Cross-signal boosts (🧊 BUY, 🔥 FADE, halt windows) shown inline.'
+            f'</div>'
+            f'{btfd_html}'
+            f'{str_html}'
+            f'</div>'
+        )
+
     def render_contrarian_setups_panel():
         """Find watchlist names where the retail-sentiment contrarian flag (🔥 FADE / 🧊 BUY)
         aligns with the underlying technical state. This is the actionable §4 confluence read:
@@ -4204,7 +4448,21 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     crypto_regime_grid = ctx.get("crypto_regime", {}) or {}
     def render_crypto_grid():
         rows = []
-        for idx, (entry, r) in enumerate(zip(ctx["watchlist"]["crypto"], ctx["crypto_rows"])):
+        # BUGFIX: ctx["crypto_rows"] comes back from CoinGecko in market-cap order, NOT watchlist
+        # order. The naïve zip() paired the wrong rows (BNB's row got BTC's data, etc.) and the
+        # live-quote button picked up data-crypto-symbol from a different coin. Build a symbol→row
+        # index and look up by the watchlist entry's ticker instead.
+        _rows_by_sym = {(r.get("symbol") or "").upper(): r for r in ctx["crypto_rows"]}
+        _pairs = []
+        for entry in ctx["watchlist"]["crypto"]:
+            tk = entry["ticker"].upper()
+            r = _rows_by_sym.get(tk)
+            if r is None:
+                # Fall back to a stub row so the grid still renders something legible
+                r = {"symbol": tk, "name": tk, "price": None, "chg_24h": None, "chg_7d": None,
+                     "chg_30d": None, "market_cap": None, "volume": None}
+            _pairs.append((entry, r))
+        for idx, (entry, r) in enumerate(_pairs):
             fnd = ctx["crypto_funding"].get(r.get("symbol", entry["ticker"]).upper() + "USDT", {})
             badge, label, reason = crypto_status(r, fnd)
             badge_cls = {"🟢": "b-green", "🔴": "b-red", "🟡": "b-yellow", "⚪": "b-dim", "❓": "b-dim"}[badge]
@@ -4330,7 +4588,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 <div class="container">
   <div class="header">
     <h1>📊 Trading Advisor — Dashboard</h1>
-    <div class="meta">Built {now_str} (local: {now_local_str}) · {budget_bar} · <span class="refresh-btn" onclick="navigator.clipboard.writeText('{refresh_cmd}'); this.textContent='Copied — run in terminal';">↻ Refresh</span></div>
+    <div class="meta">Built <span class="built-at" data-utc="{now_iso_utc}">{now_str}</span> <span class="dim" style="font-size:11px">(server-local fallback: {now_local_str})</span> · {budget_bar} · <span class="refresh-btn" onclick="navigator.clipboard.writeText('{refresh_cmd}'); this.textContent='Copied — run in terminal';">↻ Refresh</span></div>
   </div>
   {strip}
   {regime_panel}
@@ -4339,6 +4597,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   {prospectus_panel}
   {sim_panel}
   {render_contrarian_setups_panel()}
+  {render_btfd_str_panel()}
   {us_panel}
   {news_panel}
   {klse_panel}

@@ -98,8 +98,8 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### In flight (as of 2026-06-08 end-of-session)
 
-- **Reddit OAuth upgrade pending.** Same status as v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.env` after Reddit's developer-app review (2-4 weeks). Will cut as v1.6.1 once verified.
-- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags across the watchlist; v1.6.0's Contrarian Setups panel narrowed that to 2 actionable setups (CIFR, PURR). Want a few weeks of operator use across changing market regimes to confirm both the sentiment thresholds and the alignment thresholds (RSI > 70 / > 8% above SMA50 for FADE; RSI 35-55 / -5% to +10% for BUY) are calibrated correctly.
+- **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.env` after Reddit's developer-app review (2-4 weeks). Will cut as a PATCH once verified.
+- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags across the watchlist; v1.6.0's Contrarian Setups panel narrowed that to 2 actionable setups (CIFR, PURR). v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
 
 ### Added
 
@@ -115,7 +115,29 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
-## [v1.6.0] — 2026-06-08
+## [v1.7.0] — 2026-06-08
+
+Price-volume event detection + viewer-timezone dashboard. The dashboard gains a new top-of-page "🩸 BTFD / 🚀 STR" panel that surfaces watchlist names showing large 24h moves on outsized volume — Buy The F***ing Dip candidates for entry review and Sell The Rip candidates for profit-take/trim review. Asset-class-aware thresholds (crypto wider since it moves 2-3× bigger normally). Cross-signals from the existing sentiment, halt-window, and earnings infrastructure layer in inline as boosts/warnings without overriding the tier classification.
+
+Two operator-reported bugs fixed in the same release. The crypto grid's live-quote button was returning the wrong coin's quote — a `zip(watchlist, crypto_rows)` pairing bug where CoinGecko market-cap order didn't match watchlist declaration order. The dashboard's "Built at" timestamp was anchored to UTC instead of the viewer's local timezone — now reformatted in-browser via `Intl.DateTimeFormat`, future-proof for when the dashboard is built on one host and viewed from another.
+
+### Added
+
+- **🩸 BTFD / 🚀 STR — Price × Volume Setups panel.** New dashboard panel between Contrarian Setups and the US grid. Surfaces watchlist names showing large 24h moves on outsized volume (≥30-day average), with three severity tiers per direction. Asset-class-aware thresholds — crypto wider since it moves 2-3× bigger normally.
+  - **BTFD candidates** (potential dip-buy entry review): 🩸 CAPITULATION (equity -7%/2.5×vol/RSI≤30; crypto -12%/3×/RSI≤25), 💧 REAL DIP (equity -4%/1.8×/RSI≤40; crypto -7%/2×/RSI≤35), 📉 LIGHT DIP (equity -2%/1.3×; crypto -4%/1.5×).
+  - **STR candidates** (potential profit-take / trim review on existing longs): symmetric thresholds — 🚀 BLOW-OFF, 💸 REAL RIP, 📈 LIGHT RIP.
+  - Each row shows: tier badge, ticker, asset class, actual %/vol/RSI/ATR-multiple, technical context (vs SMA50/SMA200), and inline cross-signal boosts/warnings — 🧊 BUY sentiment on a BTFD-flagged name, 🔥 FADE sentiment on a STR-flagged name, halt-window proximity (FOMC/CPI/NFP within 24h), earnings within 24h.
+  - First run on the watchlist: 4 LIGHT DIP candidates (MRVL -16.7%, PURR -10.1%, RYDE -9.8%, 7241.KL -2.5%). Notable: PURR's dip arrives on a name that already had a 🔥 FADE sentiment flag — the price action is confirming the contrarian read.
+- **AGENTS.md §4 Technical subsection** gains a brief mention of the BTFD/STR detector — frames it as a "where to look" tool that generates candidates for review, with confluence still required before any entry.
+
+### Changed
+
+- **Crypto grid now displays in watchlist declaration order** (BTC, ETH, SOL, BNB, XRP, HBAR, HYPE, ENA) instead of CoinGecko's market-cap order. The previous order was a side-effect of the underlying API response and was the root cause of the live-quote-mismatch bug below.
+- **Dashboard "Built at" timestamp now reformats in the viewer's browser timezone** via `Intl.DateTimeFormat`. Static-HTML-compatible: the UTC ISO is embedded as a data attribute, JS replaces the text on page load. Future-proof for when the dashboard is built on one host (e.g. UTC server) and viewed from another (e.g. GMT+8). Server-local fallback preserved as small dim text in parentheses.
+
+### Fixed
+
+- **Crypto live-quote button returned the wrong coin's quote.** Bug: the grid did `zip(watchlist["crypto"], crypto_rows)` but `crypto_rows` came back from CoinGecko in market-cap order, not watchlist order — so the row labeled "BTC" was paired with ETH's indicator data, "ETH" got SOL's, etc. The 🔄 button's `data-crypto-symbol` carried the wrong symbol and the fetched quote came back for the wrong coin. Fix: build a symbol→row index from `crypto_rows` and look up each watchlist entry by ticker so every row's button reliably carries its own coin's symbol. (Reported by operator.)
 
 Phase D — sentiment × technical alignment. The doctrine's §4 contrarian filter is now operationalized as a top-of-page dashboard panel that surfaces only the watchlist names where retail sentiment flags coincide with the underlying technical state. Pure sentiment flags without technical alignment stay informational (per-ticker Retail column); they're no longer presented as setups. The §4 doctrine gains an explicit three-leg framing — professional news (additive), retail forums (contrarian filter), prediction markets (additive macro confluence) — making clear that the three sentiment layers answer categorically different questions and must not be collapsed into a single number.
 
