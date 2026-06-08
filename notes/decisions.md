@@ -4,6 +4,16 @@ Append-only log of why we did things the way we did. Newest at top. Read this wh
 
 ---
 
+### 2026-06-08 — Adopted full semver (MAJOR.MINOR.PATCH) mid-project
+
+After v1.4 shipped, operator pointed out that several recent "minor" releases were actually patches: v1.2 was a README clone-URL typo fix that didn't deserve a MINOR slot. Under our old two-level scheme (`MAJOR.MINOR`), small fixes burned MINOR numbers, making the version signal noisier than it should have been.
+
+Switched to standard `MAJOR.MINOR.PATCH`. Decision rules + edge cases codified upfront in CHANGELOG.md so future release calls don't depend on in-the-moment judgment. PATCH = backward-compat with no new capability and no mental-model shift. MINOR = new capability or mental-model shift. MAJOR = past recommendations re-classified or existing operator setup breaks silently.
+
+**Historical tags not renumbered.** v1.2 stays as it shipped; renumbering would break GitHub release links, tag references, and anyone watching the repo. The "v1.2 would have been v1.1.1" observation lives in CHANGELOG.md as a historical note.
+
+**First semver release: v1.4.1** (this entry's release — pure docs change, no behavior). Next functional release will be v1.5.0.
+
 ### 2026-06-08 — CLAUDE.md + AGENTS.md include auto-bootstrap instructions
 
 Operator asked how to simplify the per-session bootstrap ritual. Three options considered:

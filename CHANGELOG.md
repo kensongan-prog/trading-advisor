@@ -6,14 +6,59 @@ All notable changes to this project are recorded here.
 
 ## Versioning policy
 
-This project uses a **two-level scheme**: `MAJOR.MINOR`.
+This project uses **semantic versioning**: `MAJOR.MINOR.PATCH`.
 
-| Bump | When | Examples |
+| Bump | When | Real examples |
 |---|---|---|
-| **MINOR** (e.g. v1.0 → v1.1) | Backward-compatible additions, bug fixes, small features, optimization, documentation updates, new data sources for existing functionality, threshold tuning | Adding a new column to a grid; fixing a calculation bug; tuning a cache TTL; adding a tooltip; documenting a new caveat |
-| **MAJOR** (e.g. v1.x → v2.0) | Doctrine changes, breaking interface changes, new asset class, phase unlock mechanic changes, architectural rewrites, new top-level skill that other skills depend on | Adding options trading support (Phase 3 unlock); changing the Risk Simulator's gate count; rewriting the cache layer; flipping `--with-discovery` default behavior |
+| **PATCH** (e.g. v1.4 → v1.4.1) | Bug fix, doc typo, defensive logging, dependency bump, investigation outcome, README clarity, link rot, refactor with no behavior change, doctrine rephrasing that doesn't change rules | v1.2 (README clone URL fix); a future "Investigated, no action" audit entry; defensive trace logging |
+| **MINOR** (e.g. v1.4 → v1.5) | New capability appears (skill, panel, field, command, convention); the mental model an operator holds about the system shifts; new data source for existing functionality; meaningful optimization | v1.1 (Risk Sim size field); v1.3 (AGENTS.md cross-agent rename); v1.4 (auto-bootstrap + notes/ folder); adding a dashboard panel |
+| **MAJOR** (e.g. v1.x → v2.0.0) | Doctrine §1-10 change that re-classifies past recommendations; breaking change to a CLI signature, data file format, or SKILL.md contract; existing operator setup would silently break or behave differently | A future §5 risk cap change from 2% to 1%; renaming `wl.py add` to `wl.py register`; flipping `--with-discovery` default behavior |
 
-Versions are tagged in git as `vX.Y` (e.g. `v1.0`, `v1.1`, `v2.0`) and mirrored as GitHub releases.
+### Decision rules
+
+**Pick PATCH when ALL of these are true:**
+- The change is backward-compatible AND
+- No new user-facing capability is added AND
+- The mental model an operator holds about the system doesn't change
+
+**Pick MINOR when EITHER:**
+- A new capability appears (skill, panel, field, command, convention), OR
+- The mental model shifts (operators now think about the system differently)
+
+**Pick MAJOR when EITHER:**
+- A past recommendation would be re-classified under the new rules, OR
+- An existing operator's setup would silently break or behave differently
+
+### Edge cases (resolved upfront so we don't argue at release time)
+
+| Situation | Bump |
+|---|---|
+| Defensive logging added, no user-facing change | PATCH |
+| "Investigated, no action" audit entry | No release needed alone; ride with whatever's next |
+| Doc-only typo / clarification / link fix | PATCH |
+| Doc-only addition that teaches operators something new | MINOR |
+| Multiple small fixes batched in one release | Single PATCH (e.g. 3 fixes → v1.4.1, not v1.4.3) |
+| Doctrine rule change | MINOR (or MAJOR if past recommendations get re-classified) |
+| Doctrine rephrasing that doesn't change rules | PATCH |
+| Optimization with no behavior change | PATCH |
+| Optimization that meaningfully changes runtime characteristics | MINOR |
+
+### Release-cut threshold (when to publish at all)
+
+Cut a release when **EITHER**:
+- `[Unreleased]` contains a real fix users need (any PATCH), OR
+- `[Unreleased]` accumulates enough to be worth reading (typically 1-3 MINOR items or 3-5 PATCH items), OR
+- You're taking a break and want a clean checkpoint.
+
+**Don't** cut a release when:
+- You haven't shipped functional changes (only in-flight notes or non-user-facing `notes/` updates)
+- You're mid-experiment
+
+### Historical note
+
+Versions **v1.0 through v1.4** used the older two-level `MAJOR.MINOR` scheme. v1.2 (README clone URL fix) would have been v1.1.1 under the current rules. We adopted full semver from **v1.4.1 / v1.5** onward. Historical tags are not renumbered — `v1.2` stays as it shipped to preserve link integrity.
+
+Versions are tagged in git as `vX.Y.Z` (e.g. `v1.4.1`, `v1.5.0`, `v2.0.0`) and mirrored as GitHub releases. The `.0` PATCH suffix is explicit (write `v1.5.0`, not `v1.5`) so versions sort lexically the way humans read them.
 
 ---
 
@@ -45,13 +90,13 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 **None of these steps are required to use the project.** They're conveniences for operators who want a public or backed-up release history.
 
-**Doctrinal rule:** if you are not sure whether a change is MAJOR or MINOR, ask the operator (or, if you are the operator, sit with the question for a moment). **Never silently break a published interface or doctrine.**
+**Doctrinal rule:** if you are not sure whether a change is MAJOR, MINOR, or PATCH, ask the operator (or, if you are the operator, sit with the question for a moment). **Never silently break a published interface or doctrine.**
 
 ---
 
 ## [Unreleased]
 
-_(No changes since v1.4. Add entries here as you build, under one of the category headings below.)_
+_(No changes since v1.4.1. Add entries here as you build, under one of the category headings below.)_
 
 ### Added
 
@@ -64,6 +109,18 @@ _(No changes since v1.4. Add entries here as you build, under one of the categor
 ### Deprecated
 
 ### Security
+
+---
+
+## [v1.4.1] — 2026-06-08
+
+Versioning policy update. The project now uses full semver (`MAJOR.MINOR.PATCH`) instead of two-level `MAJOR.MINOR`. Pure docs change — no behavior, no code.
+
+### Changed
+
+- **Versioning policy** in `CHANGELOG.md` rewritten as `MAJOR.MINOR.PATCH` (semver). Decision rules, edge cases, and release-cut threshold codified upfront so future release calls don't depend on judgment-in-the-moment. PATCH releases (e.g. v1.4.1) are now distinct from MINOR releases (v1.5.0) — small fixes no longer burn MINOR slots. Historical tags v1.0 through v1.4 are not renumbered; v1.2 (README clone URL fix) would have been v1.1.1 under the new rules but stays as it shipped to preserve link integrity.
+- `README.md` Changelog section gains a one-line mention of semver.
+- `notes/decisions.md` records why we adopted semver mid-project (sharp operator question after v1.4 noticed several minor releases were really patches).
 
 ---
 
@@ -196,7 +253,8 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 <!-- Link targets below point at the canonical public repo. If you maintain
      your own fork, update or delete these as appropriate for your setup. -->
-[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.4...HEAD
+[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.4.1...HEAD
+[v1.4.1]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.4.1
 [v1.4]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.4
 [v1.3]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.3
 [v1.2]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.2

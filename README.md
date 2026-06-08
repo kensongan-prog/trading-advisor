@@ -156,7 +156,7 @@ It then orients with a 3-line summary (current version / last shipped change / a
 
 ## Changelog
 
-Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses a `MAJOR.MINOR` scheme: minor bumps (e.g. v1.0 → v1.1) for backward-compatible changes; major bumps (v1.x → v2.0) for doctrine or interface-breaking changes. Operators are encouraged to update the changelog when making meaningful changes — git, GitHub, and remote backups are entirely optional and nothing in the project pushes anywhere on your behalf.
+Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses semantic versioning (`MAJOR.MINOR.PATCH`): PATCH bumps for bug fixes / docs / defensive logging, MINOR for new capabilities or convention changes, MAJOR for doctrine or interface-breaking changes. Decision rules and edge cases are codified in CHANGELOG.md so release calls don't depend on judgment-in-the-moment. Operators are encouraged to update the changelog when making meaningful changes — git, GitHub, and remote backups are entirely optional and nothing in the project pushes anywhere on your behalf.
 
 ## License
 
