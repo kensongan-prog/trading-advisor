@@ -608,6 +608,44 @@ SYMBOL_MAP = {
 # Resolution cache (populated by wl.py on add) — preferred source for newly-added alts
 # so we don't need to keep updating SYMBOL_MAP / CRYPTO_TO_BINANCE by hand.
 RESOLUTIONS_DIR = PROJECT_ROOT / ".claude" / "cache" / "watchlist_resolutions"
+SENTIMENT_DIR = PROJECT_ROOT / ".claude" / "cache" / "sentiment"
+
+_SENTIMENT_CACHE_LOADED = None
+
+def _bulk_load_sentiment():
+    """Load all per-ticker sentiment composites in one directory scan. Mirrors the
+    resolution-cache pattern. Returns dict keyed by uppercase ticker."""
+    global _SENTIMENT_CACHE_LOADED
+    out = {}
+    if SENTIMENT_DIR.is_dir():
+        for p in SENTIMENT_DIR.glob("*.json"):
+            try:
+                data = json.loads(p.read_text())
+                key = (data.get("ticker") or p.stem).upper()
+                out[key] = data
+            except Exception:
+                continue
+    _SENTIMENT_CACHE_LOADED = out
+    return out
+
+
+def load_sentiment(ticker_upper):
+    global _SENTIMENT_CACHE_LOADED
+    if _SENTIMENT_CACHE_LOADED is None:
+        _bulk_load_sentiment()
+    return _SENTIMENT_CACHE_LOADED.get(ticker_upper)
+
+
+POLYMARKET_CACHE_FILE = PROJECT_ROOT / ".claude" / "cache" / "polymarket" / "events.json"
+
+def load_polymarket():
+    """Load the Polymarket events cache. Returns dict or None."""
+    if not POLYMARKET_CACHE_FILE.exists():
+        return None
+    try:
+        return json.loads(POLYMARKET_CACHE_FILE.read_text())
+    except Exception:
+        return None
 _RESOLUTION_CACHE_LOADED = None  # None = not bulk-loaded yet; dict once loaded
 
 def _bulk_load_resolutions():
@@ -1558,6 +1596,23 @@ td.dim { color: var(--dim); }
 .b-red { background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid var(--red); }
 .b-yellow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
 .b-dim { background: var(--panel-2); color: var(--dim); border: 1px solid var(--bord); }
+.sent-fade { background: rgba(248, 113, 113, 0.08); }
+.sent-buy { background: rgba(74, 222, 128, 0.08); }
+.sent-flag-fade { color: var(--red); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
+.sent-flag-buy { color: var(--green); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.pm-col { background: var(--bg); padding: 10px 12px; border-radius: 4px; border: 1px solid var(--bord); }
+.pm-head { font-weight: bold; color: var(--text); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--bord); font-size: 12px; }
+.pm-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.pm-prob { display: inline-block; min-width: 38px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums; padding: 1px 4px; border-radius: 3px; }
+.pm-high { color: var(--green); background: rgba(74, 222, 128, 0.10); }
+.pm-low { color: var(--red); background: rgba(248, 113, 113, 0.10); }
+.pm-mid { color: var(--yellow); background: rgba(251, 191, 36, 0.10); }
+.pm-title { color: var(--text); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-title:hover { color: var(--accent); text-decoration: underline; }
+.wl-remove-btn { background: transparent; border: none; color: var(--dim); cursor: pointer; padding: 0 4px; font-size: 12px; opacity: 0.4; transition: opacity 0.15s, color 0.15s; }
+.wl-remove-btn:hover { opacity: 1; color: var(--red); }
+@media print { .wl-remove-btn { display: none; } }
 .prospectus { background: var(--panel-2); padding: 12px; border-radius: 6px;
   border-left: 3px solid var(--accent); margin-bottom: 8px; }
 .prospectus .head { font-weight: bold; }
@@ -1657,7 +1712,7 @@ td.dim { color: var(--dim); }
   border-radius: 0 4px 4px 0; margin: 4px 0 8px; }
 .exp-thesis p { margin: 0 0 8px; font-size: 12px; line-height: 1.55; color: var(--text); }
 .exp-thesis p b { color: var(--accent); }
-.exp-gates-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+.exp-gates-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 12px 0; }
 .exp-gate-col { background: var(--bg); padding: 10px 12px; border-radius: 4px; border: 1px solid var(--bord); }
 .exp-gate-head { font-weight: bold; font-size: 11px; color: var(--dim); margin-bottom: 6px;
   text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1739,6 +1794,23 @@ function tickAgo() {
 }
 tickAgo();
 setInterval(tickAgo, 15000);  // tick every 15s
+
+// Watchlist remove — prompt for required reason, copy `wl.py remove` command to clipboard.
+// Dashboard is static HTML so we can't write to disk; this is the copy-then-paste pattern
+// already used elsewhere (Refresh button, prospectus actions, etc.).
+function wlRemove(ticker) {
+  const reason = prompt('Remove ' + ticker + ' from watchlist?\\n\\nEnter a one-line reason (required by doctrine):', '');
+  if (!reason || !reason.trim()) return;
+  // Single-quote-shell-quote: wrap in single quotes, replace any embedded single quote with '\\''
+  const r = reason.trim().replace(/'/g, "'\\\\''");
+  const cmd = "python3 .claude/skills/watchlist/wl.py remove " + ticker + " -r '" + r + "' --yes";
+  navigator.clipboard.writeText(cmd).then(function() {
+    alert('Command copied to clipboard. Paste in terminal to remove:\\n\\n' + cmd);
+  }, function() {
+    // Clipboard write can fail under restricted contexts; fall back to a prompt with the command
+    prompt('Copy this command and run in terminal:', cmd);
+  });
+}
 
 // Prospectus action forms — inline form per button with live command preview.
 // Calc R is special: shows math result inline, optional "append to journal" cmd.
@@ -3550,6 +3622,184 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             cls = "dim"
         return (txt, f"{age:.1f}", cls)
 
+    def render_polymarket_panel():
+        """Render the Event Probabilities panel from the Polymarket cache."""
+        pm = ctx.get("polymarket") or {}
+        cats = pm.get("categories") or {}
+        fetched = pm.get("fetched_at")
+        if not cats:
+            return (
+                '<div class="panel">'
+                '<h2>Event Probabilities (Polymarket)</h2>'
+                '<div class="dim">No Polymarket cache. Run: <code>python3 .claude/skills/polymarket-events/polymarket_events.py</code></div>'
+                '</div>'
+            )
+
+        CAT_LABELS = {
+            "macro_rates":  "Macro · Rates",
+            "macro_econ":   "Macro · Economy",
+            "crypto":       "Crypto · Price",
+            "geopolitics":  "Geopolitics",
+        }
+
+        def fmt_delta(d):
+            if d is None:
+                return ""
+            arrow = "▲" if d > 0.005 else ("▼" if d < -0.005 else "·")
+            cls = "up" if d > 0.005 else ("down" if d < -0.005 else "flat")
+            return f' <span class="arrow {cls}" style="font-size:10px">{arrow} {d*100:+.0f}pp</span>'
+
+        cols = []
+        for cat_key, cat_label in CAT_LABELS.items():
+            evs = (cats.get(cat_key) or {}).get("events", []) or []
+            # Sort by abs probability extremity (most decisive markets first), then by abs delta
+            evs_sorted = sorted(
+                evs,
+                key=lambda e: (abs((e.get("headline_prob") or 0.5) - 0.5)),
+                reverse=True,
+            )
+            rows_html = []
+            for ev in evs_sorted[:5]:
+                hp = ev.get("headline_prob")
+                hq = ev.get("headline_question") or "—"
+                title = ev.get("title") or "—"
+                url = ev.get("url") or "#"
+                hp_pct = f"{hp*100:.0f}%" if hp is not None else "—"
+                # Delta on the headline market
+                top_market = (ev.get("markets") or [{}])[0]
+                d = top_market.get("delta_7d")
+                # Tint by probability extremity
+                if hp is not None:
+                    if hp >= 0.75: prob_cls = "pm-high"
+                    elif hp <= 0.25: prob_cls = "pm-low"
+                    else: prob_cls = "pm-mid"
+                else:
+                    prob_cls = "pm-mid"
+                rows_html.append(
+                    f'<div class="pm-row" title="{html.escape(hq, quote=True)}">'
+                    f'<span class="pm-prob {prob_cls}">{hp_pct}</span>'
+                    f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener" class="pm-title">{html.escape(title[:75])}</a>'
+                    f'{fmt_delta(d)}'
+                    f'</div>'
+                )
+            if not rows_html:
+                rows_html.append('<div class="dim" style="padding:4px 0">no events</div>')
+            cols.append(
+                f'<div class="pm-col">'
+                f'<div class="pm-head">{html.escape(cat_label)}</div>'
+                f'{"".join(rows_html)}'
+                f'</div>'
+            )
+        return (
+            f'<div class="panel">'
+            f'<h2>Event Probabilities <span class="stale">Polymarket · fetched {fmt_fetched(fetched)} · Δ7d shown when historical snapshot available</span></h2>'
+            f'<div class="pm-grid">{"".join(cols)}</div>'
+            f'</div>'
+        )
+
+    def sentiment_details_html(ticker):
+        """Render the expanded sentiment block for a row's dropdown details.
+        Shows badge, scores, per-source breakdown, and rationale. Used inside exp-details-content."""
+        s = (ctx.get("sentiment") or {}).get(ticker.upper())
+        if not s:
+            return (
+                '<div class="exp-gate-col">'
+                '<div class="exp-gate-head">Retail Sentiment</div>'
+                '<div class="gate-line dim">No sentiment cache. Run reddit-sentiment + stocktwits-sentiment + sentiment-cache to populate.</div>'
+                '</div>'
+            )
+        c = s.get("composite") or {}
+        srcs = s.get("sources") or {}
+        st = srcs.get("stocktwits") or {}
+        rd = srcs.get("reddit") or {}
+        badge = c.get("badge", "—"); label = c.get("label", "UNKNOWN")
+        bs = c.get("bull_score"); bear = c.get("bear_score"); neut = c.get("neutral_score"); conv = c.get("conviction")
+        flag = c.get("contrarian_flag")
+        scored_at = s.get("scored_at", "—")
+        model = s.get("model", "—")
+
+        if label == "UNKNOWN" or bs is None:
+            return (
+                '<div class="exp-gate-col">'
+                '<div class="exp-gate-head">Retail Sentiment</div>'
+                f'<div class="gate-line dim">— UNKNOWN (no source data). Scored {html.escape(scored_at)}.</div>'
+                '</div>'
+            )
+
+        flag_html = ""
+        if flag == "FADE":
+            flag_html = ' <span class="sent-flag-fade">FADE</span> <span class="dim" style="font-size:11px">(contrarian: downgrade conviction on extended setups)</span>'
+        elif flag == "BUY":
+            flag_html = ' <span class="sent-flag-buy">BUY</span> <span class="dim" style="font-size:11px">(contrarian: upgrade conviction on constructive P1)</span>'
+
+        def pct(v, places=0):
+            return f"{v*100:.{places}f}%" if v is not None else "—"
+
+        st_line = ""
+        if st.get("present"):
+            ut = st.get("user_tagged_bull_pct")
+            tagged = st.get("tagged_counts") or {}
+            ut_str = f"{pct(ut)} user-tagged bull (of {tagged.get('Bullish',0)+tagged.get('Bearish',0)} tagged)" if ut is not None else "no user-tagged messages"
+            st_line = (
+                f'<div class="gate-line"><b>StockTwits:</b> {st.get("n_messages",0)} msgs · {ut_str} · '
+                f'LLM bull/bear/neut <b>{pct(st.get("llm_bull_pct"))} / {pct(st.get("llm_bear_pct"))} / {pct(st.get("llm_neutral_pct"))}</b> '
+                f'<span class="dim">(LLM avg conviction {pct(st.get("llm_avg_conviction"))})</span></div>'
+            )
+        else:
+            st_line = '<div class="gate-line dim"><b>StockTwits:</b> absent (no coverage or no messages)</div>'
+
+        rd_line = ""
+        if rd.get("present"):
+            rd_line = (
+                f'<div class="gate-line"><b>Reddit:</b> {rd.get("n_posts",0)} posts (of {rd.get("mention_count",0)} total mentions) · '
+                f'LLM bull/bear/neut <b>{pct(rd.get("llm_bull_pct"))} / {pct(rd.get("llm_bear_pct"))} / {pct(rd.get("llm_neutral_pct"))}</b> '
+                f'<span class="dim">(LLM avg conviction {pct(rd.get("llm_avg_conviction"))})</span></div>'
+            )
+        else:
+            rd_line = '<div class="gate-line dim"><b>Reddit:</b> absent (no posts in lookback window, or no Reddit data)</div>'
+
+        return (
+            '<div class="exp-gate-col">'
+            f'<div class="exp-gate-head">Retail Sentiment</div>'
+            f'<div class="gate-line"><b>{badge} {html.escape(label)}</b>{flag_html}</div>'
+            f'<div class="gate-line">Composite: bull <b>{pct(bs)}</b> · bear <b>{pct(bear)}</b> · neutral <b>{pct(neut)}</b> · conviction <b>{pct(conv)}</b></div>'
+            f'{st_line}'
+            f'{rd_line}'
+            f'<div class="gate-line dim" style="margin-top:6px;font-size:11px">Scored {html.escape(scored_at)} · model {html.escape(model)}</div>'
+            '</div>'
+        )
+
+    def sentiment_cell(ticker):
+        """Render the Retail Sentiment column cell for one ticker.
+        Returns (html_td, sort_key_numeric). Sort key is bull_score - bear_score so
+        bullish names sort high and bearish names sort low."""
+        s = (ctx.get("sentiment") or {}).get(ticker.upper())
+        if not s:
+            return '<td class="num dim" data-sort="-2" title="No sentiment cache. Run reddit-sentiment + stocktwits-sentiment + sentiment-cache.">—</td>', -2
+        c = s.get("composite") or {}
+        bs = c.get("bull_score"); bear = c.get("bear_score"); conv = c.get("conviction")
+        label = c.get("label", "UNKNOWN"); badge = c.get("badge", "—"); flag = c.get("contrarian_flag")
+        rationale = c.get("rationale") or "—"
+        sort_key = (bs or 0) - (bear or 0) if bs is not None else -1
+        if label == "UNKNOWN" or bs is None:
+            return f'<td class="num dim" data-sort="-1" title="No source data yet.">—</td>', -1
+        cell_cls = ""
+        if flag == "FADE":
+            cell_cls = "sent-fade"; flag_html = ' <span class="sent-flag-fade">FADE</span>'
+        elif flag == "BUY":
+            cell_cls = "sent-buy"; flag_html = ' <span class="sent-flag-buy">BUY</span>'
+        else:
+            flag_html = ""
+        bs_pct = f"{bs*100:.0f}%" if bs is not None else "—"
+        cv_pct = f"{conv*100:.0f}%" if conv is not None else "—"
+        tooltip = f"{label} · bull={bs_pct} bear={(bear*100 if bear is not None else 0):.0f}% conv={cv_pct}\n{rationale}"
+        return (
+            f'<td class="num {cell_cls}" data-sort="{sort_key:.3f}" title="{html.escape(tooltip, quote=True)}">'
+            f'{badge}{flag_html} <span class="dim" style="font-size:11px">{bs_pct}</span>'
+            f'</td>',
+            sort_key,
+        )
+
     def render_us_grid():
         rows = []
         for idx, entry in enumerate(ctx["watchlist"]["us"]):
@@ -3586,6 +3836,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason)}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
+                f'    {sentiment_details_html(tk)}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Sector:</b> {html.escape(t.get("sector") or "—")}</span>'
@@ -3599,7 +3850,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             )
             rows.append(f"""
 <tr class="exp-row" data-row-id="us-{idx}">
-  <td><span class="exp-chevron">▶</span></td>
+  <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(tk)}</b></td>
   <td class="dim">{html.escape((t.get('name') or '')[:24])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">{fmt_num(price,2)}{_price_age_suffix(t.get('price_date'))} <button class="ta-quote-btn" data-symbol="{html.escape(tk, quote=True)}" title="Fetch live quote (Finnhub)">🔄</button><span class="live-quote"></span></td>
@@ -3610,11 +3861,12 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{v200 or 0}">{fmt_pct(v200,1)}</td>
   <td class="dim" data-sort="{ne}">{ne} <span class="dim">{days_to_e}</span></td>
   <td class="num {news_cls}" data-sort="{news_sort}">{news_txt}</td>
+  {sentiment_cell(tk)[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)}</td>
 </tr>
-<tr class="exp-details" id="us-{idx}-body"><td colspan="13">{details_html}</td></tr>""")
-        return "\n".join(rows) or '<tr><td colspan="13" class="dim">no US tickers in watchlist</td></tr>'
+<tr class="exp-details" id="us-{idx}-body"><td colspan="14">{details_html}</td></tr>""")
+        return "\n".join(rows) or '<tr><td colspan="14" class="dim">no US tickers in watchlist</td></tr>'
 
     news_stats = ctx.get("news_stats") or {}
     n_queue = len(news_stats.get("queued", []))
@@ -3639,6 +3891,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th>Ticker</th><th>Name</th><th>Price</th><th>24h%</th><th>RSI</th>
       <th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th>
       <th>vs SMA50</th><th>vs SMA200</th><th>Next Earnings</th><th>News</th>
+      <th title="Retail sentiment composite from Reddit + StockTwits, LLM-scored. 🔥=extreme bull → contrarian FADE flag; 🧊=extreme bear → contrarian BUY flag; 📈/📉=mid-strength; —=neutral or no data.">Retail</th>
       <th>P1 Status</th><th>Reason</th>
     </tr></thead>
     <tbody>{render_us_grid()}</tbody>
@@ -3735,6 +3988,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason)}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
+                f'    {sentiment_details_html(tk)}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Sector:</b> {html.escape(f.get("sector") or t.get("sector") or "—")}</span>'
@@ -3750,7 +4004,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             )
             rows.append(f"""
 <tr class="exp-row" data-row-id="klse-{idx}">
-  <td><span class="exp-chevron">▶</span></td>
+  <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(tk)}</b></td>
   <td class="dim">{html.escape((t.get('name') or '')[:22])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">MYR {fmt_num(price,3)}{_price_age_suffix(t.get('price_date'))} <a class="ta-quote-btn" href="https://klsescreener.com/v2/stocks/quote/{html.escape(code, quote=True)}" target="_blank" rel="noopener" title="Open klsescreener.com (free real-time KLSE quote not available via Finnhub)" onclick="event.stopPropagation()">📊</a></td>
@@ -3762,11 +4016,12 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{pb or 0}">{fmt_num(pb,2)}</td>
   <td class="num" data-sort="{dy or 0}">{fmt_num(dy,2)}%</td>
   <td class="num" data-sort="{roe or 0}">{fmt_num(roe,2)}%</td>
+  {sentiment_cell(tk)[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)} <span style="color:var(--dim);font-size:10px">{('· fund ' + fund_age) if fund_age else '· no klse-refresh data'}</span></td>
 </tr>
-<tr class="exp-details" id="klse-{idx}-body"><td colspan="14">{details_html}</td></tr>""")
-        return "\n".join(rows) or '<tr><td colspan="14" class="dim">no KLSE tickers</td></tr>'
+<tr class="exp-details" id="klse-{idx}-body"><td colspan="15">{details_html}</td></tr>""")
+        return "\n".join(rows) or '<tr><td colspan="15" class="dim">no KLSE tickers</td></tr>'
 
     n_klse_fund = len(klse_fund)
     klse_oldest_tech = None
@@ -3804,6 +4059,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th>
       <th>vs SMA50</th>
       <th>P/E</th><th>P/B</th><th>DY</th><th>ROE</th>
+      <th title="Retail sentiment composite. Most KLSE names show — (no coverage on StockTwits or Reddit at retail-research scale).">Retail</th>
       <th>Status</th><th>Reason</th>
     </tr></thead>
     <tbody>{render_klse_grid()}</tbody>
@@ -3850,6 +4106,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason) or "—"}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
+                f'    {sentiment_details_html(entry["ticker"])}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Price:</b> ${r.get("price"):.4f}</span>' if r.get("price") else '<span><b>Price:</b> —</span>'
@@ -3865,7 +4122,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             )
             rows.append(f"""
 <tr class="exp-row" data-row-id="crypto-{idx}">
-  <td><span class="exp-chevron">▶</span></td>
+  <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(entry['ticker'], quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(r.get('symbol','—'))}</b></td>
   <td class="dim">{html.escape((r.get('name') or '')[:18])}</td>
   <td class="num" data-sort="{r.get('price') or 0}">${fmt_num(r.get('price'),4)} <button class="ta-quote-btn" data-crypto-source="{ind.get('data_source','binance')}" data-crypto-symbol="{html.escape(ind.get('symbol') or (tk_up + 'USDT'), quote=True)}" title="Fetch live quote (Binance/CoinGecko)" onclick="event.stopPropagation()">🔄</button><span class="live-quote"></span></td>
@@ -3877,11 +4134,12 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{v50 or 0}">{fmt_pct(v50,1)}</td>
   <td class="num" data-sort="{ann or 0}">{fmt_pct(ann,1)}</td>
   <td class="dim">{fmt_money(r.get('market_cap'))}</td>
+  {sentiment_cell(entry["ticker"])[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)}</td>
 </tr>
-<tr class="exp-details" id="crypto-{idx}-body"><td colspan="14">{details_html}</td></tr>""")
-        return "\n".join(rows) or '<tr><td colspan="14" class="dim">no crypto tickers</td></tr>'
+<tr class="exp-details" id="crypto-{idx}-body"><td colspan="15">{details_html}</td></tr>""")
+        return "\n".join(rows) or '<tr><td colspan="15" class="dim">no crypto tickers</td></tr>'
 
     crypto_mkt_ts = None
     # Look up the markets cache that fetch_crypto_markets used
@@ -3908,7 +4166,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th></th>
       <th>Sym</th><th>Name</th><th>Price</th><th>24h%</th><th>7d%</th><th>30d%</th>
       <th>RSI</th><th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th><th>vs SMA50</th>
-      <th>Funding (ann.)</th><th>Mkt Cap</th><th>Status</th><th>Notes</th>
+      <th>Funding (ann.)</th><th>Mkt Cap</th>
+      <th title="Retail sentiment composite from Reddit + StockTwits, LLM-scored. 🔥=extreme bull → contrarian FADE flag; 🧊=extreme bear → contrarian BUY flag.">Retail</th>
+      <th>Status</th><th>Notes</th>
     </tr></thead>
     <tbody>{render_crypto_grid()}</tbody>
   </table>
@@ -3944,6 +4204,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   {strip}
   {regime_panel}
   {halt_panel}
+  {render_polymarket_panel()}
   {prospectus_panel}
   {sim_panel}
   {us_panel}
@@ -4105,11 +4366,62 @@ def refresh_news_for_us_tickers(watchlist_us, us_data, journal_entries, refresh_
 
 
 # ── Main orchestration ────────────────────────────────────────────────────
-def build_dashboard(force=False, skip_news=False, refresh_news=False):
+def _refresh_sentiment_for(tickers, label):
+    """Subprocess the reddit-sentiment, stocktwits-sentiment, sentiment-cache chain
+    for the given list of tickers. Quiet output unless a step fails. Returns True if all 3 steps succeed."""
+    if not tickers:
+        return True
+    import subprocess
+    print(f"[sentiment] {label}: {' '.join(tickers)}", flush=True)
+    steps = [
+        ("reddit", PROJECT_ROOT / ".claude/skills/reddit-sentiment/reddit_sentiment.py"),
+        ("stocktwits", PROJECT_ROOT / ".claude/skills/stocktwits-sentiment/stocktwits_sentiment.py"),
+        ("scorer", PROJECT_ROOT / ".claude/skills/sentiment-cache/sentiment_cache.py"),
+    ]
+    ok = True
+    for name, path in steps:
+        cmd = [sys.executable, str(path), *tickers]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if r.returncode != 0:
+                print(f"[sentiment] {name} step failed (rc={r.returncode}): {r.stderr.strip()[:200]}", flush=True)
+                ok = False
+        except Exception as e:
+            print(f"[sentiment] {name} step crashed: {e}", flush=True)
+            ok = False
+    # Invalidate the in-memory sentiment cache so the dashboard sees the new files
+    global _SENTIMENT_CACHE_LOADED
+    _SENTIMENT_CACHE_LOADED = None
+    return ok
+
+
+def _detect_missing_sentiment(watchlist):
+    """Return list of watchlist tickers that have no entry in the sentiment cache."""
+    all_tickers = []
+    for section in ("us", "klse", "crypto"):
+        for e in watchlist.get(section, []):
+            all_tickers.append(e["ticker"].upper())
+    cache = _bulk_load_sentiment()
+    return [t for t in all_tickers if t not in cache]
+
+
+def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_sentiment=False, skip_sentiment=False):
     print("[1/8] Parsing watchlist + journal...")
     watchlist = parse_watchlist()
     journal = parse_journal()
     print(f"      → {len(watchlist['us'])} US, {len(watchlist['klse'])} KLSE, {len(watchlist['crypto'])} crypto · {len(journal)} journal entries")
+
+    # Sentiment refresh — auto-fill missing watchlist tickers (e.g. after a `wl.py add`).
+    # Pass --refresh-sentiment to force-refresh all watchlist tickers.
+    # Pass --no-sentiment to skip the auto-fill entirely.
+    if not skip_sentiment:
+        if refresh_sentiment:
+            all_t = [e["ticker"].upper() for section in ("us","klse","crypto") for e in watchlist.get(section, [])]
+            _refresh_sentiment_for(all_t, "full refresh (--refresh-sentiment)")
+        else:
+            missing = _detect_missing_sentiment(watchlist)
+            if missing:
+                _refresh_sentiment_for(missing, f"auto-fill {len(missing)} ticker(s) missing from cache")
 
     print("[2/8] Fetching US macro regime (FRED)...")
     macro, macro_age = fetch_macro_regime(force)
@@ -4256,6 +4568,8 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False):
         "crypto_funding": crypto_funding,
         "crypto_indicators": crypto_indicators,
         "crypto_unlocks": crypto_unlocks,
+        "sentiment": _bulk_load_sentiment(),
+        "polymarket": load_polymarket(),
         "config": {
             "account": 20000, "phase": "1 (paper, spot only)",
             "phase_desc": "until 20 closed trades + ≥0R",
@@ -4321,6 +4635,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true", help="Bypass cache; refetch all non-news sources.")
     ap.add_argument("--refresh-news", action="store_true", help="Pull fresh AV news for stale tickers (uses budget; respects 8-call on-demand reserve).")
+    ap.add_argument("--refresh-sentiment", action="store_true", help="Force-refresh retail sentiment (reddit + stocktwits + scorer) for ALL watchlist tickers. Without this flag the dashboard auto-fills only tickers missing from the sentiment cache.")
+    ap.add_argument("--no-sentiment", action="store_true", help="Skip the sentiment auto-fill step entirely (e.g. if Reddit RSS or OpenRouter is down). Dashboard still renders whatever's already cached.")
+    ap.add_argument("--refresh-polymarket", action="store_true", help="Pull fresh Polymarket event probabilities (no auth, ~5s). Without this flag the dashboard uses whatever's cached.")
     ap.add_argument("--no-news", action="store_true", help="Skip news entirely (cache-only, no panel update).")
     ap.add_argument("--with-discovery", action="store_true", help="Also run us-screener + sector-rotation before rendering (TTL-cached, no-op if fresh).")
     ap.add_argument("--open", action="store_true", help="Open dashboard.html in default browser when done.")
@@ -4357,7 +4674,20 @@ def main():
             print("[discovery] running sector-rotation…", flush=True)
             subprocess.run(sector_cmd, check=False)
 
-    build_dashboard(force=args.force, skip_news=args.no_news, refresh_news=args.refresh_news)
+    if args.refresh_polymarket:
+        print("[polymarket] refreshing event probabilities…", flush=True)
+        subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / ".claude/skills/polymarket-events/polymarket_events.py")],
+            check=False, capture_output=True,
+        )
+
+    build_dashboard(
+        force=args.force,
+        skip_news=args.no_news,
+        refresh_news=args.refresh_news,
+        refresh_sentiment=args.refresh_sentiment,
+        skip_sentiment=args.no_sentiment,
+    )
     if args.open:
         subprocess.run(["open", str(OUTPUT_HTML)])
     return 0

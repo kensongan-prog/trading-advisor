@@ -99,6 +99,51 @@ flow}. A single signal is not a trade.
   fade an extreme without a price trigger).
 - News tone and social momentum; distinguish "what people say" from
   "what price/on-chain shows they do."
+- **Professional sources** (`us-news` Alpha Vantage, `klse-news`,
+  `crypto-coingecko` headlines): additive — bullish news on a constructive
+  setup is *confluence*, not contrarian. Use as a catalyst/event-risk read.
+- **Prediction-market consensus** (`polymarket-events`): money-weighted
+  speculator probabilities on Fed cuts, recession, inflation, BTC/ETH price
+  ranges, geopolitics. **Different from forum sentiment** — Polymarket
+  participants are putting cash on outcomes, so the implied probabilities
+  are less gameable. Use as a macro confluence signal:
+  - **Aligned** with our macro thesis → confluence boost
+  - **Diverged** → reconsider thesis (the money disagrees with our take),
+    don't auto-fade — Polymarket has known biases (US-political skew, thin
+    liquidity on long-dated markets)
+  - **Tight uncertainty** (probabilities clustered near 50%) → respect the
+    noise, don't overcommit on the macro leg
+  - §5 halt-window framing: a market showing high prob of an
+    event-near-resolution date adds urgency to the halt rule (e.g.,
+    99% "no change" priced for next FOMC = low surprise risk; 60% "rate
+    cut" = larger surprise tail in both directions)
+- **Retail-forum sources** (`reddit-sentiment` + `stocktwits-sentiment` →
+  composite in `sentiment-cache`): **contrarian filter, not additive.**
+  Retail enthusiasm is the *last* money in. The composite emits two flags:
+    - **🔥 FADE** — `bull_score ≥ 0.80` AND `conviction ≥ 0.70`. Means
+      retail is crowded one-sided long with LLM-verified message content
+      (not just user-tagged badges). Action: **downgrade conviction one
+      tier on already-extended setups** (RSI > 70, far above SMA20/50,
+      parabolic). Does NOT fire on a plain bull market — extension is the
+      gate.
+    - **🧊 BUY** — `bear_score ≥ 0.80` AND `conviction ≥ 0.70`. Retail
+      capitulation. Action: **upgrade conviction one tier on already-
+      constructive P1 setups** (RSI 35-50, base building, holding key MA).
+      Does NOT fire on a falling knife — constructive structure is the gate.
+- **What retail sentiment is NOT:** a trade signal on its own. A FADE flag
+  with no extended technicals is just a popular stock in a bull market.
+  A BUY flag with no constructive P1 is just doom-posting at lower lows.
+  Never initiate on the flag alone.
+- **Threshold rationale:** the 0.70 conviction floor is the LLM safeguard
+  against gameable self-reports — high user-tagged bull% with hedge-laden
+  message bodies (the "I'm bullish but…" pattern) stays sub-threshold and
+  produces no FADE. The conviction gate did its job for AUPH on 2026-06-08
+  (81% bull, 64% conv → no flag despite 100% user-tagged bull) — keep this
+  example in mind when threshold tweaks are proposed.
+- **KLSE coverage caveat:** retail-forum coverage of Bursa Malaysia names is
+  sparse-to-zero on both StockTwits (no symbol coverage) and Reddit (low
+  volume on r/Bursa_Malaysia). Most KLSE entries will show `— UNKNOWN` in
+  the composite — that is the correct degraded behavior, not a bug.
 
 **Fundamental / catalyst**
 - Valuation context, upcoming catalysts, event risk. Never hold a directional
