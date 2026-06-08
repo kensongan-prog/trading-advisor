@@ -96,7 +96,11 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-_(No changes since v1.4.1. Add entries here as you build, under one of the category headings below.)_
+### In flight (as of 2026-06-08 end-of-session)
+
+Nothing actively pending — v1.4.1 shipped cleanly (semver adoption). The one loose thread for next session: **verify the auto-bootstrap from v1.4 actually fires in a fresh session.** Open Claude Code in this project folder tomorrow without pasting any prompt, just say "hello" or any small request. If the agent responds with a 3-line orientation (current version / last shipped change / anything in flight) before answering, auto-bootstrap is working. If it just answers normally with no orientation, fall back to a `/start` slash command (Option B from the design conversation in `notes/decisions.md`). Either outcome is fine — confirming the mechanism either way unblocks future operators.
+
+_(No other changes since v1.4.1. Add entries below as you build, under one of the category headings.)_
 
 ### Added
 
