@@ -53,12 +53,14 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### Added
 
-- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state. AGENTS.md now points new sessions at `notes/learned.md` so known landmines don't need re-discovering.
-- Defensive trace logging in `screener.py` fundamentals loop — prints `[fund] [i/N] {ticker} (yf_used=N, elapsed Xs)` on every iteration so if a process dies mid-loop (XProtect, OOM, network), the last-printed line tells us exactly which ticker and call number triggered it. Cost: ~one extra log line per P1-passer (typically 1-5 per run).
+- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state.
+- Defensive trace logging in `screener.py` fundamentals loop — prints `[fund] [i/N] {ticker} (yf_used=N, elapsed Xs)` on every iteration so if a process dies mid-loop (XProtect, OOM, network), the last-printed line tells us exactly which ticker and call number triggered it. Cost: ~one extra log line per P1-passer (typically 1-5 per run). Verified end-to-end.
+- **Auto-bootstrap instructions in `CLAUDE.md` and `AGENTS.md`** — at the start of every fresh session, the agent now reads `notes/learned.md` + `CHANGELOG.md [Unreleased]` + `git log --oneline -10` unprompted, then orients with three short bullets. Zero per-session typing for the operator. `quick:` / `oneshot:` prefix skips the bootstrap for small unrelated questions. `PROJECT_LOG.md` stays on-demand (too heavy for auto-load).
 
 ### Changed
 
-- AGENTS.md gained a "Session continuity" section at the top listing the read-order for any new session (AGENTS.md → notes/learned.md → CHANGELOG [Unreleased] → PROJECT_LOG.md).
+- `CLAUDE.md` expanded from a 7-line pointer file to ~35 lines, now carrying the auto-bootstrap instructions. Still points at AGENTS.md for the actual doctrine; the doctrine still has zero duplication.
+- AGENTS.md "Session continuity" section reframed as "Session bootstrap" with the same auto-bootstrap instructions, mirrored from CLAUDE.md so Codex sessions get identical behavior.
 
 ### Fixed
 

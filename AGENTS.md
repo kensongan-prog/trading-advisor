@@ -2,20 +2,23 @@
 
 > **Reading this?** You're an AI coding agent (Claude Code, Codex, or any compatible system) opening this project. This file is the operating doctrine — read it first, then `PROJECT_LOG.md` for setup state and `CHANGELOG.md` for version history. The doctrine is agent-agnostic; tool-specific differences (which web-fetch tool you have, how you schedule recurring tasks) are noted where they matter.
 
-## Session continuity (read at session start)
+## Session bootstrap (do this at session start, without being asked)
 
-The project keeps state in version-controlled files so any new session can come up to speed without remembering the previous one. Read these in order:
+In a fresh session, read these files **before responding to the operator's first request**:
 
-1. **This file (AGENTS.md)** — doctrine + USER CONFIG (account size, risk %, phase)
-2. **`notes/learned.md`** — gotchas + system quirks (XProtect, FMP paywalls, yfinance NaN edge cases, etc.). Avoid re-discovering known landmines.
-3. **`CHANGELOG.md` `[Unreleased]` section** — anything in flight that the previous session was working on
-4. **`PROJECT_LOG.md`** — architecture, setup, replication guide (skim if first time, skip if returning)
+1. **`notes/learned.md`** — known gotchas (XProtect, FMP paywall, yfinance edge cases). Don't re-discover landmines.
+2. **`CHANGELOG.md`** — the `[Unreleased]` section (anything in flight) + the most recent shipped version's release notes.
+3. **`git log --oneline -10`** — last 10 commits.
 
-Optional, on-demand:
-- **`notes/decisions.md`** — "why is it like this?" rationale for non-obvious choices
-- **`notes/ideas.md`** — parking lot for future features (do NOT act on without explicit go-ahead)
+Then orient out loud with **three short bullets** (current version / most recent shipped change / anything in `[Unreleased]` still in flight). Under ~5 lines. Then wait for the operator's request.
 
-**End-of-session ritual:** before the operator clears or closes the session, write an `### In flight` paragraph to `CHANGELOG.md` `[Unreleased]` explaining what's pending and what the next step is. That note becomes the next session's bootstrap.
+**Do NOT auto-read `PROJECT_LOG.md`** — heavy (~600 lines). On-demand only when a question needs architectural context.
+
+**Do NOT auto-read `notes/decisions.md` or `notes/ideas.md`** — on-demand only ("decisions" when asked "why?", "ideas" when proposing features).
+
+**Skip the bootstrap** if the operator's first message is prefixed `quick:` / `oneshot:`, the session is resumed via `--resume`, or the first message is already a status check.
+
+**End-of-session ritual:** before the operator clears or closes mid-task, write an `### In flight` paragraph to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's bootstrap picks it up. If the operator forgets, prompt once.
 
 ## 1. Role & Mission
 

@@ -4,6 +4,19 @@ Append-only log of why we did things the way we did. Newest at top. Read this wh
 
 ---
 
+### 2026-06-08 — CLAUDE.md + AGENTS.md include auto-bootstrap instructions
+
+Operator asked how to simplify the per-session bootstrap ritual. Three options considered:
+- (A) auto-bootstrap via instructions in CLAUDE.md/AGENTS.md (zero typing, leverages existing auto-load)
+- (B) custom `/start` slash command (explicit but requires one command)
+- (C) standalone SESSION_START.md to paste from (always requires typing)
+
+Chose A. Claude Code auto-loads CLAUDE.md as system prompt; Codex auto-loads AGENTS.md. Imperative instructions in those files get followed reliably. Cost: CLAUDE.md grew from 7 lines (pointer-only) to ~35 lines. Both files now contain mirrored "Session bootstrap" sections so the behavior is identical regardless of which agent loads which.
+
+Bootstrap reads only **3 files** (notes/learned.md + CHANGELOG.md + git log) — explicitly NOT PROJECT_LOG.md (heavy, ~600 lines, on-demand only). Orient out loud in ~5 lines, then wait for the actual request. Skipped via `quick:`/`oneshot:` prefix for one-off questions.
+
+Risk acknowledged: I can't test the auto-bootstrap firing in the session that introduced it. Operator verifies tomorrow by opening a fresh session and seeing if it fires unprompted. If unreliable, fall back to Option B (slash command).
+
 ### 2026-06-07 — AGENTS.md is the canonical doctrine file (CLAUDE.md is a pointer)
 
 We renamed `CLAUDE.md → AGENTS.md` to follow the emerging cross-agent convention. Codex auto-loads `AGENTS.md` natively; Claude Code auto-loads `CLAUDE.md`. The new `CLAUDE.md` is a 7-line pointer that redirects to AGENTS.md so Claude Code still finds the doctrine.
