@@ -51,11 +51,26 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-_(No changes since v1.3. Add entries here as you build, under one of the category headings below.)_
+### In flight (as of 2026-06-07)
+
+**XProtect re-blocking screener (yfinance fundamentals fallback path)** — macOS XProtect has tightened signatures over 2026; per-ticker `yf.Ticker(t).info` calls in a loop (~130 non-megacap symbols in `screener.py:420`) now match a blocked pattern, not just the bulk `yf.download()` we already disabled. Investigation paused mid-discussion.
+
+Next step: run the Option C diagnostic (test whether 5/10/50 sequential yfinance calls trigger XProtect) to confirm whether it's rate-based or signature-based. Then either:
+- **Option A** (if rate-based): add throttling + cooldown — ~15 min
+- **Option B** (if signature-based): migrate fundamentals to FMP-only, accept tech-only screening for non-megacap symbols — ~1 hr, recommended
+- See conversation around the diagnostic decision for full context.
+
+The screener still fails gracefully — `dashboard.html` rebuilds from cached `candidates.json` when the subprocess dies. Operator-visible impact is stale Q+V tags for ~130 names until fix ships.
+
+Also: see `notes/learned.md` entry for this gotcha so future sessions know the landscape without re-discovering it.
 
 ### Added
 
+- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state. AGENTS.md now points new sessions at `notes/learned.md` so known landmines don't need re-discovering. Demonstrated by capturing the XProtect investigation above as an in-flight note.
+
 ### Changed
+
+- AGENTS.md gained a "Session continuity" section at the top listing the read-order for any new session (AGENTS.md → notes/learned.md → CHANGELOG [Unreleased] → PROJECT_LOG.md).
 
 ### Fixed
 
