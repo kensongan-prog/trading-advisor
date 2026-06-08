@@ -98,9 +98,8 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### In flight (as of 2026-06-08 end-of-session)
 
-- **Reddit OAuth upgrade pending.** v1.5.0 ships using the RSS workaround (unauthenticated Atom feeds, which Reddit hasn't blocked the way they blocked JSON). The proper OAuth path is wired and auto-activates the moment `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` land in `.claude/skills/reddit-sentiment/.env`. Reddit's developer app approval can take 2-4 weeks — code transparently upgrades without changes; will cut as v1.5.1 (PATCH) once verified.
-- **Dead subreddit audit.** A few crypto subs 404'd during the first RSS refresh (`binance`, `Ripple`, possibly others). Tickers still got data from primary subs; cleanup is a follow-up patch.
-- **Threshold-stability observation.** First scored refresh fired 4 FADE flags (PURR, KTOS, RGLD, CIFR). Want a few refresh cycles across changing market conditions to confirm the contrarian-filter thresholds (`bull_score ≥ 0.80` AND `conviction ≥ 0.70`) are calibrated correctly.
+- **Reddit OAuth upgrade pending.** Same status as v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.env` after Reddit's developer-app review (2-4 weeks). Will cut as v1.6.1 once verified.
+- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags across the watchlist; v1.6.0's Contrarian Setups panel narrowed that to 2 actionable setups (CIFR, PURR). Want a few weeks of operator use across changing market regimes to confirm both the sentiment thresholds and the alignment thresholds (RSI > 70 / > 8% above SMA50 for FADE; RSI 35-55 / -5% to +10% for BUY) are calibrated correctly.
 
 ### Added
 
@@ -113,6 +112,31 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v1.6.0] — 2026-06-08
+
+Phase D — sentiment × technical alignment. The doctrine's §4 contrarian filter is now operationalized as a top-of-page dashboard panel that surfaces only the watchlist names where retail sentiment flags coincide with the underlying technical state. Pure sentiment flags without technical alignment stay informational (per-ticker Retail column); they're no longer presented as setups. The §4 doctrine gains an explicit three-leg framing — professional news (additive), retail forums (contrarian filter), prediction markets (additive macro confluence) — making clear that the three sentiment layers answer categorically different questions and must not be collapsed into a single number.
+
+Phase C (Google Trends via pytrends) was dropped after honest reassessment: pytrends is brittle (frequent Google-side breakage), adds a pip dependency against the project's urllib-only norm, and the signal it would provide is largely redundant with what StockTwits watcher counts + Reddit mention velocity already give us. The Phase C slot remains open for a future durable attention-velocity source.
+
+### Added
+
+- **"⚠ Contrarian Setups" dashboard panel.** Placed between Risk Simulator and the US grid for visibility. Surfaces only watchlist names where a retail-sentiment contrarian flag (🔥 FADE / 🧊 BUY) *aligns with the underlying technical state*:
+  - 🔥 FADE-aligned = `bull_score ≥ 0.80` + `conv ≥ 0.70` AND (RSI > 70 OR > 8% above SMA50). Action: downgrade conviction one tier on existing long setups.
+  - 🧊 BUY-aligned = `bear_score ≥ 0.80` + `conv ≥ 0.70` AND (RSI 35-55 AND -5% ≤ vs SMA50 ≤ +10%). Action: upgrade conviction one tier on existing P1 long setups.
+  
+  Each row shows badge, ticker, asset class, sentiment stats, the specific technical condition that triggered alignment, the recommended action, and the full LLM rationale. First run on the production watchlist fired 2 setups (🔥 CIFR at +18% vs SMA50, 🔥 PURR at +25% vs SMA50). The other 2 v1.5.0-era FADE flags (KTOS, RGLD) correctly filtered out — KTOS is in a downtrend (not extended), RGLD's RSI/vs-SMA50 didn't clear the threshold. This is the filter doing its job: surfacing actionable setups, not every flag.
+- **AGENTS.md §4 three-leg sentiment aggregation framing.** Explicitly tabulates the three sentiment layers (professional news → additive; retail forums → contrarian filter; prediction markets → additive macro confluence) and codifies the operational rule: **sentiment modifies conviction on existing setups; it does not generate setups by itself.** The Contrarian Setups panel is the operational expression of this rule. KLSE coverage caveat documented (most KLSE entries will show `— UNKNOWN` because forum coverage is sparse — degraded behavior, not a bug).
+
+### Investigated, no action
+
+- **Dead-subreddit audit (carried over from v1.5.0 in-flight).** Probed all 17 subreddits in the `reddit-sentiment` routing table against both `/new.rss` and `/search.rss` with our actual query terms. All responded with 200 OK. The earlier 404s on `binance`, `Ripple`, `ethena_labs` during v1.5.0's first refresh were transient (Reddit edge-cache hiccups). No code or config changes needed.
+
+### Deferred
+
+- **Phase C — Google Trends / attention-velocity signal.** Dropped during planning after honest reassessment. The Phase C slot remains open for a future durable source if one emerges (Wikipedia Pageviews was considered as a non-scraping alternative; tabled for now).
 
 ---
 

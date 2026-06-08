@@ -1613,6 +1613,19 @@ td.dim { color: var(--dim); }
 .wl-remove-btn { background: transparent; border: none; color: var(--dim); cursor: pointer; padding: 0 4px; font-size: 12px; opacity: 0.4; transition: opacity 0.15s, color 0.15s; }
 .wl-remove-btn:hover { opacity: 1; color: var(--red); }
 @media print { .wl-remove-btn { display: none; } }
+
+.cs-explainer { font-size: 11px; margin: 4px 0 12px; padding: 8px 12px; background: var(--bg); border-left: 3px solid var(--yellow); border-radius: 0 4px 4px 0; line-height: 1.5; }
+.cs-rows { display: flex; flex-direction: column; gap: 10px; }
+.cs-row { background: var(--bg); border: 1px solid var(--bord); border-radius: 4px; padding: 10px 12px; display: grid; grid-template-columns: 30px 60px 70px 60px 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.cs-badge { font-size: 18px; text-align: center; }
+.cs-flag { font-weight: bold; font-size: 10px; letter-spacing: 0.5px; text-align: center; }
+.cs-ticker { font-weight: bold; font-size: 13px; }
+.cs-class { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.cs-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-stats { font-variant-numeric: tabular-nums; color: var(--text); font-size: 11px; }
+.cs-tech { font-variant-numeric: tabular-nums; color: var(--yellow); font-size: 11px; padding: 2px 6px; background: rgba(251, 191, 36, 0.08); border-radius: 3px; }
+.cs-action { grid-column: 1 / -1; font-size: 11px; color: var(--text); padding-top: 6px; border-top: 1px dashed var(--bord); margin-top: 4px; }
+.cs-rationale { grid-column: 1 / -1; font-size: 10px; line-height: 1.5; }
 .prospectus { background: var(--panel-2); padding: 12px; border-radius: 6px;
   border-left: 3px solid var(--accent); margin-bottom: 8px; }
 .prospectus .head { font-weight: bold; }
@@ -3622,6 +3635,124 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             cls = "dim"
         return (txt, f"{age:.1f}", cls)
 
+    def render_contrarian_setups_panel():
+        """Find watchlist names where the retail-sentiment contrarian flag (🔥 FADE / 🧊 BUY)
+        aligns with the underlying technical state. This is the actionable §4 confluence read:
+          - 🔥 FADE + extended technicals (RSI > 70 OR > 8% above SMA50) → fade the crowd
+          - 🧊 BUY + constructive technicals (RSI 35-55 AND -5% ≤ vs SMA50 ≤ 10%) → capitulation buy
+        Plain FADE/BUY flags without technical alignment are informational only — they show in
+        the per-ticker Retail column but don't earn a setups-panel slot."""
+        setups = []
+
+        def consider(ticker, asset_class, rsi, vs50, name="—"):
+            sent = (ctx.get("sentiment") or {}).get(ticker.upper())
+            if not sent:
+                return
+            c = sent.get("composite") or {}
+            flag = c.get("contrarian_flag")
+            if flag not in ("FADE", "BUY"):
+                return
+            bull = c.get("bull_score"); bear = c.get("bear_score"); conv = c.get("conviction")
+            aligned = False; tech_note = []
+            if flag == "FADE":
+                if rsi is not None and rsi > 70:
+                    aligned = True; tech_note.append(f"RSI {rsi:.0f} (overbought)")
+                if vs50 is not None and vs50 > 8:
+                    aligned = True; tech_note.append(f"+{vs50:.0f}% vs SMA50 (extended)")
+                if not tech_note and rsi is not None:
+                    tech_note.append(f"RSI {rsi:.0f} (not extended — flag informational only)")
+            elif flag == "BUY":
+                rsi_ok = rsi is not None and 35 <= rsi <= 55
+                vs50_ok = vs50 is not None and -5 <= vs50 <= 10
+                if rsi_ok and vs50_ok:
+                    aligned = True; tech_note.append(f"RSI {rsi:.0f} (constructive), {vs50:+.0f}% vs SMA50 (basing)")
+                elif rsi_ok:
+                    tech_note.append(f"RSI {rsi:.0f} (constructive — but check structure)")
+                elif vs50_ok:
+                    tech_note.append(f"{vs50:+.0f}% vs SMA50 (basing — but RSI not in 35-55)")
+
+            if not aligned:
+                return  # only surface aligned setups; informational-only flags stay in the per-ticker column
+            setups.append({
+                "ticker": ticker, "asset_class": asset_class, "name": name,
+                "flag": flag, "badge": c.get("badge", "—"), "label": c.get("label"),
+                "bull": bull, "bear": bear, "conv": conv,
+                "rsi": rsi, "vs50": vs50,
+                "tech_note": " · ".join(tech_note),
+                "rationale": (sent.get("composite") or {}).get("rationale", "—"),
+            })
+
+        # US equities
+        for entry in ctx.get("watchlist", {}).get("us", []):
+            tk = entry["ticker"]
+            t = (ctx.get("us_data") or {}).get(tk, {}) or {}
+            consider(tk, "us", t.get("rsi14"), t.get("vs_sma50_pct"), t.get("name") or "—")
+        # KLSE
+        for entry in ctx.get("watchlist", {}).get("klse", []):
+            tk = entry["ticker"]
+            t = (ctx.get("klse_data") or {}).get(tk, {}) or {}
+            consider(tk, "klse", t.get("rsi14"), t.get("vs_sma50_pct"), t.get("name") or "—")
+        # Crypto — technicals live in crypto_indicators
+        for entry in ctx.get("watchlist", {}).get("crypto", []):
+            tk = entry["ticker"]
+            ind = (ctx.get("crypto_indicators") or {}).get(tk.upper(), {}) or {}
+            rsi = ind.get("rsi14")
+            price = ind.get("price")
+            s50 = ind.get("sma50")
+            vs50 = ((price / s50 - 1) * 100) if (price and s50) else None
+            consider(tk, "crypto", rsi, vs50, name=tk)
+
+        # Total flagged count for the no-setup case
+        all_flags = []
+        for s in (ctx.get("sentiment") or {}).values():
+            f = (s.get("composite") or {}).get("contrarian_flag")
+            if f in ("FADE", "BUY"):
+                all_flags.append(f)
+        n_fade = sum(1 for f in all_flags if f == "FADE")
+        n_buy = sum(1 for f in all_flags if f == "BUY")
+
+        if not setups:
+            body = (
+                f'<div class="dim">No contrarian × technical setups today. '
+                f'{n_fade} 🔥 FADE flag(s) and {n_buy} 🧊 BUY flag(s) on the watchlist but none have aligned technicals '
+                f'(FADE needs RSI&gt;70 or &gt;8% above SMA50; BUY needs RSI 35-55 and -5% to +10% vs SMA50). '
+                f'Flags without alignment are informational only — see per-ticker Retail columns above.</div>'
+            )
+        else:
+            rows_html = []
+            for s in setups:
+                flag_cls = "sent-flag-fade" if s["flag"] == "FADE" else "sent-flag-buy"
+                flag_action = "FADE — downgrade conviction on this setup" if s["flag"] == "FADE" else "BUY — upgrade conviction on constructive P1"
+                bull_pct = f"{s['bull']*100:.0f}%" if s['bull'] is not None else "—"
+                bear_pct = f"{s['bear']*100:.0f}%" if s['bear'] is not None else "—"
+                conv_pct = f"{s['conv']*100:.0f}%" if s['conv'] is not None else "—"
+                rows_html.append(
+                    f'<div class="cs-row">'
+                    f'  <span class="cs-badge">{s["badge"]}</span>'
+                    f'  <span class="{flag_cls} cs-flag">{s["flag"]}</span>'
+                    f'  <span class="cs-ticker">{html.escape(s["ticker"])}</span>'
+                    f'  <span class="cs-class">{s["asset_class"]}</span>'
+                    f'  <span class="cs-name dim">{html.escape((s["name"] or "")[:32])}</span>'
+                    f'  <span class="cs-stats">bull {bull_pct} · bear {bear_pct} · conv {conv_pct}</span>'
+                    f'  <span class="cs-tech">{html.escape(s["tech_note"])}</span>'
+                    f'  <div class="cs-action">→ {flag_action}</div>'
+                    f'  <div class="cs-rationale dim">{html.escape(s["rationale"])}</div>'
+                    f'</div>'
+                )
+            body = '<div class="cs-rows">' + "".join(rows_html) + '</div>'
+
+        return (
+            f'<div class="panel">'
+            f'<h2>⚠ Contrarian Setups <span class="stale">retail sentiment × technical alignment (§4 contrarian-filter doctrine)</span></h2>'
+            f'<div class="cs-explainer dim">'
+            f'  Watchlist names where a retail-sentiment flag (🔥 FADE for crowded longs, 🧊 BUY for capitulation) coincides with '
+            f'  technical extension or constructive setup. <b>Flags alone are not trade signals</b> — they modify conviction on '
+            f'  existing setups. Mid-range sentiment and unaligned flags stay in the per-ticker Retail columns below.'
+            f'</div>'
+            f'{body}'
+            f'</div>'
+        )
+
     def render_polymarket_panel():
         """Render the Event Probabilities panel from the Polymarket cache."""
         pm = ctx.get("polymarket") or {}
@@ -4207,6 +4338,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   {render_polymarket_panel()}
   {prospectus_panel}
   {sim_panel}
+  {render_contrarian_setups_panel()}
   {us_panel}
   {news_panel}
   {klse_panel}

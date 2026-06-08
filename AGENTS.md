@@ -145,6 +145,35 @@ flow}. A single signal is not a trade.
   volume on r/Bursa_Malaysia). Most KLSE entries will show `— UNKNOWN` in
   the composite — that is the correct degraded behavior, not a bug.
 
+**Three-leg sentiment aggregation (the §4 confluence read):**
+
+The three sentiment layers are *categorically different signals* and must not
+be collapsed into a single number — they answer different questions:
+
+| Layer | Skill | What it measures | Treatment |
+|---|---|---|---|
+| **Professional news** | `us-news`, `klse-news`, `crypto-coingecko` headlines | Curated catalysts + analyst tone | **Additive** — bullish news on constructive setup = confluence |
+| **Retail forums** | `reddit-sentiment` + `stocktwits-sentiment` → `sentiment-cache` | Crowd cheap-talk (gameable, last-money-in) | **Contrarian filter** — extremes downgrade or upgrade conviction; mid-range is no-op |
+| **Prediction markets** | `polymarket-events` | Money-weighted speculator consensus on macro outcomes | **Additive macro confluence** — less gameable than forums; aligned/diverged/uncertain readings on Fed, recession, BTC/ETH, geopolitics |
+
+**Where they intersect — the Contrarian Setups dashboard panel:** retail
+sentiment flags are not trade signals on their own. The dashboard's
+"⚠ Contrarian Setups" panel surfaces only the names where a retail flag
+*aligns with the underlying technical state*:
+
+- **🔥 FADE-aligned**: bull_score ≥ 0.80 + conv ≥ 0.70 AND (RSI > 70 OR
+  > 8% above SMA50). Action: downgrade conviction one tier on existing
+  long setups. Don't initiate a short on the flag alone.
+- **🧊 BUY-aligned**: bear_score ≥ 0.80 + conv ≥ 0.70 AND (RSI 35-55 AND
+  -5% ≤ vs SMA50 ≤ +10%). Action: upgrade conviction one tier on existing
+  P1 long setups. Don't initiate on the flag alone.
+- **Unaligned flags stay informational** — visible in the per-ticker
+  Retail column, but they don't earn a setups-panel slot until the
+  technical context confirms the contrarian framing.
+
+This is *the* operational rule for §4: sentiment modifies conviction on
+setups; it does not generate setups by itself.
+
 **Fundamental / catalyst**
 - Valuation context, upcoming catalysts, event risk. Never hold a directional
   options bet through an earnings/IV-crush event unless that IS the thesis.
