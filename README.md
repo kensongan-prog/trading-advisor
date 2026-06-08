@@ -142,6 +142,18 @@ The project follows the emerging **`AGENTS.md`** convention so multiple coding a
 
 The Python codebase, dashboard, data integrations, CLI tools, and doctrine are all platform-agnostic. Only the agent orchestration layer (which web-fetch tool, which scheduler) differs between platforms — and those are noted where they matter.
 
+### Auto-bootstrap on session start
+
+When you open Claude Code or Codex in this project folder, the agent will **automatically read** these three files before responding to your first message:
+
+1. `notes/learned.md` — known gotchas so it doesn't re-discover landmines
+2. `CHANGELOG.md` `[Unreleased]` + most recent shipped version
+3. `git log --oneline -10` for recent context
+
+It then orients with a 3-line summary (current version / last shipped change / anything in flight), then waits for your request. Cost: ~5 seconds on session start, zero for you.
+
+**Skip the bootstrap** by prefixing your first message with `quick:` or `oneshot:` for small unrelated questions. **Disable entirely** by deleting the "Auto-bootstrap" section from `CLAUDE.md` and the "Session bootstrap" section from `AGENTS.md` in your fork.
+
 ## Changelog
 
 Release history and the versioning policy are in **[CHANGELOG.md](CHANGELOG.md)**. The project uses a `MAJOR.MINOR` scheme: minor bumps (e.g. v1.0 → v1.1) for backward-compatible changes; major bumps (v1.x → v2.0) for doctrine or interface-breaking changes. Operators are encouraged to update the changelog when making meaningful changes — git, GitHub, and remote backups are entirely optional and nothing in the project pushes anywhere on your behalf.

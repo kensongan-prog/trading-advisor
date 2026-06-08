@@ -51,16 +51,11 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
+_(No changes since v1.4. Add entries here as you build, under one of the category headings below.)_
+
 ### Added
 
-- New `notes/` folder convention: `notes/learned.md` (gotchas), `notes/decisions.md` (rationale), `notes/ideas.md` (parking lot). Seeded with current state.
-- Defensive trace logging in `screener.py` fundamentals loop — prints `[fund] [i/N] {ticker} (yf_used=N, elapsed Xs)` on every iteration so if a process dies mid-loop (XProtect, OOM, network), the last-printed line tells us exactly which ticker and call number triggered it. Cost: ~one extra log line per P1-passer (typically 1-5 per run). Verified end-to-end.
-- **Auto-bootstrap instructions in `CLAUDE.md` and `AGENTS.md`** — at the start of every fresh session, the agent now reads `notes/learned.md` + `CHANGELOG.md [Unreleased]` + `git log --oneline -10` unprompted, then orients with three short bullets. Zero per-session typing for the operator. `quick:` / `oneshot:` prefix skips the bootstrap for small unrelated questions. `PROJECT_LOG.md` stays on-demand (too heavy for auto-load).
-
 ### Changed
-
-- `CLAUDE.md` expanded from a 7-line pointer file to ~35 lines, now carrying the auto-bootstrap instructions. Still points at AGENTS.md for the actual doctrine; the doctrine still has zero duplication.
-- AGENTS.md "Session continuity" section reframed as "Session bootstrap" with the same auto-bootstrap instructions, mirrored from CLAUDE.md so Codex sessions get identical behavior.
 
 ### Fixed
 
@@ -70,9 +65,27 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### Security
 
+---
+
+## [v1.4] — 2026-06-08
+
+Session-continuity infrastructure. New agent sessions auto-orient before responding, so neither operator nor agent loses context across `/clear`s, fresh sessions, or returning days later. Plus a defensive trace in the screener so the next time a subprocess dies mid-loop we have actionable data instead of guessing.
+
+### Added
+
+- **Auto-bootstrap on session start** (`CLAUDE.md` + `AGENTS.md`). When Claude Code or Codex opens this project, the agent reads `notes/learned.md` + `CHANGELOG.md [Unreleased]` + `git log --oneline -10` *before responding to the operator's first message*, then orients in 3 short lines (current version / last shipped change / anything in flight). Cost: ~5 seconds; operator typing required: zero. Prefix the first message with `quick:` or `oneshot:` to skip for one-off unrelated questions. README's "Supported agents" section documents the behavior and the disable path.
+- **New `notes/` folder convention**: `notes/learned.md` (gotchas + system quirks), `notes/decisions.md` (rationale for non-obvious choices), `notes/ideas.md` (future-feature parking lot). Read at session start (learned only) so known landmines don't need re-discovering. Seeded with the XProtect investigation, FMP free tier paywall, tokenomist SPA limitation, yfinance NaN edge cases, and decisions around AGENTS.md rename, CronCreate vs cron, and the public+backup repo split.
+- **Defensive trace logging in `screener.py` fundamentals loop** — prints `[fund] [i/N] {ticker} (yf_used=N, elapsed Xs)` on every iteration. If the process dies mid-loop (XProtect, OOM, network, anything), the last-printed line tells us exactly which ticker and call number triggered it. Cost: ~one extra log line per P1-passing candidate (typically 1-5 per run). Verified end-to-end via targeted `fetch_fundamentals(['CMI', 'SPY'], force=True)` invocation.
+
+### Changed
+
+- `CLAUDE.md` expanded from a 7-line pointer to ~35 lines, now carrying the auto-bootstrap instructions. Still points at AGENTS.md for the actual doctrine; the doctrine still has zero duplication.
+- `AGENTS.md` "Session continuity" section reframed as "Session bootstrap" with mirrored auto-bootstrap instructions, so Codex sessions get identical behavior to Claude Code sessions.
+- `README.md` Supported agents section gains an "Auto-bootstrap on session start" subsection documenting the behavior, the `quick:` / `oneshot:` skip path, and how to disable entirely.
+
 ### Investigated, no action
 
-- **XProtect popup during dashboard build (reported 2026-06-07)** — Diagnostic showed 130 sequential `yf.Ticker(t).info` calls complete cleanly with no XProtect interference. Further analysis revealed `fetch_fundamentals` is only called for P1-passing candidates (typically 1-5 per run), not the full 188-name universe — the "130 yfinance calls" estimate that drove the initial concern was an upper bound that never occurs in practice. Likely cause of the original popup: a transient XProtect signature update from Apple, a different process, or an intermittent match. No fix shipped; defensive trace logging added to capture actionable data if it recurs. See `notes/learned.md` for the full investigation writeup.
+- **XProtect popup during dashboard build (reported 2026-06-07)** — Diagnostic showed 130 sequential `yf.Ticker(t).info` calls complete cleanly with no XProtect interference. Further analysis revealed `fetch_fundamentals` is only called for P1-passing candidates (typically 1-5 per run), not the full 188-name universe — the "130 yfinance calls" estimate that drove the initial concern was an upper bound that never occurs in practice. Likely cause of the original popup: a transient XProtect signature update from Apple, a different process, or an intermittent match. No fix shipped; the defensive trace logging above captures actionable data if it recurs. See `notes/learned.md` for the full investigation writeup.
 
 ---
 
@@ -183,7 +196,8 @@ First stable release. Snapshot of everything built across the initial Claude Cod
 
 <!-- Link targets below point at the canonical public repo. If you maintain
      your own fork, update or delete these as appropriate for your setup. -->
-[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.3...HEAD
+[Unreleased]: https://github.com/kensongan-prog/trading-advisor/compare/v1.4...HEAD
+[v1.4]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.4
 [v1.3]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.3
 [v1.2]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.2
 [v1.1]: https://github.com/kensongan-prog/trading-advisor/releases/tag/v1.1
