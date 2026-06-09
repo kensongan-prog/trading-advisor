@@ -96,11 +96,48 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
+**Other carry-over threads (still in flight after v1.10.0):**
+- **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified.
+- **Reddit-comment scoring calibration watch.** v1.10.0 just shipped comment-tree scoring; first NVDA test showed comments pulling the Reddit signal meaningfully bearish (40% bear) where title-only would have been neutral-bullish. Want a few weeks across the watchlist to confirm: (a) the 5-comments-per-post cap is right, (b) the RSS-comments uniform-weight floor of 3 doesn't over- or under-counter the OAuth-comments path when both are mixed in a refresh, (c) the LLM relevance filter handles comment off-topicness as well as it handles news cross-attribution.
+- **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
+- **HN coverage + 1.2× source weight calibration watch.** v1.9.0's HN-as-third-leg validated cleanly on RDDT. Want a few weeks across the watchlist to confirm: (a) the 1.2× HN source weight is right (not over- or under-correcting vs forum signal), (b) tech tickers consistently get coverage and non-tech ones cleanly degrade to "absent", (c) the curated `TICKER → company name` map doesn't need tuning for new watchlist adds.
+- **News-glyph LLM scoring quality watch.** v1.8.0's LLM-attributed news sentiment fixed the KTOS-style cross-attribution problem in spot tests. Want a few weeks of varied news flow to confirm the Gemma 4 31B / GPT-OSS 120B free-tier models hold up on edge cases (non-English KLSE headlines, sector roundups, ambiguous bank-of-companies headlines). Tracking 429s / fallback frequency in the score logs.
+
 ### Added
 
 ### Changed
 
 ### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v1.10.0] — 2026-06-09
+
+Sentiment-substance MINOR. Reddit comments — the meaty signal that lives below the OP — finally feed the LLM scorer; Polymarket "real money, not opinions" odds surface inline per ticker in the row dropdown; the `reddit_search_oauth` stub that's been silently broken since v1.5.0 is finally completed; one LLM-robustness fix that was making us silently drop entire sources when free-tier models miscounted batch size.
+
+### Added
+
+- **Reddit top comments now feed the sentiment scorer.** Previously each Reddit post was scored only on `title + first 200 chars of selftext`. Comment threads — often where the real opinion lives — were invisible. The fetcher now pulls up to 5 top-level comments per ranked post (OAuth path uses sorted-by-score for ranking; RSS path uses sorted-by-recency since RSS doesn't expose scores). For each post + comment, the LLM classifies sentiment; engagement-weighting applies normally on OAuth-sourced data and uses a uniform low floor for RSS-sourced comments (so they still get scored, just not boosted by upvote counts that we can't see without OAuth). Real-world validation on NVDA: scoring 10 posts + 50 comments shifted the Reddit signal from what would've been title-only-bullish to **26% bull / 40% bear / 34% neutral** — comments revealed a bearish undercurrent that titles alone missed.
+- **Polymarket inline section in the row dropdown.** Every watchlist row's expand-panel now carries a `🪙 Money-backed (Polymarket)` line surfacing the top 3 real-money markets relevant to that ticker, ranked by 24h volume. Color-coded glyphs flag conviction direction (🟢 strong-yes ≥80%, 🟡 lean-yes ≥60%, ⚪ uncertain 40-60%, 🟠 lean-no ≤40%, 🔴 strong-no ≤20%). Crypto tickers get coin-specific markets (BTC price-target bands, ETH targets, etc.); US equities get macro context (Fed cuts, US recession); BTC-proxy equities (CLSK, CIFR, MARA, MSTR, etc.) get BTC markets first then macro. KLSE shows "no coverage" cleanly. Volume printed in `$NK` / `$N.NM` format so the operator can weight reliability — a 90% market on $1M volume is much more trustworthy than 90% on $5K.
+- **Polymarket signals are intentionally NOT folded into the bull/bear% composite** — AGENTS.md §4 keeps Polymarket categorically distinct from forum/retail sentiment (additive macro confluence vs contrarian filter). Operator sees the money-backed read alongside the forum/HN reads and judges. Auto-folding would muddy the signal attribution.
+
+### Changed
+
+- **Reddit dropdown line now shows comment count + data-source caveat.** Reads `10 posts + 50 comments (of 25 total mentions, 60 scored)` with a hover-tip explaining whether engagement-weighting is active (OAuth) or uniform (RSS). Today's status on a fresh deployment: `[RSS — uniform comment weight]` — to unlock real upvote weighting, Reddit OAuth credentials need to land per the long-running carry-over thread.
+- **`MAX_MESSAGES_PER_TICKER` bumped 25 → 60** in `sentiment-cache` to accommodate Reddit comment-tree scoring (10 posts × ~6 items each).
+
+### Fixed
+
+- **`reddit_search_oauth` was a stub.** The function fetched the JSON response from `oauth.reddit.com` but never parsed it or returned anything — it just fell off the end. That meant every Reddit fetch since v1.5.0 has silently fallen through to the RSS path, even when OAuth credentials would have been available. The engagement-weighting introduced in v1.9.0 was therefore a no-op on Reddit data (every post had `score=None` → `engagement=0` → weight=1 uniformly). Now the function parses `data["data"]["children"]` properly and returns posts with real `score` + `num_comments` fields. When you set up OAuth credentials, the dashboard will switch from "RSS — uniform comment weight" to "OAuth — per-comment scores live" automatically.
+- **Reddit RSS post-ID parsing was failing on the current feed format.** The regex looked for `comments/POSTID/` in the entry id (the old `tag:reddit.com,2008:/...` URI format); today's feed returns `t3_POSTID` (Reddit "fullname" format). The parser now tries both regexes in order so it works across format changes.
+- **LLM scoring no longer drops the entire source on batch-size drift.** Free-tier models (Gemma 4 31B) occasionally return more or fewer classification items than requested on larger batches (e.g. returned 64 for a 60-item input). The old code treated this as a hard error and returned `None` for the source, losing all the data. Now: over-production is truncated to the request length; under-production is padded with neutral classifications and a warning logged.
+- **News dropdown now distinguishes "operator skipped this build" from "cache is genuinely missing".** Previously, running `dashboard.py --no-news-glyph` made every watchlist row's News dropdown say *"No news cache. Run `python3 .claude/skills/us-news/news_glyph.py refresh-us --...` to populate."* even when the per-ticker caches existed and were fresh. The message was misleading — the cache wasn't missing, the operator had explicitly opted out of loading it for this build. Now: when `--no-news-glyph` is in effect the dropdown clearly reads *"News glyph disabled for this build (`--no-news-glyph` flag was passed). Re-run the dashboard without that flag to load the cache."* The genuine-missing-cache message also got refreshed to point at the dashboard's 📰 News refresh button as the easier alternative to a manual CLI invocation.
 
 ### Removed
 

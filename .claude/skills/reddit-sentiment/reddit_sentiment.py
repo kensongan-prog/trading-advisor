@@ -185,7 +185,13 @@ def subs_for(ticker):
 # ── HTTP ──────────────────────────────────────────────────────────────────
 def reddit_search_oauth(sub, query, token, lookback_days=DEFAULT_LOOKBACK_DAYS, timeout=20):
     """OAuth-authenticated search via oauth.reddit.com. Returns (posts_list, error_or_none).
-    Used when REDDIT_CLIENT_ID/SECRET are present (preferred — richer data including scores)."""
+    Used when REDDIT_CLIENT_ID/SECRET are present (preferred — richer data including scores).
+
+    v1.9.2 fix: the original function was a stub left over from the v1.5.0 OAuth refactor
+    — it fetched the JSON and returned None implicitly. Reddit fetches silently fell
+    through to the RSS path (no score / num_comments) even when credentials were set.
+    Engagement-weighting was effectively a no-op on Reddit data because of this.
+    """
     t_window = "week" if lookback_days <= 7 else "month"
     params = {
         "q": query,
@@ -210,6 +216,30 @@ def reddit_search_oauth(sub, query, token, lookback_days=DEFAULT_LOOKBACK_DAYS, 
         return [], f"HTTP {e.code}: {e.reason}"
     except Exception as e:
         return [], f"{type(e).__name__}: {e}"
+
+    children = (data.get("data") or {}).get("children") or []
+    cutoff_ts = time.time() - (lookback_days * 86400)
+    posts = []
+    for ch in children:
+        if ch.get("kind") != "t3":
+            continue
+        pd = ch.get("data") or {}
+        created = pd.get("created_utc")
+        if created and created < cutoff_ts:
+            continue
+        selftext = (pd.get("selftext") or "")[:500]
+        posts.append({
+            "id": pd.get("id") or "",
+            "subreddit": sub,
+            "title": pd.get("title") or "",
+            "score": pd.get("score"),                # real upvote count
+            "num_comments": pd.get("num_comments"),  # real comment count
+            "created_utc": int(created) if created else None,
+            "url": pd.get("url") or f"https://www.reddit.com{pd.get('permalink','')}",
+            "selftext_excerpt": selftext,
+            "source": "oauth",
+        })
+    return posts, None
 
 
 def reddit_search_rss(sub, query, lookback_days=DEFAULT_LOOKBACK_DAYS, timeout=20):
@@ -283,10 +313,12 @@ def reddit_search_rss(sub, query, lookback_days=DEFAULT_LOOKBACK_DAYS, timeout=2
         if created_utc and created_utc < cutoff_ts:
             continue
 
-        # Entry id format: tag:reddit.com,2008:/r/sub/comments/POSTID/slug
+        # Entry id format: today it's "t3_POSTID" (Reddit fullname). Older format
+        # was the tag URI "tag:reddit.com,2008:/r/sub/comments/POSTID/slug" —
+        # both regexes tried in order so we work across format changes.
         id_el = entry.find("a:id", ns)
         id_text = (id_el.text or "").strip() if id_el is not None else ""
-        m = re.search(r"comments/([a-z0-9]+)/", id_text)
+        m = re.search(r"comments/([a-z0-9]+)/", id_text) or re.match(r"t3_([a-z0-9]+)", id_text)
         post_id = m.group(1) if m else id_text[-10:]
 
         posts.append({
@@ -312,6 +344,115 @@ def reddit_search(sub, query, token, lookback_days=DEFAULT_LOOKBACK_DAYS, timeou
                 p["source"] = "oauth"
         return posts, err
     return reddit_search_rss(sub, query, lookback_days=lookback_days, timeout=timeout)
+
+
+# ── Comment-tree fetching (v1.9.2+) ──────────────────────────────────────
+# Top comments often carry the meatier sentiment than the OP. Fetched per post
+# after the top-N ranking. OAuth path gives per-comment scores; RSS path gives
+# bodies only (no scores) — the engagement-weighting in sentiment-cache falls
+# back to uniform weighting on RSS-sourced comments.
+COMMENTS_PER_POST = 5
+MIN_COMMENT_LEN = 40  # drop very-short noise ("this", "lol", etc.)
+
+
+def fetch_comments_oauth(sub, post_id, token, top_n=COMMENTS_PER_POST, timeout=15):
+    """OAuth path: full comment tree with scores. Returns list of comment dicts."""
+    url = f"https://oauth.reddit.com/r/{sub}/comments/{post_id}?limit=25&sort=top&depth=1"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "User-Agent": get_ua(),
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        return [], f"HTTP {e.code}"
+    except Exception as e:
+        return [], f"{type(e).__name__}: {e}"
+    # Response is [post_listing, comments_listing]; comments at children[].data.body
+    if not isinstance(data, list) or len(data) < 2:
+        return [], "unexpected response shape"
+    children = (data[1].get("data") or {}).get("children") or []
+    out = []
+    for c in children:
+        if c.get("kind") != "t1":
+            continue
+        cd = c.get("data") or {}
+        body = (cd.get("body") or "").strip()
+        if not body or len(body) < MIN_COMMENT_LEN:
+            continue
+        out.append({
+            "body": body[:600],   # cap to keep LLM-token budget reasonable
+            "score": cd.get("score"),
+            "author": cd.get("author"),
+            "created_utc": cd.get("created_utc"),
+            "source": "oauth",
+        })
+    out.sort(key=lambda x: x.get("score") or 0, reverse=True)
+    return out[:top_n], None
+
+
+def fetch_comments_rss(sub, post_id, top_n=COMMENTS_PER_POST, timeout=15):
+    """RSS path: comment bodies via the Atom feed. No per-comment score available.
+    First entry in the feed is the post itself — we skip it and treat the rest as comments.
+    """
+    url = f"https://www.reddit.com/r/{sub}/comments/{post_id}.rss?limit=25&sort=top"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": get_ua(),
+        "Accept": "application/atom+xml, application/xml",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return [], f"HTTP {e.code}"
+    except Exception as e:
+        return [], f"{type(e).__name__}: {e}"
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError as e:
+        return [], f"parse: {e}"
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("a:entry", ns)
+    if not entries:
+        return [], None
+    out = []
+    # Skip the first entry (the post body); remaining entries are comments.
+    for e in entries[1:]:
+        content_el = e.find("a:content", ns)
+        if content_el is None or not content_el.text:
+            continue
+        text = re.sub(r"<[^>]+>", " ", html.unescape(content_el.text))
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) < MIN_COMMENT_LEN:
+            continue
+        author_el = e.find("a:author/a:name", ns)
+        author = author_el.text.strip() if author_el is not None and author_el.text else None
+        updated_el = e.find("a:updated", ns)
+        created_utc = None
+        if updated_el is not None and updated_el.text:
+            try:
+                iso = updated_el.text.strip().replace("Z", "+00:00")
+                created_utc = int(datetime.fromisoformat(iso).timestamp())
+            except Exception:
+                pass
+        out.append({
+            "body": text[:600],
+            "score": None,        # RSS doesn't expose
+            "author": author,
+            "created_utc": created_utc,
+            "source": "rss",
+        })
+    # RSS order is reverse-chrono. No score to rank by; keep first top_n as proxy.
+    return out[:top_n], None
+
+
+def fetch_comments(sub, post_id, token, top_n=COMMENTS_PER_POST):
+    """Dispatch to OAuth (with scores) if token, else RSS (bodies only)."""
+    if token:
+        return fetch_comments_oauth(sub, post_id, token, top_n=top_n)
+    return fetch_comments_rss(sub, post_id, top_n=top_n)
 
 
 # ── Aggregate per ticker ───────────────────────────────────────────────────
@@ -351,6 +492,31 @@ def fetch_ticker(ticker, token, lookback_days=DEFAULT_LOOKBACK_DAYS, delay=DEFAU
         reverse=True,
     )[:TOP_N_POSTS]
 
+    # v1.9.2: fetch top comments for each ranked post. OAuth gives per-comment
+    # scores (engagement-weightable); RSS gives bodies only (uniform weighting).
+    comment_calls = 0
+    comment_errors = []
+    for p in ranked:
+        post_id = p.get("id")
+        sub = p.get("subreddit")
+        if not post_id or not sub:
+            p["top_comments"] = []
+            continue
+        if verbose:
+            print(f"  [reddit] r/{sub} comments/{post_id} ... ", end="", flush=True)
+        comments, c_err = fetch_comments(sub, post_id, token)
+        comment_calls += 1
+        if c_err:
+            comment_errors.append(f"r/{sub}/{post_id}: {c_err}")
+            if verbose:
+                print(f"ERR ({c_err})")
+            p["top_comments"] = []
+        else:
+            p["top_comments"] = comments
+            if verbose:
+                print(f"{len(comments)} comments")
+        time.sleep(delay)
+
     return {
         "ticker": ticker.upper(),
         "asset_class": cls,
@@ -358,10 +524,12 @@ def fetch_ticker(ticker, token, lookback_days=DEFAULT_LOOKBACK_DAYS, delay=DEFAU
         "lookback_days": lookback_days,
         "subs_searched": subs,
         "queries_used": queries,
-        "api_calls": n_calls,
+        "api_calls": n_calls + comment_calls,
+        "search_calls": n_calls,
+        "comment_calls": comment_calls,
         "mention_count": len(all_posts),
         "posts": ranked,
-        "errors": errors or None,
+        "errors": (errors + comment_errors) or None,
     }
 
 

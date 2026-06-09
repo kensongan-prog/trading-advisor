@@ -46,7 +46,9 @@ DEFAULT_MODEL = "google/gemma-4-31b-it:free"
 FALLBACK_MODEL = "openai/gpt-oss-120b:free"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-MAX_MESSAGES_PER_TICKER = 25  # cap to keep classification call snappy + within token budget
+MAX_MESSAGES_PER_TICKER = 60  # cap to keep classification call snappy + within token budget
+                              # (bumped 25→60 in v1.9.2 to accommodate Reddit
+                              # comment-tree scoring: 10 posts × ~6 items each)
 
 
 # ── .env loader ───────────────────────────────────────────────────────────
@@ -135,8 +137,17 @@ def classify_messages(messages, ticker, model=None, timeout=60):
     except Exception as e:
         return None, f"JSON parse failed: {e}", content
 
-    if not isinstance(parsed, list) or len(parsed) != len(msgs):
-        return None, f"Expected list of {len(msgs)}, got {type(parsed).__name__} len={len(parsed) if isinstance(parsed,list) else '?'}", content
+    if not isinstance(parsed, list):
+        return None, f"Expected list, got {type(parsed).__name__}", content
+    # v1.9.2: LLMs occasionally miscount items on larger batches (Gemma 4 31B
+    # returned 64 for a 60-item input). Tolerate length drift — truncate to the
+    # request length when the LLM over-produces; pad with neutrals when under.
+    if len(parsed) != len(msgs):
+        if len(parsed) > len(msgs):
+            parsed = parsed[:len(msgs)]  # over-produced — keep first N
+        else:
+            shortfall = len(msgs) - len(parsed)
+            parsed = parsed + [{"sentiment": "neutral", "conviction": 0.0}] * shortfall
 
     # Normalize each entry
     out = []
@@ -325,19 +336,38 @@ def process_reddit(raw, model):
     if not raw or not raw.get("posts"):
         return None, None
     posts = raw["posts"]
-    # Title + first 200 chars of selftext as the scoring unit; engagement
-    # weight = upvotes + num_comments × 2. Posts in RSS-only mode (no OAuth)
-    # have score=None → fall back to 0 (the +1 floor in _engagement_weight
-    # ensures they still count as one vote).
-    bodies, engagements = [], []
+    # v1.9.2: flatten posts + top comments into one scoring batch. Comment bodies
+    # often carry the meatier signal than the OP. Engagement weighting picks up
+    # both when available — OAuth gives per-comment scores; RSS-sourced comments
+    # have score=None and get a uniform low weight (still scored, just not boosted).
+    items = []  # list of (body, engagement, kind) tuples for ranking
+    n_posts = 0
+    n_comments = 0
     for p in posts:
-        text = p.get("title", "")
+        title = p.get("title", "")
         if p.get("selftext_excerpt"):
-            text += " — " + p["selftext_excerpt"][:200]
-        bodies.append(text)
-        engagements.append((p.get("score") or 0) + 2 * (p.get("num_comments") or 0))
-    if not bodies:
+            title += " — " + p["selftext_excerpt"][:200]
+        if title:
+            post_engagement = (p.get("score") or 0) + 2 * (p.get("num_comments") or 0)
+            items.append((title, post_engagement, "post"))
+            n_posts += 1
+        for c in (p.get("top_comments") or []):
+            body = (c.get("body") or "").strip()
+            if not body:
+                continue
+            # RSS-sourced comments lack `score`. Floor at 3 so they don't get
+            # crushed out of the batch by zero-engagement weighting.
+            comment_engagement = c.get("score") if c.get("score") is not None else 3
+            items.append((body, comment_engagement, "comment"))
+            n_comments += 1
+    if not items:
         return None, None
+    # Rank all items by engagement desc, cap at MAX_MESSAGES_PER_TICKER so the
+    # most impactful posts + comments compete for slots together.
+    items.sort(key=lambda x: x[1], reverse=True)
+    items = items[:MAX_MESSAGES_PER_TICKER]
+    bodies      = [x[0] for x in items]
+    engagements = [x[1] for x in items]
 
     classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
     if err:
@@ -346,8 +376,11 @@ def process_reddit(raw, model):
     pcts = llm_pcts(classifications, engagements=engagements)
     return {
         "present": True,
-        "n_posts": len(posts),
+        "n_posts": n_posts,
+        "n_comments": n_comments,
+        "n_scored_bodies": len(classifications),
         "mention_count": raw.get("mention_count", len(posts)),
+        "engagement_source": "oauth" if any((p.get("source") == "oauth") for p in posts) else "rss",
         "llm_bull_pct": pcts["bull"] if pcts else None,
         "llm_bear_pct": pcts["bear"] if pcts else None,
         "llm_neutral_pct": pcts["neutral"] if pcts else None,
@@ -446,8 +479,10 @@ def build_rationale(st, rd, composite, hn=None):
             f"LLM bull/bear/neut {st.get('llm_bull_pct'):.0%}/{st.get('llm_bear_pct'):.0%}/{st.get('llm_neutral_pct'):.0%}"
         )
     if rd and rd.get("present"):
+        nc = rd.get("n_comments")
+        post_str = f"{rd.get('n_posts')} posts" + (f" + {nc} comments" if nc else "")
         parts.append(
-            f"Reddit: {rd.get('n_posts')} posts, "
+            f"Reddit: {post_str}, "
             f"LLM bull/bear/neut {rd.get('llm_bull_pct'):.0%}/{rd.get('llm_bear_pct'):.0%}/{rd.get('llm_neutral_pct'):.0%}"
         )
     if hn and hn.get("present"):

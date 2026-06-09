@@ -4232,10 +4232,18 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 
         rd_line = ""
         if rd.get("present"):
+            src = rd.get("engagement_source", "rss")
+            src_note = (
+                ' <span class="dim" style="font-size:10px">[OAuth — per-comment scores live]</span>'
+                if src == "oauth" else
+                ' <span class="dim" style="font-size:10px" title="RSS path — comments have no per-item score; engagement weighting uses a uniform floor. Set up Reddit OAuth credentials to unlock real upvote weighting.">[RSS — uniform comment weight]</span>'
+            )
             rd_line = (
-                f'<div class="gate-line"><b>Reddit:</b> {rd.get("n_posts",0)} posts (of {rd.get("mention_count",0)} total mentions) · '
+                f'<div class="gate-line"><b>Reddit:</b> {rd.get("n_posts",0)} posts + {rd.get("n_comments",0)} comments '
+                f'(of {rd.get("mention_count",0)} total mentions, {rd.get("n_scored_bodies",0)} scored) · '
                 f'LLM bull/bear/neut <b>{pct(rd.get("llm_bull_pct"))} / {pct(rd.get("llm_bear_pct"))} / {pct(rd.get("llm_neutral_pct"))}</b> '
-                f'<span class="dim">(LLM avg conviction {pct(rd.get("llm_avg_conviction"))})</span></div>'
+                f'<span class="dim">(conv {pct(rd.get("llm_avg_conviction"))})</span>'
+                f'{src_note}</div>'
             )
         else:
             rd_line = '<div class="gate-line dim"><b>Reddit:</b> absent (no posts in lookback window, or no Reddit data)</div>'
@@ -4263,6 +4271,119 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             '</div>'
         )
 
+    # v1.9.2: Polymarket inline surfacing — pick the most-relevant money-backed
+    # markets per watchlist ticker for the sentiment dropdown. Surface only, do
+    # not fold into the bull/bear% composite (AGENTS.md §4 keeps Polymarket as
+    # categorically-different signal from forum/retail sentiment).
+    _CRYPTO_KEYWORDS = {
+        "BTC":  ["bitcoin", "btc"],
+        "ETH":  ["ethereum", "eth"],
+        "SOL":  ["solana"],
+        "BNB":  ["binance"],
+        "XRP":  ["xrp", "ripple"],
+        "HBAR": ["hedera"],
+        "HYPE": ["hyperliquid"],
+        "ENA":  ["ethena"],
+        "ONDO": ["ondo"],
+    }
+    _BTC_PROXY_EQUITIES = {"CLSK", "CIFR", "RIOT", "MARA", "MSTR", "COIN", "HOOD"}
+
+    def _polymarket_signals_for(ticker, asset_class, max_items=3):
+        """Return list of {question, prob, vol_24h, liquidity, category, lean} tuples
+        most relevant to this ticker. Empty list if no relevant markets exist."""
+        pm = ctx.get("polymarket") or {}
+        cats = pm.get("categories") or {}
+        all_events = []
+        for cat_name, cat in cats.items():
+            for ev in (cat.get("events") or []):
+                for m in (ev.get("markets") or []):
+                    yp = m.get("yes_price")
+                    if yp is None:
+                        continue
+                    all_events.append({
+                        "category": cat_name,
+                        "event_title": ev.get("title") or "",
+                        "question": m.get("question") or "—",
+                        "prob": yp,
+                        "vol_24h": m.get("volume_24h") or 0,
+                        "liquidity": m.get("liquidity") or 0,
+                    })
+        if not all_events:
+            return []
+
+        def _matches_keywords(m, kws):
+            text = (m["question"] + " " + m["event_title"]).lower()
+            return any(kw in text for kw in kws)
+
+        relevant = []
+        if asset_class == "crypto":
+            kws = _CRYPTO_KEYWORDS.get(ticker.upper())
+            if kws:
+                relevant = [m for m in all_events
+                            if m["category"] == "crypto" and _matches_keywords(m, kws)]
+            # Fall back: any crypto-category market
+            if not relevant:
+                relevant = [m for m in all_events if m["category"] == "crypto"]
+        elif asset_class == "us":
+            # BTC-proxy equities get BTC markets first, then macro
+            if ticker.upper() in _BTC_PROXY_EQUITIES:
+                relevant = [m for m in all_events
+                            if m["category"] == "crypto" and _matches_keywords(m, ["bitcoin", "btc"])]
+            # Add general macro_rates + macro_econ as broad-market context
+            relevant += [m for m in all_events if m["category"] in ("macro_rates", "macro_econ")]
+        # KLSE has no Polymarket coverage — return empty
+
+        # Rank by volume_24h (the "real money" signal) desc, take top N
+        relevant.sort(key=lambda x: x["vol_24h"], reverse=True)
+        # Tag each market with a directional lean for the operator
+        out = []
+        for m in relevant[:max_items]:
+            p = m["prob"]
+            if p >= 0.80:
+                lean = ("strong-yes", "🟢")
+            elif p >= 0.60:
+                lean = ("lean-yes", "🟡")
+            elif p <= 0.20:
+                lean = ("strong-no", "🔴")
+            elif p <= 0.40:
+                lean = ("lean-no", "🟠")
+            else:
+                lean = ("uncertain", "⚪")
+            out.append({**m, "lean_label": lean[0], "lean_glyph": lean[1]})
+        return out
+
+    def _polymarket_inline_html(ticker, asset_class):
+        """Render the Polymarket money-backed section for a row's expanded dropdown."""
+        sigs = _polymarket_signals_for(ticker, asset_class)
+        if not sigs:
+            if asset_class == "klse":
+                return ('<div class="gate-line dim" style="font-size:11px"><b>🪙 Money-backed (Polymarket):</b> '
+                        'no coverage (Polymarket doesn\'t carry KLSE markets)</div>')
+            return ('<div class="gate-line dim" style="font-size:11px"><b>🪙 Money-backed (Polymarket):</b> '
+                    'no relevant markets in cache (run polymarket-events refresh)</div>')
+
+        def _fmt_vol(v):
+            if v is None or v <= 0: return "—"
+            if v >= 1_000_000: return f"${v/1_000_000:.1f}M"
+            if v >= 1_000:     return f"${v/1_000:.0f}K"
+            return f"${v:.0f}"
+
+        rows = []
+        for s in sigs:
+            q = html.escape(s["question"][:72])
+            prob_pct = f"{s['prob']*100:.0f}%"
+            rows.append(
+                f'<div class="gate-line" style="font-size:11px">'
+                f'  {s["lean_glyph"]} <b>{prob_pct}</b> · {q} '
+                f'<span class="dim">[{_fmt_vol(s["vol_24h"])} 24h vol]</span>'
+                f'</div>'
+            )
+        return (
+            '<div class="gate-line" style="font-size:11px;margin-top:6px"><b>🪙 Money-backed (Polymarket):</b> '
+            '<span class="dim">real-money odds, ranked by 24h volume</span></div>'
+            + "\n".join(rows)
+        )
+
     def _news_glyph_payload(ticker, asset_class):
         """Look up the pre-computed news glyph for a watchlist entry.
 
@@ -4279,6 +4400,8 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     def _news_glyph_inline(ticker, asset_class):
         """Return an inline `<span>📈❗</span>` (or empty string) to append to a sentiment cell.
         72h window drives the glyph color (🟢/🔴/⚪); ❗ modifier marks fresh analyst action."""
+        if ctx.get("news_glyphs_skipped"):
+            return ""  # operator-intentional skip via --no-news-glyph — not an error
         g = _news_glyph_payload(ticker, asset_class)
         if not g:
             return ""
@@ -4289,13 +4412,20 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 
     def _news_glyph_details_html(ticker, asset_class):
         """Render the News section for a row's expanded dropdown."""
+        if ctx.get("news_glyphs_skipped"):
+            return (
+                '<div class="exp-gate-col"><div class="exp-gate-head">News</div>'
+                '<div class="gate-line dim">News glyph disabled for this build '
+                '(<code>--no-news-glyph</code> flag was passed). '
+                'Re-run the dashboard without that flag to load the cache.</div></div>'
+            )
         g = _news_glyph_payload(ticker, asset_class)
         if not g:
             return (
                 '<div class="exp-gate-col"><div class="exp-gate-head">News</div>'
-                '<div class="gate-line dim">No news cache. Run '
+                '<div class="gate-line dim">No news cache for this ticker. Run '
                 '<code>python3 .claude/skills/us-news/news_glyph.py refresh-' + asset_class + ' --...</code> '
-                'to populate.</div></div>'
+                'to populate, or press <b>📰 News refresh</b> on the dashboard header.</div></div>'
             )
         glyph = (g.get("glyph") or "⚪") + (g.get("modifier") or "")
         head = f'<div class="exp-gate-head">News {glyph} <span class="dim" style="font-size:11px">· {html.escape(g.get("summary","") or "")}</span></div>'
@@ -4349,6 +4479,16 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         if g.get("caveat"):
             parts.append(f'<div class="gate-line" style="margin-top:6px;font-size:11px;color:var(--warn,#c80)">⚠ {html.escape(g["caveat"])}</div>')
         return '<div class="exp-gate-col">' + "\n".join(parts) + '</div>'
+
+    def sentiment_details_with_polymarket(ticker, asset_class):
+        """Wrap sentiment_details_html with the Polymarket inline section appended."""
+        base = sentiment_details_html(ticker)
+        pm = _polymarket_inline_html(ticker, asset_class)
+        # Inject Polymarket inside the same exp-gate-col so it sits below the
+        # scored-at line cleanly. The base ends with '</div>' — splice in before it.
+        if base.endswith("</div>"):
+            return base[:-len("</div>")] + pm + "</div>"
+        return base + pm
 
     def sentiment_cell(ticker, asset_class="us"):
         """Render the Retail Sentiment column cell for one ticker.
@@ -4421,7 +4561,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason)}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
-                f'    {sentiment_details_html(tk)}'
+                f'    {sentiment_details_with_polymarket(tk, "us")}'
                 f'    {_news_glyph_details_html(tk, "us")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
@@ -4574,7 +4714,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason)}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
-                f'    {sentiment_details_html(tk)}'
+                f'    {sentiment_details_with_polymarket(tk, "klse")}'
                 f'    {_news_glyph_details_html(tk, "klse")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
@@ -4707,7 +4847,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line"><b>Reason:</b> {html.escape(reason) or "—"}</div>'
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
-                f'    {sentiment_details_html(entry["ticker"])}'
+                f'    {sentiment_details_with_polymarket(entry["ticker"], "crypto")}'
                 f'    {_news_glyph_details_html(entry["ticker"], "crypto")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
@@ -5268,6 +5408,7 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
 
     # News-glyph payloads (per-ticker 🟢/🔴/⚪ + ❗ analyst modifier — see news_glyph.py)
     news_glyphs = _load_news_glyphs(watchlist, refresh=refresh_news_glyph, skip=skip_news_glyph)
+    news_glyphs_skipped = bool(skip_news_glyph)
 
     # Token-unlock cache (populated by crypto-unlocks-cache skill; consumed by sim §5 gate)
     crypto_unlocks = {}
@@ -5300,6 +5441,7 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
         "crypto_indicators": crypto_indicators,
         "crypto_unlocks": crypto_unlocks,
         "news_glyphs": news_glyphs,
+        "news_glyphs_skipped": news_glyphs_skipped,
         "sentiment": _bulk_load_sentiment(),
         "polymarket": load_polymarket(),
         "config": {
