@@ -4138,6 +4138,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         srcs = s.get("sources") or {}
         st = srcs.get("stocktwits") or {}
         rd = srcs.get("reddit") or {}
+        hn = srcs.get("hackernews") or {}
         badge = c.get("badge", "—"); label = c.get("label", "UNKNOWN")
         bs = c.get("bull_score"); bear = c.get("bear_score"); neut = c.get("neutral_score"); conv = c.get("conviction")
         flag = c.get("contrarian_flag")
@@ -4184,13 +4185,25 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         else:
             rd_line = '<div class="gate-line dim"><b>Reddit:</b> absent (no posts in lookback window, or no Reddit data)</div>'
 
+        hn_line = ""
+        if hn.get("present"):
+            hn_line = (
+                f'<div class="gate-line"><b>Hacker News:</b> {hn.get("story_count",0)} stories · '
+                f'{hn.get("n_bodies_scored",0)} bodies scored (engagement {hn.get("total_engagement",0)}) · '
+                f'LLM bull/bear/neut <b>{pct(hn.get("llm_bull_pct"))} / {pct(hn.get("llm_bear_pct"))} / {pct(hn.get("llm_neutral_pct"))}</b> '
+                f'<span class="dim">(conviction {pct(hn.get("llm_avg_conviction"))})</span></div>'
+            )
+        else:
+            hn_line = '<div class="gate-line dim"><b>Hacker News:</b> absent (no coverage in last 30d, or ticker mapped-to-skip)</div>'
+
         return (
             '<div class="exp-gate-col">'
-            f'<div class="exp-gate-head">Retail Sentiment</div>'
+            f'<div class="exp-gate-head">Retail Sentiment <span class="dim" style="font-size:10px">(engagement-weighted)</span></div>'
             f'<div class="gate-line"><b>{badge} {html.escape(label)}</b>{flag_html}</div>'
             f'<div class="gate-line">Composite: bull <b>{pct(bs)}</b> · bear <b>{pct(bear)}</b> · neutral <b>{pct(neut)}</b> · conviction <b>{pct(conv)}</b></div>'
             f'{st_line}'
             f'{rd_line}'
+            f'{hn_line}'
             f'<div class="gate-line dim" style="margin-top:6px;font-size:11px">Scored {html.escape(scored_at)} · model {html.escape(model)}</div>'
             '</div>'
         )
@@ -4941,6 +4954,7 @@ def _refresh_sentiment_for(tickers, label):
     steps = [
         ("reddit", PROJECT_ROOT / ".claude/skills/reddit-sentiment/reddit_sentiment.py"),
         ("stocktwits", PROJECT_ROOT / ".claude/skills/stocktwits-sentiment/stocktwits_sentiment.py"),
+        ("hn", PROJECT_ROOT / ".claude/skills/hn-sentiment/hn_sentiment.py"),
         ("scorer", PROJECT_ROOT / ".claude/skills/sentiment-cache/sentiment_cache.py"),
     ]
     ok = True

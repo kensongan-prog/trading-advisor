@@ -165,7 +165,7 @@ be collapsed into a single number — they answer different questions:
 | Layer | Skill | What it measures | Treatment |
 |---|---|---|---|
 | **Professional news** | `us-news`, `klse-news`, `crypto-coingecko` headlines | Curated catalysts + analyst tone | **Additive** — bullish news on constructive setup = confluence |
-| **Retail forums** | `reddit-sentiment` + `stocktwits-sentiment` → `sentiment-cache` | Crowd cheap-talk (gameable, last-money-in) | **Contrarian filter** — extremes downgrade or upgrade conviction; mid-range is no-op |
+| **Retail forums** | `reddit-sentiment` + `stocktwits-sentiment` + `hn-sentiment` → `sentiment-cache` | Crowd cheap-talk (gameable, last-money-in) on Reddit/ST + substantive technical-community opinion on HN | **Contrarian filter** — extremes downgrade or upgrade conviction; mid-range is no-op. Engagement-weighted (upvotes/likes/comment-count); HN earns a 1.2× source weight as the less-gameable leg |
 | **Prediction markets** | `polymarket-events` | Money-weighted speculator consensus on macro outcomes | **Additive macro confluence** — less gameable than forums; aligned/diverged/uncertain readings on Fed, recession, BTC/ETH, geopolitics |
 
 **Per-row news glyph — the professional-leg surfacing on every watchlist row.**

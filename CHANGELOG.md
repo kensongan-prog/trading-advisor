@@ -100,10 +100,35 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total). Will cut as a PATCH once verified.
 - **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
 - **News-glyph LLM scoring quality watch.** v1.8.0's LLM-attributed news sentiment fixed the KTOS-style cross-attribution problem in spot tests (Axon-headline false positive cleared, Kratos-name primary subject correctly detected). Want a few weeks of varied news flow to confirm the Gemma 4 31B / GPT-OSS 120B free-tier models hold up on edge cases (non-English KLSE headlines, sector roundups, ambiguous bank-of-companies headlines). Tracking 429s / fallback frequency in the score logs.
+- **HN coverage + 1.2× source weight calibration watch.** v1.9.0's HN-as-third-leg validated cleanly on RDDT (substantive HN comments pulled composite from BULL → NEUTRAL where Reddit + StockTwits diverged from technical reality). Want a few weeks across the watchlist to confirm: (a) the 1.2× HN source weight is right (not over- or under-correcting vs forum signal), (b) tech tickers consistently get coverage and non-tech ones cleanly degrade to "absent", (c) the curated `TICKER → company name` map doesn't need tuning for new watchlist adds. Treat any composite swing > 20% bull% caused purely by HN as a calibration data point.
 
 ### Added
 
 ### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v1.9.0] — 2026-06-09
+
+Sentiment quality MINOR. Two changes that compound: a third retail-sentiment source (Hacker News, via free Algolia API) joins Reddit + StockTwits as the **less-gameable leg** of the §4 composite, and **all three sources** now weight individual posts/comments/messages by engagement (`1 + log1p(upvotes_or_likes)`) instead of treating every item equally. Hot signal travels with the message's audience; gameable low-engagement noise fades. Real-world validation on RDDT this session: the addition of HN's substantive technical comments pulled a composite that Reddit + StockTwits would have called BULL back to a correct NEUTRAL — exactly the contrarian-filter use case.
+
+### Added
+
+- **Hacker News as a third retail-sentiment source.** New `hn-sentiment` skill (`.claude/skills/hn-sentiment/hn_sentiment.py`) pulls per-ticker stories and top comments from the free Algolia HN API (no auth) into `.claude/cache/hn_sentiment/{TICKER}.json`. HN is typically more substantive than Reddit/StockTwits chatter — fewer participants, much higher per-comment information density — so it earns a **1.2× source weight** in the composite as the less-gameable leg. A curated `TICKER → company name` map handles HN's company-name addressing (HN talks about "Reddit", "Nvidia", "Bitcoin", not "RDDT", "NVDA", "BTC"); unknown tickers fall back to the symbol. KLSE codes are auto-skipped (zero HN coverage on Bursa names). Real-world validation on RDDT this session: Reddit + StockTwits skewed bullish (~63% bull average) while HN substantive comments scored 75% neutral / 24% bearish, pulling the composite back to a clean NEUTRAL — exactly the contrarian-filter case the third leg was added for.
+- **Engagement-weighted sentiment scoring** across all three retail sources. Previously each Reddit post / StockTwits message / HN comment counted equally in the LLM-conviction-weighted aggregate. After: each item's contribution is multiplied by `1 + log1p(engagement)` where engagement is upvotes + 2× comment count (Reddit), likes + 2× reshares (StockTwits), or comment points (HN). A 1000-upvote WSB thesis post now contributes ~8× more than a 0-upvote one; gameable low-engagement spam fades. Curve is logarithmic so a single viral 50k-upvote post can't drown out the rest of the sample. The new `engagement_weighted` flag on each source summary signals the change in stored caches.
+- **HN line in the Retail Sentiment dropdown.** Every watchlist row's expand-panel now shows a third "Hacker News" sub-line alongside StockTwits and Reddit, with story count, bodies scored, total engagement, and per-source LLM bull/bear/neutral breakdown. The "Retail Sentiment" column header in the dropdown carries an "(engagement-weighted)" hint.
+
+### Changed
+
+- **`sentiment-cache` is now a 3-source aggregator.** The orchestrator (`score_ticker`) reads Reddit + StockTwits + Hacker News raw caches and composes a single composite. Source weights: ST 1.0, Reddit 1.0, HN 1.2. Stored cache schema gains `sources.hackernews` and `composite.engagement_weighted=true`. The dashboard's `_refresh_sentiment_for` chain runs `hn-sentiment` as a new step between `stocktwits-sentiment` and the LLM scorer.
 
 ### Fixed
 

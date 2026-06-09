@@ -39,6 +39,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 REDDIT_CACHE = PROJECT_ROOT / ".claude" / "cache" / "reddit_sentiment"
 STOCKTWITS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "stocktwits_sentiment"
+HACKERNEWS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "hn_sentiment"
 ENV_FILE = SCRIPT_DIR / ".env"
 
 DEFAULT_MODEL = "google/gemma-4-31b-it:free"
@@ -156,22 +157,55 @@ def classify_messages(messages, ticker, model=None, timeout=60):
 
 
 # ── Aggregate LLM scores into per-source pcts ──────────────────────────────
-def llm_pcts(classifications):
-    """Convert list of {sentiment, conviction} into weighted bull/bear/neutral pcts."""
+import math
+
+
+def _engagement_weight(engagement):
+    """Compress raw engagement into a per-message multiplier.
+
+    Formula: 1.0 + log1p(engagement)
+      e=0    → 1.0 (zero-engagement still counts as one vote — never silently dropped)
+      e=10   → ~3.4
+      e=100  → ~5.6
+      e=1000 → ~7.9
+      e=10000 → ~10.2
+
+    A hot 1000-upvote post contributes ~8× more than a 0-upvote one — meaningful
+    but not extreme. The log curve prevents a single 50k-upvote viral post from
+    drowning out the rest of the sample.
+    """
+    e = max(0.0, float(engagement or 0))
+    return 1.0 + math.log1p(e)
+
+
+def llm_pcts(classifications, engagements=None):
+    """Convert list of {sentiment, conviction} into weighted bull/bear/neutral pcts.
+
+    If `engagements` is provided (parallel list of floats — upvotes, likes, etc.),
+    each message's effective weight becomes `conviction × engagement_weight(e)`.
+    Otherwise reverts to conviction-only weighting (old behavior).
+    """
     if not classifications:
         return None
-    total_w = sum(c["conviction"] for c in classifications)
+    if engagements is None or len(engagements) != len(classifications):
+        weights = [c["conviction"] for c in classifications]
+    else:
+        weights = [c["conviction"] * _engagement_weight(e)
+                   for c, e in zip(classifications, engagements)]
+    total_w = sum(weights)
     if total_w == 0:
-        # All zero conviction = treat as uniform neutral
-        return {"bull": 0.0, "bear": 0.0, "neutral": 1.0, "avg_conviction": 0.0}
-    bull = sum(c["conviction"] for c in classifications if c["sentiment"] == "bullish") / total_w
-    bear = sum(c["conviction"] for c in classifications if c["sentiment"] == "bearish") / total_w
-    neut = sum(c["conviction"] for c in classifications if c["sentiment"] == "neutral") / total_w
+        # All zero weight = treat as uniform neutral
+        return {"bull": 0.0, "bear": 0.0, "neutral": 1.0, "avg_conviction": 0.0,
+                "engagement_weighted": engagements is not None}
+    bull = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "bullish") / total_w
+    bear = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "bearish") / total_w
+    neut = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "neutral") / total_w
     return {
         "bull": round(bull, 3),
         "bear": round(bear, 3),
         "neutral": round(neut, 3),
-        "avg_conviction": round(total_w / len(classifications), 3),
+        "avg_conviction": round(sum(c["conviction"] for c in classifications) / len(classifications), 3),
+        "engagement_weighted": engagements is not None,
     }
 
 
@@ -196,21 +230,83 @@ def load_reddit(ticker):
         return None
 
 
+def load_hackernews(ticker):
+    p = HACKERNEWS_CACHE / f"{ticker.upper()}.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def process_hackernews(raw, model):
+    """Flatten HN stories + top comments into a single classification pass.
+    Each story title contributes one body with engagement = story.engagement.
+    Each top-level comment contributes one body with engagement = comment.points.
+    The MAX_MESSAGES_PER_TICKER cap in classify_messages will trim if needed.
+    """
+    if not raw or raw.get("no_coverage") or raw.get("error"):
+        return None, None
+    stories = raw.get("stories") or []
+    if not stories:
+        return None, None
+    bodies, engagements = [], []
+    for s in stories:
+        # Story title + optional excerpt as one scoring unit
+        title = (s.get("title") or "").strip()
+        if title:
+            text = title
+            if s.get("story_text_excerpt"):
+                text += " — " + s["story_text_excerpt"][:200]
+            bodies.append(text)
+            engagements.append(s.get("engagement") or 0)
+        # Top-level comments
+        for c in (s.get("top_comments") or []):
+            body = (c.get("body") or "").strip()
+            if not body or len(body) < 40:
+                continue
+            bodies.append(body)
+            engagements.append(c.get("points") or 0)
+    if not bodies:
+        return None, None
+    classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
+    if err:
+        return None, f"LLM scoring failed: {err}"
+    engagements = engagements[:len(classifications)]
+    pcts = llm_pcts(classifications, engagements=engagements)
+    return {
+        "present": True,
+        "story_count": len(stories),
+        "n_bodies_scored": len(classifications),
+        "total_engagement": sum(engagements),
+        "llm_bull_pct": pcts["bull"] if pcts else None,
+        "llm_bear_pct": pcts["bear"] if pcts else None,
+        "llm_neutral_pct": pcts["neutral"] if pcts else None,
+        "llm_avg_conviction": pcts["avg_conviction"] if pcts else None,
+    }, None
+
+
 def process_stocktwits(raw, model):
     """Returns (source_summary_dict_or_None, error_or_none)."""
     if not raw or raw.get("no_coverage") or not raw.get("messages"):
         return None, None
 
-    msgs = raw["messages"]
-    bodies = [m["body"] for m in msgs if m.get("body")]
-    if not bodies:
+    msgs = [m for m in raw["messages"] if m.get("body")]
+    if not msgs:
         return None, None
+    bodies = [m["body"] for m in msgs]
+    # Engagement per ST message: likes + reshares × 2 (reshares mean someone
+    # found it worth their followers' attention — heavier signal than a like).
+    engagements = [(m.get("likes") or 0) + 2 * (m.get("reshares") or 0) for m in msgs]
 
     classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
     if err:
         return None, f"LLM scoring failed: {err}"
 
-    pcts = llm_pcts(classifications)
+    # classify_messages may truncate to MAX_MESSAGES_PER_TICKER — keep engagements aligned.
+    engagements = engagements[:len(classifications)]
+    pcts = llm_pcts(classifications, engagements=engagements)
     user_tagged_bull = raw.get("tagged_bull_pct")
 
     return {
@@ -229,20 +325,25 @@ def process_reddit(raw, model):
     if not raw or not raw.get("posts"):
         return None, None
     posts = raw["posts"]
-    # Use title + first 200 chars of selftext as the unit to score
-    bodies = []
+    # Title + first 200 chars of selftext as the scoring unit; engagement
+    # weight = upvotes + num_comments × 2. Posts in RSS-only mode (no OAuth)
+    # have score=None → fall back to 0 (the +1 floor in _engagement_weight
+    # ensures they still count as one vote).
+    bodies, engagements = [], []
     for p in posts:
         text = p.get("title", "")
         if p.get("selftext_excerpt"):
             text += " — " + p["selftext_excerpt"][:200]
         bodies.append(text)
+        engagements.append((p.get("score") or 0) + 2 * (p.get("num_comments") or 0))
     if not bodies:
         return None, None
 
     classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
     if err:
         return None, f"LLM scoring failed: {err}"
-    pcts = llm_pcts(classifications)
+    engagements = engagements[:len(classifications)]
+    pcts = llm_pcts(classifications, engagements=engagements)
     return {
         "present": True,
         "n_posts": len(posts),
@@ -255,8 +356,12 @@ def process_reddit(raw, model):
 
 
 # ── Composite ─────────────────────────────────────────────────────────────
-def compute_composite(st_summary, rd_summary):
-    """Combine source summaries into composite scores + label + contrarian flag."""
+def compute_composite(st_summary, rd_summary, hn_summary=None):
+    """Combine source summaries into composite scores + label + contrarian flag.
+
+    Source weights: ST 1.0, Reddit 1.0, HN 1.2 (HN signal is generally less
+    gameable + carries higher per-comment information density, so it earns
+    a slight bump above the cheap-talk forums)."""
     weights = []
     bulls, bears, neuts = [], [], []
     convictions = []
@@ -285,6 +390,14 @@ def compute_composite(st_summary, rd_summary):
         weights.append(1.0)
         if rd_summary.get("llm_avg_conviction") is not None:
             convictions.append(rd_summary["llm_avg_conviction"])
+
+    if hn_summary and hn_summary.get("present"):
+        bulls.append(hn_summary.get("llm_bull_pct") or 0.0)
+        bears.append(hn_summary.get("llm_bear_pct") or 0.0)
+        neuts.append(hn_summary.get("llm_neutral_pct") or 0.0)
+        weights.append(1.2)
+        if hn_summary.get("llm_avg_conviction") is not None:
+            convictions.append(hn_summary["llm_avg_conviction"])
 
     if not weights:
         return {
@@ -323,7 +436,7 @@ def compute_composite(st_summary, rd_summary):
     }
 
 
-def build_rationale(st, rd, composite):
+def build_rationale(st, rd, composite, hn=None):
     parts = []
     if st and st.get("present"):
         ut = st.get("user_tagged_bull_pct")
@@ -336,6 +449,11 @@ def build_rationale(st, rd, composite):
         parts.append(
             f"Reddit: {rd.get('n_posts')} posts, "
             f"LLM bull/bear/neut {rd.get('llm_bull_pct'):.0%}/{rd.get('llm_bear_pct'):.0%}/{rd.get('llm_neutral_pct'):.0%}"
+        )
+    if hn and hn.get("present"):
+        parts.append(
+            f"HN: {hn.get('story_count')} stories ({hn.get('n_bodies_scored')} bodies), "
+            f"LLM bull/bear/neut {hn.get('llm_bull_pct'):.0%}/{hn.get('llm_bear_pct'):.0%}/{hn.get('llm_neutral_pct'):.0%}"
         )
     if not parts:
         return "No source data available."
@@ -352,11 +470,13 @@ def score_ticker(ticker, model=None, verbose=True):
     model = model or get_model()
     st_raw = load_stocktwits(ticker)
     rd_raw = load_reddit(ticker)
+    hn_raw = load_hackernews(ticker)
 
     if verbose:
         st_status = "ok" if (st_raw and not st_raw.get("no_coverage") and st_raw.get("messages")) else "missing"
         rd_status = "ok" if (rd_raw and rd_raw.get("posts")) else "missing"
-        print(f"  sources: stocktwits={st_status}  reddit={rd_status}")
+        hn_status = "ok" if (hn_raw and (hn_raw.get("stories") or [])) else ("skip" if hn_raw and hn_raw.get("no_coverage") else "missing")
+        print(f"  sources: stocktwits={st_status}  reddit={rd_status}  hn={hn_status}")
 
     st_summary, st_err = process_stocktwits(st_raw, model) if st_raw else (None, None)
     if st_err and verbose:
@@ -364,10 +484,13 @@ def score_ticker(ticker, model=None, verbose=True):
     rd_summary, rd_err = process_reddit(rd_raw, model) if rd_raw else (None, None)
     if rd_err and verbose:
         print(f"  reddit LLM error: {rd_err}")
+    hn_summary, hn_err = process_hackernews(hn_raw, model) if hn_raw else (None, None)
+    if hn_err and verbose:
+        print(f"  hn LLM error: {hn_err}")
 
-    asset_class = (st_raw or rd_raw or {}).get("asset_class", "unknown")
-    composite = compute_composite(st_summary, rd_summary)
-    rationale = build_rationale(st_summary, rd_summary, composite)
+    asset_class = (st_raw or rd_raw or hn_raw or {}).get("asset_class", "unknown")
+    composite = compute_composite(st_summary, rd_summary, hn_summary)
+    rationale = build_rationale(st_summary, rd_summary, composite, hn=hn_summary)
     composite["rationale"] = rationale
 
     return {
@@ -376,8 +499,9 @@ def score_ticker(ticker, model=None, verbose=True):
         "scored_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "model": model,
         "sources": {
-            "stocktwits": st_summary or {"present": False, "error": st_err},
-            "reddit": rd_summary or {"present": False, "error": rd_err},
+            "stocktwits":  st_summary or {"present": False, "error": st_err},
+            "reddit":      rd_summary or {"present": False, "error": rd_err},
+            "hackernews":  hn_summary or {"present": False, "error": hn_err},
         },
         "composite": composite,
     }
