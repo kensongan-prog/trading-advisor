@@ -45,7 +45,7 @@ OUT_CACHE  = CACHE_DIR / "candidates.json"
 TECH_TTL_HOURS = 24
 FUND_TTL_HOURS = 24 * 7
 COOLDOWN_FILE = CACHE_DIR / ".yfinance_cooldown_until"
-COOLDOWN_MINUTES_ON_FAIL = 45   # if yfinance bulk fetch dies, back off for 45 min
+COOLDOWN_MINUTES_ON_FAIL = 10   # if data fetch dies, back off for 10 min (was 45 — too long)
 
 # ── Universe + watchlist loading ─────────────────────────────────────────
 def load_universe(include_watchlist=True):
@@ -264,31 +264,46 @@ def fetch_technicals_bulk(tickers, force=False):
           f"(HOT {tier_counts['hot']} · WARM {tier_counts['warm']} · COLD {tier_counts['cold']}) "
           f"~{est_secs}s · TD budget {budget['used']}/{td.DAILY_CAP}", flush=True)
 
-    # Proactive cooldown — if process is killed mid-fetch, future runs see it
-    set_cooldown(minutes=COOLDOWN_MINUTES_ON_FAIL)
+    # v1.9.1 bug fix: cooldown now only sets on actual fatal failure, not preemptively.
+    # Old logic: set BEFORE the fetch loop ("proactive — if process is killed mid-fetch,
+    # future runs see it"), cleared only if `fetched > 0 and not fatal`. The failure
+    # mode that bit us: every per-ticker call errored individually (transient TD blip).
+    # `fetched` stayed 0, cooldown stuck for 45 min, every subsequent dashboard refresh
+    # silently served stale candidates.json. Now: cooldown fires only on hard fatal
+    # errors (rate-cap, auth) — per-ticker errors are just logged.
     fetched = 0
     fatal = None
-    for i, (t, tier) in enumerate(to_fetch):
-        bars, err = td.candle_ohlcv(t, outputsize=250)
-        if err:
-            cache[t] = {"error": err, "_fetched_at": now_iso(), "_tier": tier}
-            # Stop on hard failures
-            if "cap hit" in err or "API key" in err or "unauthorized" in err.lower():
-                fatal = err
-                print(f"  [tech] fatal ({i+1}/{len(to_fetch)}): {err}", file=sys.stderr)
-                break
-            continue
-        ind = _compute_indicators_from_td_bars(bars)
-        if "error" in ind:
+    try:
+        for i, (t, tier) in enumerate(to_fetch):
+            bars, err = td.candle_ohlcv(t, outputsize=250)
+            if err:
+                cache[t] = {"error": err, "_fetched_at": now_iso(), "_tier": tier}
+                if "cap hit" in err or "API key" in err or "unauthorized" in err.lower():
+                    fatal = err
+                    print(f"  [tech] fatal ({i+1}/{len(to_fetch)}): {err}", file=sys.stderr)
+                    break
+                continue
+            ind = _compute_indicators_from_td_bars(bars)
+            if "error" in ind:
+                cache[t] = {**ind, "_fetched_at": now_iso(), "_tier": tier}
+                continue
             cache[t] = {**ind, "_fetched_at": now_iso(), "_tier": tier}
-            continue
-        cache[t] = {**ind, "_fetched_at": now_iso(), "_tier": tier}
-        fetched += 1
-        if (i + 1) % 20 == 0:
-            save_cache(TECH_CACHE, cache)
-            print(f"    …{i+1}/{len(to_fetch)} done", flush=True)
+            fetched += 1
+            if (i + 1) % 20 == 0:
+                save_cache(TECH_CACHE, cache)
+                print(f"    …{i+1}/{len(to_fetch)} done", flush=True)
+    except (KeyboardInterrupt, SystemExit):
+        # Process killed mid-fetch → set cooldown so a frantic re-run doesn't pile on
+        set_cooldown(minutes=COOLDOWN_MINUTES_ON_FAIL)
+        save_cache(TECH_CACHE, cache)
+        raise
     save_cache(TECH_CACHE, cache)
-    if fetched > 0 and not fatal:
+    if fatal:
+        # Hard failure (rate-cap, auth) → genuine reason to back off
+        set_cooldown(minutes=COOLDOWN_MINUTES_ON_FAIL)
+    else:
+        # Loop completed normally — clear any prior cooldown unconditionally so the
+        # cache stays unblocked even if every individual ticker errored gracefully.
         clear_cooldown()
     return cache, fetched, fatal
 
@@ -535,8 +550,11 @@ def eval_p1_technical(t):
     if rsi < 30:                 return ("fail", f"RSI {rsi:.1f} < 30 oversold")
     ch = t.get("change_pct") or 0
     if abs(ch) > 5:              return ("fail", f"today {ch:+.1f}% violent")
+    # v1.9.1 tightening (option D): require actual rising trend, not just structure.
+    # 'slope < -0.5' allowed flat-to-slightly-falling names to pass; now 1.0%/5d minimum.
     slope = t.get("sma50_slope_pct")
-    if slope is not None and slope < -0.5: return ("fail", f"SMA50 falling {slope:+.2f}%/5d")
+    if slope is None:                      return ("fail", "SMA50 slope unavailable")
+    if slope < 1.0:                        return ("fail", f"SMA50 slope {slope:+.2f}%/5d < 1% (flat trend, no momentum)")
     vr = t.get("vol_ratio")
     if vr is not None and vr > 1.3:        return ("fail", f"vol {vr:.2f}× distribution")
     s20 = t.get("sma20")
@@ -544,9 +562,12 @@ def eval_p1_technical(t):
         vs20 = (p / s20 - 1) * 100
         if vs20 > 10:    return ("fail", f"+{vs20:.1f}% above SMA20 (extended)")
         if vs20 < -5:    return ("fail", f"{vs20:.1f}% below SMA20 (broken)")
-    if 35 <= rsi <= 50:
-        return ("pass", f"RSI {rsi:.1f} in 35-50, trend OK, vol healthy")
-    return ("fail", f"RSI {rsi:.1f} outside 35-50 entry band")
+    # v1.9.1 tightening (option C): narrow RSI band 35-50 → 38-48. Old band let
+    # names sitting at the neutral-50 edge through (often weak setups still chopping).
+    # 38-48 = clearer pullback into the buy zone without buying tops.
+    if 38 <= rsi <= 48:
+        return ("pass", f"RSI {rsi:.1f} in 38-48, trend OK + rising, vol healthy")
+    return ("fail", f"RSI {rsi:.1f} outside 38-48 entry band")
 
 # ── Quality + Value evaluation (Buffett-style) ────────────────────────────
 def eval_quality(f):
@@ -597,14 +618,26 @@ def eval_value(f):
     return (passes, len(checks), checks)
 
 def tag_candidate(p1_ok, q_pass, v_pass):
-    """Compose candidate tag from gate combinations."""
+    """Compose candidate tag from gate combinations.
+
+    v1.9.1 tightening:
+      - Option A: ⚡ TECH tier no longer emitted as a Discovery candidate. Names
+        that pass P1 but have neither quality nor value backing return None — the
+        screener still counts them in p1_passers for diagnostics, but they don't
+        clutter the Discovery panel as if they were investment-grade.
+      - Option B: Q ≥ 3/5 is now the floor for the 💰 VALUE tier (was: Q didn't
+        matter at all). A "value" name with quality 0-2/5 is a value trap risk;
+        we require at least a passing quality story alongside the cheap valuation.
+    """
     if not p1_ok: return None
-    q_ok = q_pass >= 4
-    v_ok = v_pass >= 2
-    if q_ok and v_ok: return ("💎 BUFFETT", "Quality + Value + P1 technical — best signal")
-    if q_ok:          return ("🏆 QUALITY", "Quality + P1 but stretched on valuation")
-    if v_ok:          return ("💰 VALUE",   "Value + P1 but doesn't pass full quality bar")
-    return ("⚡ TECH",  "Passes P1 technical but neither quality nor value gates")
+    q_ok = q_pass >= 4       # quality bar (unchanged)
+    v_ok = v_pass >= 2       # value bar (unchanged)
+    q_floor = q_pass >= 3    # NEW: minimum quality story to back any non-Buffett tag
+    if q_ok and v_ok:        return ("💎 BUFFETT", "Quality + Value + P1 technical — best signal")
+    if q_ok:                 return ("🏆 QUALITY", "Quality + P1 but stretched on valuation")
+    if v_ok and q_floor:     return ("💰 VALUE",   "Value + P1, quality story passable (≥3/5)")
+    # Everything else (⚡ TECH, V with broken quality) is dropped — not a Discovery candidate
+    return None
 
 # ── Main scan ─────────────────────────────────────────────────────────────
 FULL_PASS_TTL_HOURS = 18  # skip a fresh full scan if we ran one less than this many hours ago
@@ -662,11 +695,21 @@ def run_scan(force=False, tech_only=False):
         fund = load_cache(FUND_CACHE)
 
     candidates = []
+    dropped_no_tag = 0
     for c in p1_passers:
         f = fund.get(c["ticker"], {})
         q_pass, q_total, q_checks = eval_quality(f) if not tech_only else (0, 5, [])
         v_pass, v_total, v_checks = eval_value(f)   if not tech_only else (0, 3, [])
-        tag, tag_desc = tag_candidate(True, q_pass, v_pass) if not tech_only else ("⚡ TECH", "tech-only mode")
+        if tech_only:
+            tag, tag_desc = "⚡ TECH", "tech-only mode (no fundamentals fetched)"
+        else:
+            tagged = tag_candidate(True, q_pass, v_pass)
+            if tagged is None:
+                # v1.9.1: passes P1 technicals but doesn't earn a Quality/Value tag.
+                # Counted in p1_passers but kept OUT of Discovery to reduce noise.
+                dropped_no_tag += 1
+                continue
+            tag, tag_desc = tagged
         already_on_wl = c["ticker"] in wl
         candidates.append({
             **c,
@@ -676,6 +719,8 @@ def run_scan(force=False, tech_only=False):
             "value":   {"passes": v_pass, "total": v_total, "checks": v_checks},
             "tag": tag, "tag_desc": tag_desc,
         })
+    if dropped_no_tag:
+        print(f"  [filter] dropped {dropped_no_tag} P1-passer(s) with no Quality/Value backing (v1.9.1 ⚡ TECH filter)")
 
     # Sort: BUFFETT first, then QUALITY, then VALUE, then TECH
     tag_order = {"💎 BUFFETT": 0, "🏆 QUALITY": 1, "💰 VALUE": 2, "⚡ TECH": 3}

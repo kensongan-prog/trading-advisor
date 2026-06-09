@@ -96,6 +96,40 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v1.9.1] — 2026-06-09
+
+Discovery tightening + silent-stale-cache bug fix PATCH. Four qualification thresholds on the screener tightened in one pass to make the Discovery panel show only genuine investment-grade candidates instead of noisy P1-technical-only names; one real bug fix to surface and prevent the cooldown lockout that was silently freezing the Discovery cache for up to 45 minutes after a single transient data-fetch blip. Validated end-to-end: 9 P1-passers under the old rules collapsed to 1 high-quality fresh name (NVDA, 5/5 quality with a textbook 38-48 RSI pullback on a rising trend) under the new ones.
+
+### Changed
+
+- **Discovery panel: tighter qualification, less noise.** Four screener thresholds tightened in one pass to reduce the number of marginal "discoveries" cluttering the panel and to push out names that don't earn an investment thesis:
+  - **A. ⚡ TECH tier no longer emitted as a Discovery candidate.** Names that pass the P1 technical setup but have neither Buffett quality (≥4/5 gates) nor value (≥2/3 gates) support are now counted in `p1_passers` for diagnostics but excluded from the Discovery panel. The ⚡ TECH tag still exists for `--tech-only` runs where fundamentals aren't fetched; in regular runs it's gone.
+  - **B. 💰 VALUE tier requires Q≥3/5 minimum.** A "cheap" name with quality 0-2/5 was previously eligible for the VALUE tag — that's a classic value-trap risk. Now VALUE candidates must also clear a minimum quality floor (3/5) on top of the value bar (2/3).
+  - **C. P1 RSI band tightened 35-50 → 38-48.** The old loose band let names sitting at the neutral-50 edge through (often weak setups still chopping sideways). 38-48 = a clearer pullback into the buy zone without buying tops.
+  - **D. SMA50 slope must be ≥ 1%/5d (was `> -0.5%`).** Previously a near-flat or slightly-falling SMA50 still passed the "trend OK" check. Now requires actual upward momentum in the medium-term — structure alone isn't enough.
+  Combined effect: Discovery shows fewer but better-qualified candidates. Today's run produced 9 P1-passers under the old rules; under the new rules the count drops sharply (verified post-rebuild).
+  Also added a **defensive render-time filter** in the dashboard: even if a `candidates.json` cached under the old criteria still sits on disk, the panel applies all four current rules at read time, so stale-cache entries that no longer qualify never leak through. The cache itself gets rewritten cleanly on the next screener run.
+
+### Fixed
+
+- **Discovery silently-stale-cache bug.** Two changes that fix the failure mode where Discovery appeared to be updating but was actually serving a 30+ hour old `candidates.json`:
+  - **Screener cooldown is now post-failure-only, not preemptive.** The old logic set the cooldown file BEFORE the bulk technicals fetch ("proactive — if the process is killed mid-fetch, future runs see it") and cleared it only if at least one ticker fetched successfully. Failure mode that bit us: every per-ticker call errored individually (transient Twelve Data blip). `fetched` stayed 0, cooldown stuck for 45 min, every subsequent dashboard refresh silently served the stale cache. Now: cooldown only sets on actual fatal errors (rate-cap, auth) or on `KeyboardInterrupt` / `SystemExit`. Per-ticker errors are logged but don't trigger lockout. Cooldown duration also reduced from 45 min → 10 min so transient blips don't camp on the cache for the better part of an hour.
+  - **Dashboard surfaces silent-staleness now.** The Discovery panel previously trusted the cache without checking age. If `_last_full_pass_at` is older than the 18h TTL, the panel header now shows `⚠ STALE — last full pass Xh ago` with a hint that a recent run errored. If the cooldown file is active, it shows `🥶 screener cooldown active (N min remaining)` so you can see *why* refreshes are being suppressed and override with `--force`.
+
 **Other carry-over threads (unchanged from v1.7.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total). Will cut as a PATCH once verified.
 - **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.

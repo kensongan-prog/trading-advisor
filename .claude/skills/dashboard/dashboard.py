@@ -3545,6 +3545,30 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         if not screener_data:
             return '<tr><td colspan="12" class="dim">No screener data — run <code>python3 .claude/skills/us-screener/screener.py</code></td></tr>'
         cands = screener_data.get("candidates", [])
+        # v1.9.1 defensive render-time filter: even if a stale candidates.json from
+        # before the criteria-tightening (or any future drift) sits on disk, the
+        # dashboard applies current rules. Covers all four tightening options so
+        # stale-cache entries don't leak through:
+        #   A. drop ⚡ TECH tier
+        #   B. require Q≥3/5 for 💰 VALUE tier
+        #   C. require RSI in 38-48 (was 35-50)
+        #   D. require SMA50 slope ≥ 1%/5d (was ≥ -0.5%)
+        def _passes_current_rules(c):
+            tag = c.get("tag") or ""
+            tech = c.get("tech") or {}
+            if tag == "⚡ TECH":
+                return False
+            q_pass = (c.get("quality") or {}).get("passes", 0)
+            if tag == "💰 VALUE" and q_pass < 3:
+                return False
+            rsi = tech.get("rsi14")
+            if rsi is None or not (38 <= rsi <= 48):
+                return False
+            slope = tech.get("sma50_slope_pct")
+            if slope is None or slope < 1.0:
+                return False
+            return True
+        cands = [c for c in cands if _passes_current_rules(c)]
         fresh = [c for c in cands if not c["in_watchlist"] and c["ticker"].upper() not in live_wl_set]
         if not fresh:
             return '<tr><td colspan="12" class="dim">No P1-passing candidates outside the watchlist right now. (Total P1 passers: ' + str(screener_data.get("p1_passers", 0)) + ')</td></tr>'
@@ -3639,6 +3663,37 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     if (screener_data or {}).get("_stale"):
         reason = (screener_data or {}).get("_stale_reason", "stale")
         screener_stale_note = f' <span style="color:var(--yellow);font-weight:bold">⚠ STALE: {html.escape(reason)}</span>'
+    else:
+        # v1.9.1 bug fix: detect the silent-stale case the dashboard used to hide.
+        # The screener has an 18h full-pass TTL. If our cache is older than that,
+        # the next refresh tried and failed (likely cooldown or process-kill).
+        # Also surface active cooldown explicitly so the operator knows why
+        # subsequent refreshes are getting blocked.
+        gen_at = (screener_data or {}).get("_generated_at") or (screener_data or {}).get("_last_full_pass_at")
+        if gen_at:
+            try:
+                age_h = (datetime.now(timezone.utc) - datetime.fromisoformat(gen_at)).total_seconds() / 3600.0
+            except Exception:
+                age_h = None
+            if age_h is not None and age_h > 18.0:
+                screener_stale_note = (
+                    f' <span style="color:var(--yellow);font-weight:bold">⚠ STALE — last full pass {age_h:.0f}h ago '
+                    f'(TTL 18h). Likely cause: a recent screener run errored out and the cooldown file '
+                    f'is blocking the retry. Try <code>--force</code>.</span>'
+                )
+        cooldown_file = PROJECT_ROOT / ".claude" / "cache" / "screener" / ".yfinance_cooldown_until"
+        if cooldown_file.is_file():
+            try:
+                until = datetime.fromisoformat(cooldown_file.read_text().strip())
+                rem_min = (until - datetime.now(timezone.utc)).total_seconds() / 60.0
+                if rem_min > 0:
+                    screener_stale_note += (
+                        f' <span style="color:var(--yellow);font-weight:bold">· 🥶 screener cooldown active '
+                        f'({rem_min:.0f} min remaining) — refreshes will skip the screener until then. '
+                        f'Pass <code>--force</code> to override.</span>'
+                    )
+            except Exception:
+                pass
     n_universe   = (screener_data or {}).get("universe_size", "—")
     n_p1passers  = (screener_data or {}).get("p1_passers", "—")
     n_fresh      = 0
