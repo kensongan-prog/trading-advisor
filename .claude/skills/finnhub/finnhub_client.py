@@ -89,3 +89,32 @@ def quote(symbol):
 def metric(symbol, kind="all"):
     """Basic ratios. Free tier limited fields. kind ∈ {'price', 'valuation', 'all', ...}."""
     return _get("/stock/metric", {"symbol": symbol, "metric": kind})
+
+
+def company_news(symbol, days=2):
+    """Recent company news. Returns list[{datetime, headline, source, summary, url, category, image, id}].
+
+    `days` is the lookback window. Default 2 = today + yesterday (captures the 24h glyph window
+    with a small buffer for timezone slop). Finnhub takes YYYY-MM-DD calendar dates.
+    """
+    now = datetime.now(timezone.utc)
+    frm = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+    to  = now.strftime("%Y-%m-%d")
+    data, err = _get("/company-news", {"symbol": symbol, "from": frm, "to": to})
+    if err: return None, err
+    if not isinstance(data, list):
+        return None, "unexpected response shape"
+    return data, None
+
+
+def upgrade_downgrade(symbol):
+    """Analyst rating actions. Returns list[{symbol, gradeTime, fromGrade, toGrade, company, action}].
+
+    `action` is one of: 'up', 'down', 'init', 'main', 'reit' (Finnhub vocabulary).
+    `gradeTime` is a unix timestamp.
+    """
+    data, err = _get("/stock/upgrade-downgrade", {"symbol": symbol})
+    if err: return None, err
+    if not isinstance(data, list):
+        return None, "unexpected response shape"
+    return data, None

@@ -168,6 +168,44 @@ be collapsed into a single number — they answer different questions:
 | **Retail forums** | `reddit-sentiment` + `stocktwits-sentiment` → `sentiment-cache` | Crowd cheap-talk (gameable, last-money-in) | **Contrarian filter** — extremes downgrade or upgrade conviction; mid-range is no-op |
 | **Prediction markets** | `polymarket-events` | Money-weighted speculator consensus on macro outcomes | **Additive macro confluence** — less gameable than forums; aligned/diverged/uncertain readings on Fed, recession, BTC/ETH, geopolitics |
 
+**Per-row news glyph — the professional-leg surfacing on every watchlist row.**
+The dashboard's Retail / News column now carries an inline glyph that
+summarizes professional news for the ticker over the **last 24 hours**:
+- **🟢** — net bullish 72h news (avg sentiment ≥ +0.15 across scored items)
+- **🔴** — net bearish 72h news (avg sentiment ≤ −0.15)
+- **⚪** — neutral / mixed / no fresh news
+- **❗** modifier — a fresh analyst rating action (upgrade / downgrade /
+  initiate / reiterate) landed inside the 72h window. Treat as *salient*
+  (worth a look in the dropdown) but **not predictive** — analyst calls
+  are ~50% accurate at 12mo horizon. Confluence still required; the
+  dropdown's analyst-action items carry this caveat inline.
+
+The glyph is *the* §4 professional-news leg surfaced per-row. The existing
+News column (cache age) and "Recent News Flags" panel (top signals across
+the watchlist) still surface as before. The full 72h headline list — plus
+older-than-72h context items — render in each row's expanded dropdown
+under a **News** section.
+
+Sources: US = yfinance `.upgrades_downgrades` + Finnhub `/company-news` +
+Alpha Vantage NEWS_SENTIMENT cache. KLSE = klsescreener.com/v2/news scrape.
+Crypto = CoinDesk + Cointelegraph + Decrypt aggregate RSS, filtered by
+per-coin keyword (BTC/ETH/SOL/etc. — long-tail alts with no RSS coverage
+render ⚪ no-news, which is accurate degraded behavior).
+
+Sentiment scoring: **LLM-scored per item via OpenRouter free models** (Gemma 4 31B
+primary, GPT-OSS 120B fallback) — same key as `sentiment-cache`. The LLM also
+returns a `relevance` field (`primary` / `mention` / `none`) which solves the
+cross-attribution problem keyword scoring couldn't (e.g. a headline about Axon
+that lists KTOS in the body is correctly given `relevance=none, score=0.0`
+for KTOS). Per-item scores are cached forever — headlines don't change once
+published, so the OpenRouter spend is essentially zero after warmup.
+
+Refresh: `python3 .claude/skills/dashboard/dashboard.py --refresh-news-glyph`
+runs the full chain (fetch sources at hourly TTL → LLM-score truly-new items →
+rebuild dashboard). The underlying CLI is `python3 .claude/skills/us-news/news_glyph.py
+refresh-{us,klse,crypto}` (auto-LLM-scores) or `score --tickers ... --asset-class us`
+(LLM-score only, no fetch).
+
 **Where they intersect — the Contrarian Setups dashboard panel:** retail
 sentiment flags are not trade signals on their own. The dashboard's
 "⚠ Contrarian Setups" panel surfaces only the names where a retail flag
@@ -372,3 +410,65 @@ DATA-SOURCE CAVEATS (live as of 2026-06-03):
 - Crypto token unlock schedule (AGENTS.md §5 48h-halt gate): two-skill pipeline. `crypto-unlocks` (WebFetch on tokenomist.ai, agent-only) fetches live data per coin. `crypto-unlocks-cache` (Python CLI) persists it into `.claude/cache/crypto_unlocks/{COIN}.json` which the dashboard's Risk Simulator reads on build. Baseline auto-covers BTC/ETH/stables (no schedule = ✓ pass) and SOL/BNB/XRP/HBAR/ADA/DOGE (regular emission = ⚠ warn). Alts (HYPE, ONDO, ENA, ARB, OP, APT, SUI, STRK…) require WebFetch → `set` per coin. Unknown sizing inside 48h defaults to "treat as inside halt window" per doctrine. Tokenomist.ai is a Next.js SPA — direct urllib scraping returns no usable JSON, which is why the WebFetch bridge is needed (DeFiLlama emissions is paid-only, CoinGecko/CryptoRank don't expose unlocks free).
 - Crypto on-chain flow (Hyperliquid only): wired via `hyperliquid-flow` skill (Hyperliquid public API). Per-coin funding/OI/order-book on 230+ HL perps, any address's positions/leverage/P&L/fills (whale watching), and HL-vs-Binance funding divergence. Hyperliquid is the only major venue where individual user positions are public; on CEXes (Binance/Bybit) this is invisible.
 - Still NOT covered for crypto: on-chain flows on non-Hyperliquid venues (Binance/Bybit/Coinbase whale movements, exchange in/out — needs Glassnode/Nansen), options gamma/dealer positioning (Deribit-specific). Flag any thesis depending on these as "unverified."
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 11. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 12. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 13. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 14. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

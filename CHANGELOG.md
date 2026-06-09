@@ -96,22 +96,49 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-### In flight (as of 2026-06-08 end-of-session)
-
-**🚢 v1.7.1 is staged locally but NOT yet pushed.** Commit `33d277c` + tag `v1.7.1` exist; `origin/main` is still at v1.7.0 (`11541c2`). No GitHub release for v1.7.1 yet. **To finish the ship:**
-```
-git push origin main && git push origin v1.7.1
-gh release create v1.7.1 --title "v1.7.1 — audit cleanup PATCH" --notes "$(awk '/^## \\[v1.7.1\\]/,/^---/' CHANGELOG.md | sed '1d;$d')"
-```
-v1.7.1 is an audit-cleanup PATCH from spinning up four parallel review agents (visual/CSS, formatting/TZ, doctrine/text, code health) and folding everything actionable they found. Headline operator-impacting fix: every absolute UTC timestamp on the dashboard now reformats into the viewer's browser timezone via `Intl.DateTimeFormat` — not just the v1.7.0 "Built at" stamp. See the v1.7.1 block below for the full list. The session was paused right at the "want me to push to main?" prompt.
-
 **Other carry-over threads (unchanged from v1.7.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path auto-activates when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total). Will cut as a PATCH once verified.
 - **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
+- **News-glyph LLM scoring quality watch.** v1.8.0's LLM-attributed news sentiment fixed the KTOS-style cross-attribution problem in spot tests (Axon-headline false positive cleared, Kratos-name primary subject correctly detected). Want a few weeks of varied news flow to confirm the Gemma 4 31B / GPT-OSS 120B free-tier models hold up on edge cases (non-English KLSE headlines, sector roundups, ambiguous bank-of-companies headlines). Tracking 429s / fallback frequency in the score logs.
 
 ### Added
 
 ### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v1.8.0] — 2026-06-09
+
+News-as-confluence MINOR. The §4 professional-news leg moves from "fetch on demand via a skill" to a **per-row glyph on every watchlist row** with full headline drilldown — and that glyph is now driven by LLM-attributed sentiment, not keyword regex, so cross-attribution false positives (a peer-company headline mentioning your ticker in the body) finally clear cleanly. Hourly source-fetch TTL; per-item LLM-score cache is immutable (headlines don't change) so OpenRouter spend is essentially zero after warmup. Header refresh button becomes a 3-option dropdown (Quick / News / Full) to make the refresh contract explicit.
+
+### Added
+
+- **Per-row news glyph (Retail / News column).** Every watchlist row now shows a 72h news-direction indicator — 🟢 net bullish, 🔴 net bearish, ⚪ neutral / mixed / no fresh news — with an ❗ modifier when a fresh analyst rating action (upgrade / downgrade / initiate / reiterate) lands inside the 72h window. The full headline list (72h items + older context) renders in the row's expanded dropdown. The ❗ items carry an inline caveat reminding that analyst calls are ~50% accurate at the 12-month horizon and don't substitute for confluence (AGENTS.md §4).
+- **LLM-scored news sentiment with per-item permanent cache.** News items are immutable — once a headline is published its sentiment doesn't change. The news glyph now LLM-scores every Finnhub / klsescreener / RSS headline via OpenRouter free models (Gemma 4 31B IT primary, GPT-OSS 120B fallback — same key as `sentiment-cache`) and banks the result keyed by `hash(headline)`. Re-fetches only re-score the truly new items (usually 1-5), so the OpenRouter spend is essentially zero after the first warmup. The LLM also returns a `relevance` field (`primary` / `mention` / `none`) which solves the cross-attribution problem keyword scoring couldn't — e.g. an "Axon Rises 23.3%" headline that lists KTOS in the body is correctly tagged `relevance=none, score=0.0` for KTOS, while "AeroVironment and Kratos Stocks Trade Down" is tagged `relevance=primary, score=-0.50` because the LLM recognizes the company name. Alpha Vantage items keep their pre-attributed `ticker_sentiment_score` — AV already solves attribution properly.
+- **Hourly source-fetch TTL.** The dashboard's auto-fetch for news glyph data defaults to 1 hour (was 12h), matching how fast news flow changes. The expensive part — LLM scoring — is amortized over the immutable per-item cache, so the hourly cadence is cheap. New CLI `python3 .claude/skills/us-news/news_glyph.py score --tickers ... --asset-class us` lets the operator manually re-score without re-fetching (and `--force` busts the per-item cache for targeted re-scoring).
+- **News sources, all asset classes:**
+  - US: yfinance `.upgrades_downgrades` for structured analyst actions (Finnhub's structured upgrade-downgrade endpoint is paywalled — pivoted) + Finnhub `/company-news` for recent headlines + the existing Alpha Vantage `us-news` cache for pre-scored sentiment.
+  - KLSE: scraper for klsescreener.com/v2/news/stock/{code} parses the per-stock news page (urllib + regex, no WebFetch).
+  - Crypto: aggregate-feed RSS from CoinDesk, Cointelegraph, and Decrypt — filtered by per-coin keyword (BTC/ETH/SOL/BNB/XRP/HYPE and other watchlist names). Long-tail alts with no RSS mention render ⚪ no-news-in-72h, which is accurate degraded behavior, not a bug.
+- **New `finnhub` skill.** The existing `finnhub_client.py` (bare client, no SKILL.md) gained `company_news()` and `upgrade_downgrade()` methods plus its first SKILL.md documenting current usage (sector rotation, screener, live-quote button, news glyph).
+- **CLI flags on `dashboard.py`:** `--refresh-news-glyph` pulls fresh per-row news data across all asset classes (free, ~60s for a typical watchlist); `--no-news-glyph` skips the glyph column entirely if a source is misbehaving.
+
+### Changed
+
+- **Header ↻ Refresh button is now a 3-option dropdown** — the old single button silently did a *minimal* refresh (cache-only for news + glyph + sentiment), which was confusing once those layers got expensive. New dropdown choices:
+  - **↻ Quick refresh** — current minimal behavior. Rebuilds from caches; only fetches what's expired. ~10-15s. Use for mid-day re-looks.
+  - **📰 News refresh** — Quick + pulls fresh AV news, Finnhub headlines, klsescreener KLSE news, crypto RSS, and LLM-scores any new items. ~30-60s. Use after a news catalyst.
+  - **⟳ Full refresh** — News refresh + retail sentiment + Polymarket + `--force` re-fetch on every cached source. Several minutes on cold caches. Use at the start of a session or after a major event.
+  Each option copies its command to the clipboard with a "Copied — paste in terminal" toast. Per-row 🔄 buttons (live-quote fetches) stay separate as before.
+- **Retail column header is now "Retail / News"** on US, KLSE, and crypto panels. Tooltip explains both signals — the existing retail sentiment composite (Reddit + StockTwits, LLM-scored) and the new news-direction glyph.
 
 ### Fixed
 

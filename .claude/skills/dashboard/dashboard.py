@@ -1767,6 +1767,22 @@ td.dim { color: var(--dim); }
   border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 12px;
   display: inline-block; cursor: pointer; border: none; }
 .refresh-btn:hover { background: #8b5cf6; }
+/* Refresh dropdown */
+.refresh-menu { position: relative; display: inline-block; }
+.refresh-menu-items { display: none; position: absolute; right: 0; top: calc(100% + 4px);
+  background: var(--panel-2); border: 1px solid var(--bord); border-radius: 6px;
+  min-width: 280px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); z-index: 100;
+  padding: 4px 0; }
+.refresh-menu.open .refresh-menu-items { display: block; }
+.refresh-menu-item { padding: 8px 12px; cursor: pointer; font-size: 12px;
+  color: var(--text); display: block; line-height: 1.4; border: none; background: none;
+  width: 100%; text-align: left; font-family: inherit; }
+.refresh-menu-item:hover { background: var(--panel); }
+.refresh-menu-item .rm-label { font-weight: bold; color: var(--text); }
+.refresh-menu-item .rm-desc { color: var(--dim); font-size: 10px; margin-top: 2px; }
+.refresh-toast { display: inline-block; margin-left: 8px; color: var(--green); font-size: 11px;
+  opacity: 0; transition: opacity 0.2s; }
+.refresh-toast.show { opacity: 1; }
 .error { color: var(--red); font-size: 11px; }
 /* Risk Simulator */
 .sim-form { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 12px; }
@@ -1866,6 +1882,13 @@ setInterval(tickAgo, 15000);  // tick every 15s
     const dt = new Date(el.dataset.utc);
     if (isNaN(dt.getTime())) return;
     el.textContent = fmtShort.format(dt);
+  });
+  // Refresh-dropdown: click outside the menu closes it.
+  document.addEventListener('click', function(ev) {
+    const menu = document.getElementById('refresh-menu');
+    if (menu && menu.classList.contains('open') && !menu.contains(ev.target)) {
+      menu.classList.remove('open');
+    }
   });
 })();
 
@@ -4172,20 +4195,111 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             '</div>'
         )
 
-    def sentiment_cell(ticker):
+    def _news_glyph_payload(ticker, asset_class):
+        """Look up the pre-computed news glyph for a watchlist entry.
+
+        Keys: US uses uppercase ticker; KLSE uses the 4-digit code (with .KL stripped);
+        crypto uses the watchlist symbol uppercase (e.g. 'BTC') OR the CG slug — both
+        are pre-indexed in ctx['news_glyphs']."""
+        glyphs = ctx.get("news_glyphs") or {}
+        if asset_class == "klse":
+            key = klse_code(ticker)
+        else:
+            key = str(ticker).upper()
+        return glyphs.get((asset_class, key))
+
+    def _news_glyph_inline(ticker, asset_class):
+        """Return an inline `<span>📈❗</span>` (or empty string) to append to a sentiment cell.
+        72h window drives the glyph color (🟢/🔴/⚪); ❗ modifier marks fresh analyst action."""
+        g = _news_glyph_payload(ticker, asset_class)
+        if not g:
+            return ""
+        glyph = (g.get("glyph") or "⚪") + (g.get("modifier") or "")
+        tip = html.escape(f"News (72h): {g.get('summary','')}" +
+                          (f" · {g['caveat']}" if g.get("caveat") else ""), quote=True)
+        return f' <span class="news-glyph" title="{tip}" style="font-size:13px">{glyph}</span>'
+
+    def _news_glyph_details_html(ticker, asset_class):
+        """Render the News section for a row's expanded dropdown."""
+        g = _news_glyph_payload(ticker, asset_class)
+        if not g:
+            return (
+                '<div class="exp-gate-col"><div class="exp-gate-head">News</div>'
+                '<div class="gate-line dim">No news cache. Run '
+                '<code>python3 .claude/skills/us-news/news_glyph.py refresh-' + asset_class + ' --...</code> '
+                'to populate.</div></div>'
+            )
+        glyph = (g.get("glyph") or "⚪") + (g.get("modifier") or "")
+        head = f'<div class="exp-gate-head">News {glyph} <span class="dim" style="font-size:11px">· {html.escape(g.get("summary","") or "")}</span></div>'
+
+        def _row(it, is_old=False):
+            dt = it.get("dt") or ""
+            try:
+                d_local = datetime.fromisoformat(dt).astimezone().strftime("%b %d %H:%M")
+            except Exception:
+                d_local = dt[:16]
+            src = html.escape((it.get("source") or "")[:24])
+            head_txt = html.escape((it.get("headline") or "")[:160])
+            url = it.get("url") or ""
+            link = (f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener" '
+                    f'onclick="event.stopPropagation()">{head_txt}</a>') if url else head_txt
+            mark = "❗ " if it.get("is_analyst_action") else ""
+            score = it.get("sentiment_score")
+            score_html = ""
+            if isinstance(score, (int, float)):
+                cls = "green" if score >= 0.15 else "red" if score <= -0.15 else "dim"
+                # Always render, even at 0.00, so the dropdown average reconciles visibly.
+                score_html = f' <span class="{cls}" style="font-size:11px">({score:+.2f})</span>'
+            cls_outer = "gate-line" + (" dim" if is_old else "")
+            return (f'<div class="{cls_outer}" style="font-size:12px">'
+                    f'{mark}<span class="dim">{d_local}</span> '
+                    f'<span class="dim" style="font-size:10px">[{src}]</span> '
+                    f'{link}{score_html}</div>')
+
+        parts = [head]
+        # Scrollable inner container — names like SPY can carry 90+ items in 72h.
+        scroll_open = '<div class="news-scroll" style="max-height:360px;overflow-y:auto;padding-right:6px;margin-top:4px">'
+        scroll_close = '</div>'
+        body = []
+        items_window = g.get("items_72h") or []
+        if items_window:
+            for it in items_window[:30]:
+                body.append(_row(it))
+            if len(items_window) > 30:
+                body.append(f'<div class="gate-line dim" style="font-size:11px">… {len(items_window)-30} more in-window item(s) not shown.</div>')
+        else:
+            body.append('<div class="gate-line dim" style="font-size:12px">No items in 72h.</div>')
+        older = g.get("older_context") or []
+        if older:
+            body.append('<div class="gate-line dim" style="font-size:11px;margin-top:6px;border-top:1px solid var(--dim);padding-top:4px">'
+                        '↓ older context (&gt;72h, does not drive glyph) — up to 14d back</div>')
+            for it in older[:15]:
+                body.append(_row(it, is_old=True))
+            if len(older) > 15:
+                body.append(f'<div class="gate-line dim" style="font-size:11px">… {len(older)-15} more older item(s) not shown.</div>')
+        parts.append(scroll_open + "\n".join(body) + scroll_close)
+        if g.get("caveat"):
+            parts.append(f'<div class="gate-line" style="margin-top:6px;font-size:11px;color:var(--warn,#c80)">⚠ {html.escape(g["caveat"])}</div>')
+        return '<div class="exp-gate-col">' + "\n".join(parts) + '</div>'
+
+    def sentiment_cell(ticker, asset_class="us"):
         """Render the Retail Sentiment column cell for one ticker.
         Returns (html_td, sort_key_numeric). Sort key is bull_score - bear_score so
-        bullish names sort high and bearish names sort low."""
+        bullish names sort high and bearish names sort low.
+        The cell also carries the news-direction glyph (🟢/🔴/⚪ + optional ❗ analyst
+        modifier) appended after the retail badge — full headlines render in the
+        row's expanded dropdown via _news_glyph_details_html()."""
         s = (ctx.get("sentiment") or {}).get(ticker.upper())
+        ng = _news_glyph_inline(ticker, asset_class)
         if not s:
-            return '<td class="num dim" data-sort="-2" title="No sentiment cache. Run reddit-sentiment + stocktwits-sentiment + sentiment-cache.">—</td>', -2
+            return (f'<td class="num dim" data-sort="-2" title="No sentiment cache. Run reddit-sentiment + stocktwits-sentiment + sentiment-cache.">—{ng}</td>', -2)
         c = s.get("composite") or {}
         bs = c.get("bull_score"); bear = c.get("bear_score"); conv = c.get("conviction")
         label = c.get("label", "UNKNOWN"); badge = c.get("badge", "—"); flag = c.get("contrarian_flag")
         rationale = c.get("rationale") or "—"
         sort_key = (bs or 0) - (bear or 0) if bs is not None else -1
         if label == "UNKNOWN" or bs is None:
-            return f'<td class="num dim" data-sort="-1" title="No source data yet.">—</td>', -1
+            return (f'<td class="num dim" data-sort="-1" title="No source data yet.">—{ng}</td>', -1)
         cell_cls = ""
         if flag == "FADE":
             cell_cls = "sent-fade"; flag_html = ' <span class="sent-flag-fade">FADE</span>'
@@ -4198,7 +4312,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         tooltip = f"{label} · bull={bs_pct} bear={(bear*100 if bear is not None else 0):.0f}% conv={cv_pct}\n{rationale}"
         return (
             f'<td class="num {cell_cls}" data-sort="{sort_key:.3f}" title="{html.escape(tooltip, quote=True)}">'
-            f'{badge}{flag_html} <span class="dim" style="font-size:11px">{bs_pct}</span>'
+            f'{badge}{flag_html} <span class="dim" style="font-size:11px">{bs_pct}</span>{ng}'
             f'</td>',
             sort_key,
         )
@@ -4240,6 +4354,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
                 f'    {sentiment_details_html(tk)}'
+                f'    {_news_glyph_details_html(tk, "us")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Sector:</b> {html.escape(t.get("sector") or "—")}</span>'
@@ -4264,7 +4379,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{v200 or 0}">{fmt_pct(v200,1)}</td>
   <td class="dim" data-sort="{ne}" title="Earnings calendar date as reported by yfinance — company-local calendar date (typically NY for US listings), not a timestamp. The 'in Xd' is days from today UTC.">{ne} <span class="dim">{days_to_e}</span></td>
   <td class="num {news_cls}" data-sort="{news_sort}">{news_txt}</td>
-  {sentiment_cell(tk)[0]}
+  {sentiment_cell(tk, "us")[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)}</td>
 </tr>
@@ -4294,7 +4409,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th>Ticker</th><th>Name</th><th>Price</th><th>24h%</th><th>RSI</th>
       <th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th>
       <th>vs SMA50</th><th>vs SMA200</th><th>Next Earnings</th><th>News</th>
-      <th title="Retail sentiment composite from Reddit + StockTwits, LLM-scored. 🔥=extreme bull → contrarian FADE flag; 🧊=extreme bear → contrarian BUY flag; 📈/📉=mid-strength; —=neutral or no data.">Retail</th>
+      <th title="Retail sentiment composite (Reddit + StockTwits, LLM-scored) + news-direction glyph (🟢/🔴/⚪ over last 72h, ❗=fresh analyst rating action). Full headlines in the row dropdown.">Retail / News</th>
       <th>P1 Status</th><th>Reason</th>
     </tr></thead>
     <tbody>{render_us_grid()}</tbody>
@@ -4392,6 +4507,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
                 f'    {sentiment_details_html(tk)}'
+                f'    {_news_glyph_details_html(tk, "klse")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Sector:</b> {html.escape(f.get("sector") or t.get("sector") or "—")}</span>'
@@ -4419,7 +4535,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{pb or 0}">{fmt_num(pb,2)}</td>
   <td class="num" data-sort="{dy or 0}">{fmt_num(dy,2)}%</td>
   <td class="num" data-sort="{roe or 0}">{fmt_num(roe,2)}%</td>
-  {sentiment_cell(tk)[0]}
+  {sentiment_cell(tk, "klse")[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)} <span style="color:var(--dim);font-size:10px">{('· fund ' + fund_age) if fund_age else '· no klse-refresh data'}</span></td>
 </tr>
@@ -4462,7 +4578,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th>
       <th>vs SMA50</th>
       <th>P/E</th><th>P/B</th><th>DY</th><th>ROE</th>
-      <th title="Retail sentiment composite. Most KLSE names show — (no coverage on StockTwits or Reddit at retail-research scale).">Retail</th>
+      <th title="Retail sentiment composite (sparse for KLSE — no StockTwits coverage, low Reddit volume) + news-direction glyph (🟢/🔴/⚪ from klsescreener.com, 72h window). Headlines in row dropdown.">Retail / News</th>
       <th>Status</th><th>Reason</th>
     </tr></thead>
     <tbody>{render_klse_grid()}</tbody>
@@ -4524,6 +4640,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'      <div class="gate-line dim" style="margin-top:6px;font-size:11px">Tooltip on badge: {html.escape(status_tooltip(label))}</div>'
                 f'    </div>'
                 f'    {sentiment_details_html(entry["ticker"])}'
+                f'    {_news_glyph_details_html(entry["ticker"], "crypto")}'
                 f'  </div>'
                 f'  <div class="exp-meta">'
                 f'    <span><b>Price:</b> ${r.get("price"):.4f}</span>' if r.get("price") else '<span><b>Price:</b> —</span>'
@@ -4551,7 +4668,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{v50 or 0}">{fmt_pct(v50,1)}</td>
   <td class="num" data-sort="{ann or 0}">{fmt_pct(ann,1)}</td>
   <td class="dim">{fmt_money(r.get('market_cap'))}</td>
-  {sentiment_cell(entry["ticker"])[0]}
+  {sentiment_cell(entry["ticker"], "crypto")[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)}</td>
 </tr>
@@ -4584,7 +4701,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th>Sym</th><th>Name</th><th>Price</th><th>24h%</th><th>7d%</th><th>30d%</th>
       <th>RSI</th><th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th><th>vs SMA50</th>
       <th>Funding (ann.)</th><th>Mkt Cap</th>
-      <th title="Retail sentiment composite from Reddit + StockTwits, LLM-scored. 🔥=extreme bull → contrarian FADE flag; 🧊=extreme bear → contrarian BUY flag.">Retail</th>
+      <th title="Retail sentiment composite (Reddit + StockTwits, LLM-scored) + news-direction glyph (🟢/🔴/⚪ from CoinDesk/Cointelegraph/Decrypt RSS, 72h window). Headlines in row dropdown.">Retail / News</th>
       <th>Status</th><th>Notes</th>
     </tr></thead>
     <tbody>{render_crypto_grid()}</tbody>
@@ -4606,7 +4723,36 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 </div>
 """
 
-    refresh_cmd = "python3 .claude/skills/dashboard/dashboard.py --with-discovery && open dashboard.html"
+    refresh_cmd      = "python3 .claude/skills/dashboard/dashboard.py --with-discovery && open dashboard.html"
+    refresh_cmd_news = "python3 .claude/skills/dashboard/dashboard.py --refresh-news --refresh-news-glyph --with-discovery && open dashboard.html"
+    refresh_cmd_full = "python3 .claude/skills/dashboard/dashboard.py --refresh-news --refresh-news-glyph --refresh-sentiment --refresh-polymarket --with-discovery --force && open dashboard.html"
+
+    def _rb_item(label, desc, cmd):
+        # Inline onclick: copy command, show toast, close menu. Single-quote-safe via JSON encoding.
+        cmd_js = json.dumps(cmd)
+        return (f'<button class="refresh-menu-item" onclick=\'(function(b){{'
+                f'navigator.clipboard.writeText({cmd_js});'
+                f'var t=document.getElementById("refresh-toast");if(t){{t.textContent="Copied — paste in terminal";t.classList.add("show");setTimeout(function(){{t.classList.remove("show");}},2400);}}'
+                f'b.closest(".refresh-menu").classList.remove("open");'
+                f'}})(this)\'><span class="rm-label">{label}</span><div class="rm-desc">{desc}</div></button>')
+
+    refresh_dropdown = (
+        '<span class="refresh-menu" id="refresh-menu">'
+        '<button class="refresh-btn" onclick="event.stopPropagation();document.getElementById(\'refresh-menu\').classList.toggle(\'open\');">↻ Refresh ▾</button>'
+        '<div class="refresh-menu-items">'
+        + _rb_item("↻ Quick refresh",
+                   "Rebuild from caches; only fetch what's expired. ~10-15s. Use for mid-day re-looks.",
+                   refresh_cmd)
+        + _rb_item("📰 News refresh",
+                   "Quick + pull fresh AV news, Finnhub headlines, klsescreener, crypto RSS, and LLM-score new items. ~30-60s.",
+                   refresh_cmd_news)
+        + _rb_item("⟳ Full refresh",
+                   "Everything fresh: news + glyph + retail sentiment + Polymarket + force-refetch all sources. Several minutes on cold caches.",
+                   refresh_cmd_full)
+        + '</div>'
+        '</span>'
+        '<span class="refresh-toast" id="refresh-toast"></span>'
+    )
 
     html_out = f"""<!doctype html>
 <html lang="en"><head>
@@ -4616,7 +4762,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 <div class="container">
   <div class="header">
     <h1>📊 Trading Advisor — Dashboard</h1>
-    <div class="meta">Built <span class="built-at" data-utc="{now_iso_utc}">{now_str}</span> <span class="dim" style="font-size:11px">(server-local fallback: {now_local_str})</span> · {budget_bar} · <span class="refresh-btn" onclick="navigator.clipboard.writeText('{refresh_cmd}'); this.textContent='Copied — run in terminal';">↻ Refresh</span></div>
+    <div class="meta">Built <span class="built-at" data-utc="{now_iso_utc}">{now_str}</span> <span class="dim" style="font-size:11px">(server-local fallback: {now_local_str})</span> · {budget_bar} · {refresh_dropdown}</div>
   </div>
   {strip}
   {regime_panel}
@@ -4829,7 +4975,96 @@ def _detect_missing_sentiment(watchlist):
     return [t for t in all_tickers if t not in cache]
 
 
-def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_sentiment=False, skip_sentiment=False):
+# Watchlist crypto entries store symbols (BTC); news_glyph keys by CoinGecko slug.
+# Keep this map in sync with .claude/skills/crypto-coingecko/cg.py SYMBOL_MAP.
+_CRYPTO_SYMBOL_TO_SLUG = {
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "BNB": "binancecoin",
+    "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin", "HBAR": "hedera-hashgraph",
+    "HYPE": "hyperliquid", "ENA": "ethena", "ONDO": "ondo-finance",
+    "LINK": "chainlink", "AVAX": "avalanche-2", "DOT": "polkadot",
+    "ARB": "arbitrum", "OP": "optimism", "APT": "aptos", "SUI": "sui",
+    "LTC": "litecoin", "TON": "the-open-network", "TRX": "tron", "MATIC": "matic-network",
+    "UNI": "uniswap", "ATOM": "cosmos", "NEAR": "near",
+}
+
+
+def _crypto_slug(symbol_or_slug):
+    """Return the CoinGecko slug for a watchlist crypto entry.
+    Accepts either a symbol ('BTC') or a slug ('bitcoin')."""
+    s = (symbol_or_slug or "").strip()
+    if not s:
+        return s
+    if s.upper() in _CRYPTO_SYMBOL_TO_SLUG:
+        return _CRYPTO_SYMBOL_TO_SLUG[s.upper()]
+    return s.lower()
+
+
+def _refresh_news_glyphs(watchlist, force=False):
+    """Subprocess news_glyph.py refresh-{us,klse,crypto} for the watchlist."""
+    import subprocess
+    script = PROJECT_ROOT / ".claude/skills/us-news/news_glyph.py"
+    us = [e["ticker"].upper() for e in watchlist.get("us", [])]
+    klse = [str(e["ticker"]).replace(".KL", "").strip() for e in watchlist.get("klse", [])]
+    crypto_slugs = sorted({_crypto_slug(e["ticker"]) for e in watchlist.get("crypto", [])})
+    for label, args in (
+        ("us",     ["refresh-us",     "--tickers", ",".join(us)]      if us else None),
+        ("klse",   ["refresh-klse",   "--codes",   ",".join(klse)]    if klse else None),
+        ("crypto", ["refresh-crypto", "--coins",   ",".join(crypto_slugs)] if crypto_slugs else None),
+    ):
+        if not args:
+            continue
+        cmd = [sys.executable, str(script), *args] + (["--force"] if force else [])
+        print(f"[news-glyph] {label}: {len(args[2].split(','))} entries...", flush=True)
+        try:
+            # First-pass LLM scoring across the watchlist can be slow (~3s/ticker for
+            # 30-150 items). Subsequent refreshes amortize to ~1-5 new items per ticker.
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            if r.returncode != 0:
+                print(f"[news-glyph] {label} rc={r.returncode}: {r.stderr.strip()[:200]}", flush=True)
+        except subprocess.TimeoutExpired:
+            print(f"[news-glyph] {label} timeout (>900s) — partial cache OK, re-run to finish", flush=True)
+        except Exception as e:
+            print(f"[news-glyph] {label} crashed: {e}", flush=True)
+
+
+def _load_news_glyphs(watchlist, refresh=False, skip=False):
+    """Return {(asset_class, key): payload} for the dashboard renderer.
+    Keys: us=ticker.upper(); klse=4-digit code; crypto=ticker.upper() (renderer
+    uses symbol, the lookup is symbol-keyed for ergonomics — we resolve to slug
+    inside this function)."""
+    if skip:
+        return {}
+    if refresh:
+        _refresh_news_glyphs(watchlist)
+    # Import the news_glyph module to call glyph_for
+    sys.path.insert(0, str(PROJECT_ROOT / ".claude/skills/us-news"))
+    try:
+        import news_glyph as ng
+    except Exception as e:
+        print(f"[news-glyph] import failed: {e}")
+        return {}
+    out = {}
+    for e in watchlist.get("us", []):
+        tk = e["ticker"].upper()
+        p = ng.glyph_for(tk, "us")
+        if p is not None:
+            out[("us", tk)] = p
+    for e in watchlist.get("klse", []):
+        code = str(e["ticker"]).replace(".KL", "").strip()
+        p = ng.glyph_for(code, "klse")
+        if p is not None:
+            out[("klse", code)] = p
+    for e in watchlist.get("crypto", []):
+        symbol = e["ticker"].upper()
+        slug = _crypto_slug(symbol)
+        p = ng.glyph_for(slug, "crypto")
+        if p is not None:
+            out[("crypto", symbol)] = p
+    return out
+
+
+def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_sentiment=False, skip_sentiment=False,
+                    refresh_news_glyph=False, skip_news_glyph=False):
     print("[1/8] Parsing watchlist + journal...")
     watchlist = parse_watchlist()
     journal = parse_journal()
@@ -4962,6 +5197,9 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
         ind, _ = fetch_crypto_indicators(coin, force)
         crypto_indicators[coin.upper()] = ind
 
+    # News-glyph payloads (per-ticker 🟢/🔴/⚪ + ❗ analyst modifier — see news_glyph.py)
+    news_glyphs = _load_news_glyphs(watchlist, refresh=refresh_news_glyph, skip=skip_news_glyph)
+
     # Token-unlock cache (populated by crypto-unlocks-cache skill; consumed by sim §5 gate)
     crypto_unlocks = {}
     unlocks_dir = CACHE_DIR.parent / "crypto_unlocks"
@@ -4992,6 +5230,7 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
         "crypto_funding": crypto_funding,
         "crypto_indicators": crypto_indicators,
         "crypto_unlocks": crypto_unlocks,
+        "news_glyphs": news_glyphs,
         "sentiment": _bulk_load_sentiment(),
         "polymarket": load_polymarket(),
         "config": {
@@ -5063,6 +5302,8 @@ def main():
     ap.add_argument("--no-sentiment", action="store_true", help="Skip the sentiment auto-fill step entirely (e.g. if Reddit RSS or OpenRouter is down). Dashboard still renders whatever's already cached.")
     ap.add_argument("--refresh-polymarket", action="store_true", help="Pull fresh Polymarket event probabilities (no auth, ~5s). Without this flag the dashboard uses whatever's cached.")
     ap.add_argument("--no-news", action="store_true", help="Skip news entirely (cache-only, no panel update).")
+    ap.add_argument("--refresh-news-glyph", action="store_true", help="Pull fresh per-row news glyph data (Finnhub headlines + yfinance analyst actions for US, klsescreener for KLSE, RSS for crypto). 60-call/min Finnhub free tier — runs on full watchlist.")
+    ap.add_argument("--no-news-glyph", action="store_true", help="Skip news-glyph entirely (per-row glyph column shows nothing).")
     ap.add_argument("--with-discovery", action="store_true", help="Also run us-screener + sector-rotation before rendering (TTL-cached, no-op if fresh).")
     ap.add_argument("--open", action="store_true", help="Open dashboard.html in default browser when done.")
     args = ap.parse_args()
@@ -5111,6 +5352,8 @@ def main():
         refresh_news=args.refresh_news,
         refresh_sentiment=args.refresh_sentiment,
         skip_sentiment=args.no_sentiment,
+        refresh_news_glyph=args.refresh_news_glyph,
+        skip_news_glyph=args.no_news_glyph,
     )
     if args.open:
         try:
