@@ -20,3 +20,7 @@ dashboard.html
 # Claude runtime artifacts
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
+
+# Agent-tooling mirrors — some harnesses auto-copy .claude/skills/ into a
+# parallel .agents/skills/ tree. Identical content, duplicated; not source-of-truth.
+.agents/
