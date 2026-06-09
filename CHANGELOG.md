@@ -96,9 +96,9 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-**Other carry-over threads (still in flight after v1.10.0):**
+**Other carry-over threads (still in flight after v1.10.1):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified.
-- **Reddit-comment scoring calibration watch.** v1.10.0 just shipped comment-tree scoring; first NVDA test showed comments pulling the Reddit signal meaningfully bearish (40% bear) where title-only would have been neutral-bullish. Want a few weeks across the watchlist to confirm: (a) the 5-comments-per-post cap is right, (b) the RSS-comments uniform-weight floor of 3 doesn't over- or under-counter the OAuth-comments path when both are mixed in a refresh, (c) the LLM relevance filter handles comment off-topicness as well as it handles news cross-attribution.
+- **Reddit-comment scoring calibration watch.** v1.10.0 shipped comment-tree scoring; first NVDA test showed comments pulling the Reddit signal meaningfully bearish (40% bear) where title-only would have been neutral-bullish. Want a few weeks across the watchlist to confirm: (a) the 5-comments-per-post cap is right, (b) the RSS-comments uniform-weight floor of 3 doesn't over- or under-counter the OAuth-comments path when both are mixed in a refresh, (c) the LLM relevance filter handles comment off-topicness as well as it handles news cross-attribution.
 - **Threshold calibration watch.** v1.5.0 fired 4 FADE flags; v1.6.0's Contrarian Setups panel narrowed to 2 actionable setups (CIFR, PURR); v1.7.0 BTFD detector fired 4 LIGHT DIP candidates on first run. Want a few weeks of operator use across changing market regimes to confirm thresholds (sentiment 0.80/0.70 + alignment, BTFD/STR equity/crypto tiers) are calibrated correctly.
 - **HN coverage + 1.2× source weight calibration watch.** v1.9.0's HN-as-third-leg validated cleanly on RDDT. Want a few weeks across the watchlist to confirm: (a) the 1.2× HN source weight is right (not over- or under-correcting vs forum signal), (b) tech tickers consistently get coverage and non-tech ones cleanly degrade to "absent", (c) the curated `TICKER → company name` map doesn't need tuning for new watchlist adds.
 - **News-glyph LLM scoring quality watch.** v1.8.0's LLM-attributed news sentiment fixed the KTOS-style cross-attribution problem in spot tests. Want a few weeks of varied news flow to confirm the Gemma 4 31B / GPT-OSS 120B free-tier models hold up on edge cases (non-English KLSE headlines, sector roundups, ambiguous bank-of-companies headlines). Tracking 429s / fallback frequency in the score logs.
@@ -114,6 +114,22 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v1.10.1] — 2026-06-09
+
+UX polish PATCH for the v1.10.0 release. Three small fixes that caught operator-attention immediately after shipping:
+
+### Changed
+
+- **Polymarket inline section: one row per event, not per market.** Each Polymarket event (e.g. "What will BTC price be on June 9?") contains multiple markets corresponding to outcome bands. v1.10.0 ranked markets globally by 24h volume, which often surfaced 3 different price bands of the *same* event as 3 separate rows — clutter without information. Now: one row per event using its `headline_question` (highest-probability outcome) with aggregate volume summed across all markets in that event. A multi-band BTC event collapses from 3 noisy rows to one clear modal read like `🟡 60% · Will BTC be between $62K-$64K on June 9? [$48K 24h vol]`.
+- **Polymarket strict ticker matching, no junk fallback.** v1.10.0 had a "if no ticker-specific markets exist, fall back to any crypto-category market" rule, which produced nonsense like XRP's row showing BTC and ETH price-band markets. Now: crypto tickers without specific Polymarket coverage display an honest empty-state message — *"no XRP-specific Polymarket markets in cache. Generic BTC/ETH price-band markets exist but aren't useful confluence for this ticker."* No more cross-coin noise.
+- **Retail Sentiment dropdown column is now scrollable**, matching the News column pattern shipped earlier in the day. With 4 sub-sections (StockTwits + Reddit + Hacker News + Polymarket) plus per-item lists, the column was running tall enough to crop bottom items when the parent grid forced height equality across columns. Now `max-height: 400px; overflow-y: auto` keeps it bounded, identical treatment to the News column.
+
+### Fixed
+
+- **`.gitignore` excludes `.agents/` auto-mirror.** Some agent-tooling auto-copies `.claude/skills/` into a parallel `.agents/skills/` tree (71 files, ~20K LOC). Identical content, includes `.env` files with real API keys, not source-of-truth. Now ignored so the harness's pending-changes badge stays clean and no accidental commit can leak the duplicates.
 
 ---
 

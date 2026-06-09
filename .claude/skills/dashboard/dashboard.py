@@ -4289,67 +4289,66 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     _BTC_PROXY_EQUITIES = {"CLSK", "CIFR", "RIOT", "MARA", "MSTR", "COIN", "HOOD"}
 
     def _polymarket_signals_for(ticker, asset_class, max_items=3):
-        """Return list of {question, prob, vol_24h, liquidity, category, lean} tuples
-        most relevant to this ticker. Empty list if no relevant markets exist."""
+        """Return list of event-level signals (one row per Polymarket event, not
+        per market) most relevant to this ticker. Empty list if none. Uses each
+        event's headline market (the highest-probability outcome) — so a multi-band
+        event like "What price band will BTC be in on June 9?" renders as a single
+        line "60% chance BTC ∈ $62K-$64K" instead of three separate band rows."""
         pm = ctx.get("polymarket") or {}
         cats = pm.get("categories") or {}
-        all_events = []
+        # Build event-level (not market-level) list. The fetcher already
+        # computes headline_question / headline_prob per event (= highest-prob
+        # market). Total volume = sum across all markets in the event.
+        events = []
         for cat_name, cat in cats.items():
             for ev in (cat.get("events") or []):
-                for m in (ev.get("markets") or []):
-                    yp = m.get("yes_price")
-                    if yp is None:
-                        continue
-                    all_events.append({
-                        "category": cat_name,
-                        "event_title": ev.get("title") or "",
-                        "question": m.get("question") or "—",
-                        "prob": yp,
-                        "vol_24h": m.get("volume_24h") or 0,
-                        "liquidity": m.get("liquidity") or 0,
-                    })
-        if not all_events:
+                hq = ev.get("headline_question")
+                hp = ev.get("headline_prob")
+                if hq is None or hp is None:
+                    continue
+                mkts = ev.get("markets") or []
+                total_vol = sum((m.get("volume_24h") or 0) for m in mkts)
+                events.append({
+                    "category": cat_name,
+                    "event_title": ev.get("title") or "",
+                    "question": hq,
+                    "prob": hp,
+                    "vol_24h": total_vol,
+                    "liquidity": ev.get("liquidity") or sum((m.get("liquidity") or 0) for m in mkts),
+                })
+        if not events:
             return []
 
-        def _matches_keywords(m, kws):
-            text = (m["question"] + " " + m["event_title"]).lower()
+        def _matches(e, kws):
+            text = (e["question"] + " " + e["event_title"]).lower()
             return any(kw in text for kw in kws)
 
         relevant = []
         if asset_class == "crypto":
             kws = _CRYPTO_KEYWORDS.get(ticker.upper())
             if kws:
-                relevant = [m for m in all_events
-                            if m["category"] == "crypto" and _matches_keywords(m, kws)]
-            # Fall back: any crypto-category market
-            if not relevant:
-                relevant = [m for m in all_events if m["category"] == "crypto"]
+                relevant = [e for e in events
+                            if e["category"] == "crypto" and _matches(e, kws)]
+            # v1.10.1: NO fallback to "any crypto event". If the ticker has no
+            # specific Polymarket coverage, surface that honestly rather than
+            # showing unrelated BTC/ETH bands which aren't useful confluence.
         elif asset_class == "us":
-            # BTC-proxy equities get BTC markets first, then macro
             if ticker.upper() in _BTC_PROXY_EQUITIES:
-                relevant = [m for m in all_events
-                            if m["category"] == "crypto" and _matches_keywords(m, ["bitcoin", "btc"])]
-            # Add general macro_rates + macro_econ as broad-market context
-            relevant += [m for m in all_events if m["category"] in ("macro_rates", "macro_econ")]
-        # KLSE has no Polymarket coverage — return empty
+                relevant += [e for e in events
+                             if e["category"] == "crypto" and _matches(e, ["bitcoin", "btc"])]
+            relevant += [e for e in events if e["category"] in ("macro_rates", "macro_econ")]
+        # KLSE: no Polymarket coverage — return empty
 
-        # Rank by volume_24h (the "real money" signal) desc, take top N
         relevant.sort(key=lambda x: x["vol_24h"], reverse=True)
-        # Tag each market with a directional lean for the operator
         out = []
-        for m in relevant[:max_items]:
-            p = m["prob"]
-            if p >= 0.80:
-                lean = ("strong-yes", "🟢")
-            elif p >= 0.60:
-                lean = ("lean-yes", "🟡")
-            elif p <= 0.20:
-                lean = ("strong-no", "🔴")
-            elif p <= 0.40:
-                lean = ("lean-no", "🟠")
-            else:
-                lean = ("uncertain", "⚪")
-            out.append({**m, "lean_label": lean[0], "lean_glyph": lean[1]})
+        for e in relevant[:max_items]:
+            p = e["prob"]
+            if p >= 0.80:   lean = ("strong-yes", "🟢")
+            elif p >= 0.60: lean = ("lean-yes",   "🟡")
+            elif p <= 0.20: lean = ("strong-no",  "🔴")
+            elif p <= 0.40: lean = ("lean-no",    "🟠")
+            else:           lean = ("uncertain",  "⚪")
+            out.append({**e, "lean_label": lean[0], "lean_glyph": lean[1]})
         return out
 
     def _polymarket_inline_html(ticker, asset_class):
@@ -4357,10 +4356,14 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         sigs = _polymarket_signals_for(ticker, asset_class)
         if not sigs:
             if asset_class == "klse":
-                return ('<div class="gate-line dim" style="font-size:11px"><b>🪙 Money-backed (Polymarket):</b> '
-                        'no coverage (Polymarket doesn\'t carry KLSE markets)</div>')
-            return ('<div class="gate-line dim" style="font-size:11px"><b>🪙 Money-backed (Polymarket):</b> '
-                    'no relevant markets in cache (run polymarket-events refresh)</div>')
+                msg = "no coverage (Polymarket doesn't carry KLSE markets)"
+            elif asset_class == "crypto":
+                msg = (f"no {ticker.upper()}-specific Polymarket markets in cache. "
+                       "Generic BTC/ETH price-band markets exist but aren't useful "
+                       "confluence for this ticker.")
+            else:
+                msg = "no relevant markets in cache (run polymarket-events refresh)"
+            return (f'<div class="gate-line dim" style="font-size:11px"><b>🪙 Money-backed (Polymarket):</b> {msg}</div>')
 
         def _fmt_vol(v):
             if v is None or v <= 0: return "—"
@@ -4481,14 +4484,28 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         return '<div class="exp-gate-col">' + "\n".join(parts) + '</div>'
 
     def sentiment_details_with_polymarket(ticker, asset_class):
-        """Wrap sentiment_details_html with the Polymarket inline section appended."""
+        """Wrap sentiment_details_html with the Polymarket inline section appended,
+        inside a scroll container so the column stays bounded when ST + Reddit +
+        HN + Polymarket all stack up tall (mirrors the News dropdown pattern)."""
         base = sentiment_details_html(ticker)
         pm = _polymarket_inline_html(ticker, asset_class)
         # Inject Polymarket inside the same exp-gate-col so it sits below the
         # scored-at line cleanly. The base ends with '</div>' — splice in before it.
         if base.endswith("</div>"):
-            return base[:-len("</div>")] + pm + "</div>"
-        return base + pm
+            inner = base[:-len("</div>")] + pm
+        else:
+            inner = base + pm
+        # Pull the gate-col opening + head out, wrap the rest in a scroll div.
+        # Structure of base: <div class="exp-gate-col"><div class="exp-gate-head">...</div>...content...</div>
+        # We want: <div class="exp-gate-col"><div class="exp-gate-head">...</div><div class="scroll">...content...</div></div>
+        import re
+        m = re.match(r'(<div class="exp-gate-col">)(<div class="exp-gate-head">.*?</div>)(.*)', inner, re.DOTALL)
+        if m:
+            return (m.group(1) + m.group(2) +
+                    '<div class="sent-scroll" style="max-height:400px;overflow-y:auto;padding-right:6px;margin-top:4px">' +
+                    m.group(3) + '</div></div>')
+        # Fallback if regex doesn't match — return inner unmodified rather than break the layout
+        return inner + "</div>"
 
     def sentiment_cell(ticker, asset_class="us"):
         """Render the Retail Sentiment column cell for one ticker.
