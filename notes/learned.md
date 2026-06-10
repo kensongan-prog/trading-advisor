@@ -4,6 +4,32 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-10 — BTFD/STR panel: naïve zip() pairing crypto rows by index silently dropped candidates
+
+**Symptom:** The Action Rail showed `2 BTFD` (counted from watchlist iteration) but the BTFD/STR panel rendered only 1 candidate (MRVL). ENA was qualifying (chg=-10.21%, vol=1.59x — passes crypto LIGHT_DIP gate of chg≤-4% AND vol≥1.5×) but never appeared.
+
+**Root cause:** The BTFD panel iterated `zip(ctx["watchlist"]["crypto"], ctx["crypto_rows"])`. `crypto_rows` comes back from CoinGecko in **market-cap order**, not watchlist order. ENA sat at watchlist position 7 (BTC, ETH, SOL, BNB, XRP, HBAR, HYPE, ENA), but at a different position in `crypto_rows` — so the zip paired ENA's watchlist entry with whatever sat at index 7 in the rows list. The classifier got the wrong chg/vol data and missed the candidate.
+
+This is the *same bug pattern* as the crypto grid (which was already fixed with a `_rows_by_sym = {(r.get("symbol") or "").upper(): r for r in ...}` lookup at line ~4853, with a "BUGFIX:" comment). The BTFD panel had a copy-paste of the original buggy code that nobody noticed because it failed silently — no error, just under-counted.
+
+**Fix:** Same lookup-by-symbol pattern applied to the BTFD panel's crypto loop. Action Rail now uses the IDENTICAL classifier (`classify_btfd_str_shared`) hoisted to render_html scope, so rail counts and panel rows can never drift apart on threshold tweaks.
+
+**Audit recipe:** Any time you see "rail count = X but panel shows Y" for crypto-derived signals, suspect a zip-by-index. Manual reconstruction (iterate watchlist + look up data by symbol explicitly) will reveal which tickers got mis-paired.
+
+---
+
+### 2026-06-10 — Mobile expanded-row dropdown was rendering 1543px wide in a 390px viewport
+
+**Symptom:** Clicking a US/KLSE row to expand its dropdown details panel made the content scroll horizontally — the gates, thesis, sentiment, and news content were essentially off-screen unless you swiped right.
+
+**Root cause:** The mobile CSS made `.panel table { overflow-x: auto; }` with `tbody { min-width: 1100px }` so the body fits all 16 columns horizontally. The expanded row is a separate `<tr.exp-details><td colspan="15">` inside that same tbody. So the `<td>` inherited the 1100px+ min-width and rendered ~1543px wide on a 390px viewport.
+
+**Fix:** Made `.exp-details-content` use `position: sticky; left: 0; max-width: calc(100vw - 24px)`. The content visually clamps to the viewport regardless of the table's horizontal scroll position — and remains visible even if you've scrolled the table sideways to look at distant columns. Also collapsed `.exp-gates-grid` to single-column on mobile so the gates/sentiment/news sections stack instead of competing for narrow space.
+
+**Test recipe:** Inspect computed widths after clicking an expand chevron at mobile width: `pg.evaluate(...)` to read `.exp-details-content` bounding-box width vs viewport width. If they're close, fix is in.
+
+---
+
 ### 2026-06-10 — HN sentiment: `num_comments>=3` filter silently dropped niche-ticker coverage
 
 **Symptom:** Inspecting `.claude/cache/hn_sentiment/` showed `story_count=0` for ETH, SOL, HYPE despite these being heavily HN-relevant. RYDE had 5 "stories" of pure junk (e.g. "Show HN: Freenet, a peer-to-peer platform for decentralized apps" — has nothing to do with Ryde Group).

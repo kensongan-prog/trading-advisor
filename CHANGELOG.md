@@ -117,6 +117,18 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.0.3] — 2026-06-10
+
+Three correctness PATCHes the operator caught on their mobile review.
+
+### Fixed
+
+- **Action Rail BTFD/STR counts now match the actual panel.** Previously the rail used a simplified inline counter (`chg<=-2 + vol>=1.3` for equities; `chg<=-4` for crypto with no vol filter) that didn't match the panel's tiered classifier. Hoisted the BTFD/STR threshold tables and the `classify_btfd_str_shared()` function to `render_html` scope; both the rail and the panel now reference identical data so they can never drift on threshold tweaks. Likewise, FADE/BUY rail counts now require **technical alignment** (the same gate the Contrarian Setups panel enforces) instead of counting every contrarian-flagged ticker. Validated: rail and panel both report `2 BTFD / 2 STR / 0 FADE-aligned / 0 BUY-aligned` on the current cache.
+- **BTFD/STR panel was silently dropping crypto candidates.** The panel iterated `zip(watchlist.crypto, crypto_rows)` — but `crypto_rows` comes back from CoinGecko in market-cap order, not watchlist order, so each crypto ticker got paired with the wrong row's chg/vol data. ENA (which qualified as crypto LIGHT_DIP at chg=-10.2%, vol=1.59×) was invisible because its watchlist entry got mismatched data. Same `_rows_by_sym` lookup pattern the crypto grid already used is now applied. ENA now correctly surfaces.
+- **Mobile: expanded-row dropdowns no longer overflow horizontally.** Clicking a US/KLSE row to expand its thesis/gates/sentiment/news details was producing a 1543px-wide content panel on a 390px viewport (you had to swipe right to see anything). Root cause: the expanded `<tr>` lives inside the same `<tbody>` we gave `min-width: 1100px` for column legibility — so the expanded `<td>` inherited 1100px+. Fix: `.exp-details-content` now uses `position: sticky; left: 0; max-width: calc(100vw - 24px)` on mobile, so the content visually clamps to the viewport regardless of horizontal scroll position. The gates grid also collapses to single column so sections stack readably.
+
+---
+
 ## [v2.0.2] — 2026-06-10
 
 Mobile polish PATCH plus an HN-coverage audit fix. Two threads were addressed in this release.

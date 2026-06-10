@@ -1962,6 +1962,26 @@ td.dim { color: var(--dim); }
   .panel table th, .panel table td { padding: 5px 6px; font-size: 11.5px; }
   .sim-load-btn { font-size: 9px; padding: 1px 4px; }
 
+  /* Expanded-row dropdown — the parent <td colspan="N"> inherits the table's
+     1100px+ min-width, so the dropdown content was rendering 1500px+ wide on
+     a 390px viewport (you had to horizontally scroll to see it). Pin the
+     content to the viewport via position: sticky on the LEFT edge, then clamp
+     its width so it stays fully on screen regardless of where the table has
+     been scrolled. */
+  tr.exp-details > td { padding: 0 !important; }
+  .exp-details-content { position: sticky; left: 0; padding: 12px 14px;
+                         max-width: calc(100vw - 24px); box-sizing: border-box;
+                         white-space: normal; }
+  .exp-gates-grid { display: block !important; }
+  .exp-gate-col { margin-bottom: 10px; }
+  .exp-meta { font-size: 10.5px; gap: 8px; }
+  .exp-meta span { display: block; }
+  .gate-line { font-size: 11px; }
+  /* Same fix applies to the screener/discovery expanded rows */
+  tr.discovery-row + tr td { padding: 0; }
+  tr.discovery-row + tr > td > * { position: sticky; left: 0;
+                                   max-width: calc(100vw - 24px); display: block; }
+
   /* Regime + KPI cards stack */
   .regime-row { grid-template-columns: 1fr; }
   .strip { grid-template-columns: 1fr 1fr !important; gap: 6px; }
@@ -4062,6 +4082,48 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             cls = "dim"
         return (txt, f"{age:.1f}", cls)
 
+    # Hoisted out of render_btfd_str_panel so the Action Rail can use the
+    # IDENTICAL thresholds + classifier. Previously the rail had a simplified
+    # counter (chg<=-2 + vol>=1.3 for equities, chg<=-4 with no vol filter for
+    # crypto) which over- and under-counted vs the actual panel rendering.
+    BTFD_TIERS_SHARED = {
+        "equity": [
+            ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
+            ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
+            ("⬇️ LIGHT DIP",   "btfd-light",-2.0, 1.3, None),
+        ],
+        "crypto": [
+            ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
+            ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
+            ("⬇️ LIGHT DIP",   "btfd-light", -4.0,  1.5, None),
+        ],
+    }
+    STR_TIERS_SHARED = {
+        "equity": [
+            ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
+            ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
+            ("⬆️ LIGHT RIP","str-light", 2.0, 1.3, None),
+        ],
+        "crypto": [
+            ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
+            ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
+            ("⬆️ LIGHT RIP","str-light", 4.0,  1.5, None),
+        ],
+    }
+
+    def classify_btfd_str_shared(chg, vol_ratio, rsi, asset_kind):
+        """Return direction ('BTFD'|'STR'|None) only — the rail just wants a count.
+        Same threshold logic as render_btfd_str_panel; never get out of sync again."""
+        if chg is None or vol_ratio is None:
+            return None
+        for _lbl, _cls, thr_chg, thr_vol, thr_rsi in BTFD_TIERS_SHARED.get(asset_kind, []):
+            if chg <= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi <= thr_rsi)):
+                return "BTFD"
+        for _lbl, _cls, thr_chg, thr_vol, thr_rsi in STR_TIERS_SHARED.get(asset_kind, []):
+            if chg >= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi >= thr_rsi)):
+                return "STR"
+        return None
+
     def render_btfd_str_panel():
         """Surface watchlist names showing large % moves on outsized volume.
         BTFD = Buy The F***ing Dip (entry candidate review, long bias).
@@ -4092,30 +4154,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         # Tier emoji choice: 🩸/💧/⬇️ for dips, 🚀/💸/⬆️ for rips. The arrow emojis
         # (⬇️/⬆️) avoid colliding with 📉/📈 used by the retail-sentiment column for
         # BEAR/BULL — both can appear in the same row and 📉/📈 would be ambiguous.
-        BTFD = {
-            "equity": [
-                ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
-                ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
-                ("⬇️ LIGHT DIP",   "btfd-light",-2.0, 1.3, None),
-            ],
-            "crypto": [
-                ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
-                ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
-                ("⬇️ LIGHT DIP",   "btfd-light", -4.0,  1.5, None),
-            ],
-        }
-        STR_TIERS = {
-            "equity": [
-                ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
-                ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
-                ("⬆️ LIGHT RIP","str-light", 2.0, 1.3, None),
-            ],
-            "crypto": [
-                ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
-                ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
-                ("⬆️ LIGHT RIP","str-light", 4.0,  1.5, None),
-            ],
-        }
+        # Reference the hoisted shared tables so the rail and the panel can
+        # never drift apart on threshold changes.
+        BTFD = BTFD_TIERS_SHARED
+        STR_TIERS = STR_TIERS_SHARED
 
         def classify(chg, vol_ratio, rsi, asset_kind):
             """Return (tier_label, tier_cls, direction) or (None, None, None)."""
@@ -4224,9 +4266,15 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             collect(tk, "klse", "equity", t.get("change_pct"), t.get("vol_ratio"), t.get("rsi14"),
                     atr_pct, t.get("vs_sma50_pct"), t.get("vs_sma200_pct"),
                     name=t.get("name") or "—")
-        # Crypto — uses 24h CoinGecko change and Binance/CG-derived vol_ratio
-        for entry, r in zip(ctx.get("watchlist", {}).get("crypto", []), ctx.get("crypto_rows", [])):
+        # Crypto — uses 24h CoinGecko change and Binance/CG-derived vol_ratio.
+        # BUGFIX: ctx["crypto_rows"] comes back from CoinGecko in market-cap order,
+        # NOT watchlist order. The previous naïve zip() paired ENA's entry with
+        # whatever sat at the same index in crypto_rows (e.g. HBAR), so ENA
+        # silently never reached the classifier. Look up by symbol instead.
+        _btfd_rows_by_sym = {(r.get("symbol") or "").upper(): r for r in (ctx.get("crypto_rows") or [])}
+        for entry in ctx.get("watchlist", {}).get("crypto", []):
             tk = entry["ticker"]
+            r = _btfd_rows_by_sym.get(tk.upper()) or {}
             ind = (ctx.get("crypto_indicators") or {}).get(tk.upper(), {}) or {}
             chg = r.get("chg_24h")
             vol_ratio = ind.get("vol_ratio")
@@ -5432,12 +5480,57 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     #   (3) What setups are live? (FADE / BUY / BTFD / STR / P1_READY counts)
     # All numbers derived from already-computed ctx — zero extra fetches.
 
-    # Setup counts: walk the sentiment map for contrarian flag totals (any alignment)
+    # ── Contrarian setup counts (FADE/BUY): ALIGNED only, matching the panel ──
+    # The old code counted EVERY contrarian-flagged ticker (FADE/BUY), but the
+    # Contrarian Setups panel only renders rows where the technical state matches
+    # the flag (FADE needs RSI>70 OR vs50>+8%; BUY needs RSI 35-55 AND -5 ≤ vs50 ≤ +10).
+    # Unaligned flags are informational only, not actionable. Counts now match.
+    _ar_n_fade = 0
+    _ar_n_buy = 0
     _ar_sent_map = ctx.get("sentiment") or {}
-    _ar_n_fade = sum(1 for s in _ar_sent_map.values()
-                     if ((s.get("composite") or {}).get("contrarian_flag") == "FADE"))
-    _ar_n_buy  = sum(1 for s in _ar_sent_map.values()
-                     if ((s.get("composite") or {}).get("contrarian_flag") == "BUY"))
+
+    def _ar_check_contrarian(rsi, vs50):
+        flag_aligns = {"FADE": False, "BUY": False}
+        if rsi is not None and rsi > 70:
+            flag_aligns["FADE"] = True
+        if vs50 is not None and vs50 > 8:
+            flag_aligns["FADE"] = True
+        if (rsi is not None and 35 <= rsi <= 55) and (vs50 is not None and -5 <= vs50 <= 10):
+            flag_aligns["BUY"] = True
+        return flag_aligns
+
+    for _e in ctx.get("watchlist", {}).get("us", []):
+        _tk = _e["ticker"]
+        _sent = _ar_sent_map.get(_tk.upper())
+        if not _sent: continue
+        _flag = ((_sent.get("composite") or {}).get("contrarian_flag"))
+        if _flag not in ("FADE", "BUY"): continue
+        _t = (ctx.get("us_data") or {}).get(_tk, {}) or {}
+        _align = _ar_check_contrarian(_t.get("rsi14"), _t.get("vs_sma50_pct"))
+        if _flag == "FADE" and _align["FADE"]: _ar_n_fade += 1
+        if _flag == "BUY"  and _align["BUY"]:  _ar_n_buy  += 1
+    for _e in ctx.get("watchlist", {}).get("klse", []):
+        _tk = _e["ticker"]
+        _sent = _ar_sent_map.get(_tk.upper())
+        if not _sent: continue
+        _flag = ((_sent.get("composite") or {}).get("contrarian_flag"))
+        if _flag not in ("FADE", "BUY"): continue
+        _t = (ctx.get("klse_data") or {}).get(_tk, {}) or {}
+        _align = _ar_check_contrarian(_t.get("rsi14"), _t.get("vs_sma50_pct"))
+        if _flag == "FADE" and _align["FADE"]: _ar_n_fade += 1
+        if _flag == "BUY"  and _align["BUY"]:  _ar_n_buy  += 1
+    for _e in ctx.get("watchlist", {}).get("crypto", []):
+        _tk = _e["ticker"]
+        _sent = _ar_sent_map.get(_tk.upper())
+        if not _sent: continue
+        _flag = ((_sent.get("composite") or {}).get("contrarian_flag"))
+        if _flag not in ("FADE", "BUY"): continue
+        _ind = (ctx.get("crypto_indicators") or {}).get(_tk.upper(), {}) or {}
+        _rsi = _ind.get("rsi14"); _price = _ind.get("price"); _s50 = _ind.get("sma50")
+        _vs50 = ((_price / _s50 - 1) * 100) if (_price and _s50) else None
+        _align = _ar_check_contrarian(_rsi, _vs50)
+        if _flag == "FADE" and _align["FADE"]: _ar_n_fade += 1
+        if _flag == "BUY"  and _align["BUY"]:  _ar_n_buy  += 1
 
     # P1_READY watchlist names — same gating as us_status (US + KLSE)
     _ar_n_p1 = 0
@@ -5456,22 +5549,33 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         if _lbl == "P1_READY":
             _ar_n_p1 += 1
 
-    # BTFD/STR rough counts — light heuristic matching the LIGHT_DIP / LIGHT_RIP tier
-    # of render_btfd_str_panel (drop ≤ -2% with vol ≥ 1.3× for equities; -4%/1.5× for crypto).
-    # Cheaper than re-running the full tier-classifier and good enough for a "what's live" count.
+    # ── BTFD/STR counts: identical thresholds to the panel via classify_btfd_str_shared ──
+    # Iterate the watchlist (same as the panel does), not raw us_data — avoids
+    # off-watchlist tickers leaking into the count.
     _ar_n_btfd = 0
     _ar_n_str = 0
-    for _src, _kind in (("us_data", "equity"), ("klse_data", "equity")):
-        for _tk, _t in (ctx.get(_src) or {}).items():
-            _chg = _t.get("change_pct"); _vol = _t.get("vol_ratio")
-            if _chg is None or _vol is None: continue
-            if _chg <= -2 and _vol >= 1.3: _ar_n_btfd += 1
-            if _chg >=  4 and _vol >= 1.3: _ar_n_str  += 1
-    for _r in (ctx.get("crypto_rows") or []):
-        _chg = _r.get("chg_24h")
-        if _chg is None: continue
-        if _chg <= -4: _ar_n_btfd += 1
-        if _chg >=  6: _ar_n_str  += 1
+    for _e in ctx.get("watchlist", {}).get("us", []):
+        _t = (ctx.get("us_data") or {}).get(_e["ticker"], {}) or {}
+        _d = classify_btfd_str_shared(_t.get("change_pct"), _t.get("vol_ratio"),
+                                      _t.get("rsi14"), "equity")
+        if _d == "BTFD": _ar_n_btfd += 1
+        elif _d == "STR": _ar_n_str += 1
+    for _e in ctx.get("watchlist", {}).get("klse", []):
+        _t = (ctx.get("klse_data") or {}).get(_e["ticker"], {}) or {}
+        _d = classify_btfd_str_shared(_t.get("change_pct"), _t.get("vol_ratio"),
+                                      _t.get("rsi14"), "equity")
+        if _d == "BTFD": _ar_n_btfd += 1
+        elif _d == "STR": _ar_n_str += 1
+    # Crypto rows: iterate watchlist + crypto_rows, look up indicators for RSI/vol_ratio
+    _rows_by_sym = {(r.get("symbol") or "").upper(): r for r in (ctx.get("crypto_rows") or [])}
+    for _e in ctx.get("watchlist", {}).get("crypto", []):
+        _tk = _e["ticker"].upper()
+        _r = _rows_by_sym.get(_tk) or {}
+        _ind = (ctx.get("crypto_indicators") or {}).get(_tk, {}) or {}
+        _d = classify_btfd_str_shared(_r.get("chg_24h"), _ind.get("vol_ratio"),
+                                      _ind.get("rsi14"), "crypto")
+        if _d == "BTFD": _ar_n_btfd += 1
+        elif _d == "STR": _ar_n_str += 1
 
     # Halt status — derive from the spotlight events we already computed
     _ar_halt_active = bool(next_events) and next_events[0].get("in_halt")
