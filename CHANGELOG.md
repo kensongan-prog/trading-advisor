@@ -100,7 +100,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified.
 - **Reddit-comment scoring calibration watch.** Want a few weeks across the watchlist to confirm (a) the 5-comments-per-post cap, (b) the RSS-comments uniform-weight floor, (c) the LLM relevance filter on comment off-topicness.
 - **Threshold calibration watch.** A few weeks of operator use across changing market regimes to confirm sentiment 0.80/0.70 + alignment thresholds, plus BTFD/STR equity/crypto tiers.
-- **HN coverage + 1.2× source weight calibration watch.** A few weeks across the watchlist to confirm the 1.2× HN source weight and the curated `TICKER → company name` map.
+- **HN coverage + 1.2× source weight calibration watch.** Coverage half addressed in v2.0.2 (filter floor relaxed, RYDE skip). Source-weight (1.2×) tuning still requires trade-outcome data; deferred.
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
@@ -114,6 +114,21 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.0.2] — 2026-06-10
+
+Mobile polish PATCH plus an HN-coverage audit fix. Two threads were addressed in this release.
+
+### Fixed
+
+- **Mobile layout: BTFD/STR rows reflowed.** The `bs-row` was a 5-column desktop grid (`130px 60px 50px 1fr auto`); on a 390px viewport the stats column was being squeezed into a ~40px right strip while tech context spanned full width — making rows nearly unreadable. Now on `≤780px` the row collapses to a wrapping flex layout: tier·ticker·class·name on line 1, then stats / tech / cross-signal on subsequent lines. Each value gets its own readable line instead of competing for ~40px.
+- **Mobile layout: Contrarian Setup rows reflowed.** Was a 7-column grid (`30px 60px 70px 60px 1fr auto auto`) — worse than BTFD on mobile. Same fix pattern: wrapping flex, badge·flag·ticker·sim·class on line 1, stats and tech-note on their own lines, action and rationale span full width below.
+- **Mobile layout: Risk Simulator form stacks vertically.** Was a 6-column grid (`1.4fr 1fr 1fr 1fr 1fr auto`) — labels and inputs were crammed into ~40px columns. Now flex-column on mobile: each label gets its own row, inputs are full-width with 14px font for tap accuracy, "🟣 Suggest" button is a full-width thumb target.
+- **Action Zone label truncates cleanly on small phones.** The long form ("⚡ Today's Candidates — names that might warrant action right now") shows on desktop/tablet; on phones (`≤480px`) it shows just "⚡ Today's Candidates" rather than ellipsis-truncating mid-word.
+- **HN sentiment cache: `num_comments>=3` filter was eliminating real coverage on niche tickers.** Audit found ETH/SOL/HYPE silently scored 0 stories despite being heavily HN-relevant — direct Algolia testing showed "Ethereum" returned 7 stories in the last 30 days *without* the comment filter, but 0 with `>=3`. Niche-ticker HN posts often sit at 1-2 comments. Lowered `MIN_COMMENTS_FILTER` from 3 → 1 (still drops zero-comment spam). After re-fetch: ETH 0→2 real stories, SOL 0→2, HYPE 0→1. Confirmed-empty names (CIFR, CLSK, KTOS — small-caps with no HN attention) correctly remain 0 instead of producing junk.
+- **HN sentiment: RYDE marked skip to stop bare-ticker substring noise.** "Ryde" alone partial-matched across HN ("rideshare", URLs containing "ryde" segments) — Ryde Group is a Singapore micro-cap rideshare and the full company name gets no HN coverage. Mapped to `None` like SPY and EONR; cache now records `no_coverage=true` instead of 5 junk stories.
 
 ---
 

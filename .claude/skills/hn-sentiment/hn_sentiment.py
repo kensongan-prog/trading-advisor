@@ -42,7 +42,11 @@ ALGOLIA_ITEM   = "https://hn.algolia.com/api/v1/items"
 LOOKBACK_DAYS = 30
 TOP_STORIES = 5            # fetch comment trees for top N stories
 TOP_COMMENTS_PER_STORY = 5  # keep top N top-level comments per story (by points)
-MIN_COMMENTS_FILTER = 3     # stories with fewer comments aren't worth the round-trip
+MIN_COMMENTS_FILTER = 1     # was 3 — but the audit found that >=3 silently dropped
+                            # ALL recent ETH/SOL/HYPE coverage (those tickers have real
+                            # HN signal but at 1-2 comments each, normal for niche posts).
+                            # 1 = drop only zero-comment spammy posts; LLM scorer filters
+                            # off-topic content downstream.
 MAX_STORIES_FETCH = 15      # cap stories pulled from search before ranking
 PACE_SECONDS = 0.4          # be polite to Algolia (no rate limit but courteous)
 CACHE_TTL_HOURS = 24        # treat cache as fresh for 24h
@@ -70,7 +74,10 @@ TICKER_NAMES = {
     "CIFR": "Cipher Mining",
     "AUPH": "Aurinia",
     "RGLD": "Royal Gold",
-    "RYDE": "Ryde",
+    # "Ryde" alone partial-matches all over HN ("rideshare", urls containing
+    # "ryde" segments). Ryde Group is a Singapore micro-cap rideshare — even
+    # the full company name gets no HN coverage. Skip to avoid junk hits.
+    "RYDE": None,
     "KTOS": "Kratos Defense",
     "KO":   "Coca-Cola",
     "PURR": "Hyperliquid",    # PURR is the equity-treasury proxy, HN talks about HL

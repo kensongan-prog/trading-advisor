@@ -4,6 +4,22 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-10 — HN sentiment: `num_comments>=3` filter silently dropped niche-ticker coverage
+
+**Symptom:** Inspecting `.claude/cache/hn_sentiment/` showed `story_count=0` for ETH, SOL, HYPE despite these being heavily HN-relevant. RYDE had 5 "stories" of pure junk (e.g. "Show HN: Freenet, a peer-to-peer platform for decentralized apps" — has nothing to do with Ryde Group).
+
+**What was happening:** The Algolia search used `numericFilters: created_at_i>cutoff,num_comments>=3`. Direct API testing showed e.g. "Ethereum" returned 7 stories in the last 30 days *with the time filter alone*, but **0** when adding `num_comments>=3`. Niche-ticker HN posts often sit at 1-2 comments; the `>=3` floor (chosen as "not worth the round-trip") was eliminating every real signal for any non-mainstream name. Meanwhile RYDE's bare-ticker query `"Ryde"` produced false-positive substring matches across the HN corpus.
+
+**Fix (this commit):** Lowered `MIN_COMMENTS_FILTER` from 3 → 1 in `hn_sentiment.py`. After force-rescoring, ETH 0→2, SOL 0→2, HYPE 0→1 (CIFR/CLSK genuinely have no HN coverage — they remain 0, which is correct degraded behavior). Marked `RYDE: None` in `TICKER_NAMES` to skip the noisy query entirely. Each refresh produces a clean cache (`status=no_coverage` with reason) instead of 5 junk stories.
+
+**Tradeoff:** Relaxing the comment filter admits some noise (e.g. SOL now picks up "Microsoft Project Solara" stories which aren't about Solana). That's tolerable because the downstream classifier in `sentiment-cache.classify_messages` already classifies bodies as bull/bear/neutral — irrelevant content scores as `neutral`, diluting but not misleading the composite.
+
+**Next-level improvement (not in this PATCH):** `sentiment-cache.classify_messages` for HN doesn't have a relevance gate (the news-glyph LLM call does — `relevance: primary|mention|none`). Adding a relevance pass to the HN classifier would let real bull/bear signal through cleanly while explicitly dropping noise instead of relying on neutral-dilution. That's a separate calibration project.
+
+**Audit recipe:** `python3 .claude/skills/hn-sentiment/hn_sentiment.py --show` lists per-ticker queries + cache freshness. To verify Algolia behavior directly, hit `https://hn.algolia.com/api/v1/search?query=X&tags=story&numericFilters=created_at_i>{cutoff},num_comments>=N` — N=1 vs N=3 vs N=0 makes a huge difference for niche names.
+
+---
+
 ### 2026-06-10 — News-glyph LLM scoring: KLSE non-English headlines need a company-label in the prompt
 
 **Symptom:** Auditing 2110 cached LLM-scored items across 25 tickers (`audit_glyph.py`), the spot-checks looked clean on US/crypto but the four KLSE codes showed a striking pattern: 80%+ of Chinese-press headlines (e.g. `盛艺机构发股收购…`, `亚泛控股…`) scored `relevance=none / score=0.0` and silently dropped from the news signal. Latin-name headlines for the same companies scored fine.

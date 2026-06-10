@@ -1904,17 +1904,55 @@ td.dim { color: var(--dim); }
   .strip-compact summary { gap: 8px; row-gap: 4px; font-size: 11px; }
 
   /* Action Zone — let it breathe; setups cards become block-level */
-  .action-zone { padding: 6px 5px 4px; }
-  .action-zone .az-label { font-size: 10px; left: 10px; }
-  .cs-row { display: block !important; padding: 8px 6px; }
-  .cs-row > * { display: inline-block; vertical-align: middle; margin-right: 4px; }
-  .cs-action, .cs-rationale { display: block !important; margin: 4px 0; font-size: 11px; }
+  .action-zone { padding: 10px 5px 4px; }
+  .action-zone .az-label { font-size: 9.5px; left: 10px; max-width: calc(100% - 24px);
+                          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-explainer { font-size: 10.5px; padding: 6px 10px; line-height: 1.4; }
 
-  /* Risk Simulator — single-column form, the action button stays prominent */
-  .sim-grid { display: block; }
-  .sim-grid > div { margin-bottom: 8px; }
+  /* Contrarian Setup row — was a 7-col grid (30/60/70/60/1fr/auto/auto). On a
+     390px viewport that's hopeless. Reflow into 2 lines: header (badge·flag·
+     ticker·sim·class·name) then a stats line, with action/rationale below. */
+  .cs-row { display: flex !important; flex-wrap: wrap; align-items: center;
+            gap: 4px 8px; padding: 8px 10px;
+            grid-template-columns: none !important; }
+  .cs-row > .cs-badge   { font-size: 16px; }
+  .cs-row > .cs-flag    { padding: 1px 4px; }
+  .cs-row > .cs-ticker  { font-size: 13px; }
+  .cs-row > .cs-class   { font-size: 10px; }
+  .cs-row > .cs-name    { flex: 1 1 100%; font-size: 11px; margin-top: 2px; white-space: normal; }
+  .cs-row > .cs-stats   { flex: 1 1 100%; font-size: 11px; margin-top: 4px; }
+  .cs-row > .cs-tech    { flex: 1 1 100%; font-size: 11px; margin-top: 2px; }
+  .cs-action, .cs-rationale { flex: 1 1 100%; margin: 4px 0 0; font-size: 11px; line-height: 1.4; }
+
+  /* BTFD/STR row — was a 5-col grid (130/60/50/1fr/auto). Same problem: stats
+     get squeezed into a tiny right strip while tech context spans full width.
+     Reflow: top line = tier·ticker·class·name, second line = stats/tech/cross. */
+  .bs-row { display: flex !important; flex-wrap: wrap; align-items: center;
+            gap: 4px 8px; padding: 8px 10px;
+            grid-template-columns: none !important; }
+  .bs-row > .bs-tier  { font-size: 11px; }
+  .bs-row > .bs-ticker { font-size: 12px; }
+  .bs-row > .bs-class  { font-size: 10px; }
+  .bs-row > .bs-name   { flex: 1 1 auto; font-size: 11px; min-width: 0; }
+  .bs-row > .bs-stats  { flex: 1 1 100%; font-size: 11px; margin-top: 4px; }
+  .bs-row > .bs-tech   { flex: 1 1 100%; font-size: 10.5px; }
+  .bs-row > .bs-cross  { flex: 1 1 100%; }
+
+  /* Risk Simulator — INPUT form (.sim-form) was 6-col grid; needed single-col.
+     OUTPUT grid (.sim-grid) was already covered. Buttons stay full-width on
+     mobile so they're thumb-targets, not pixel targets. */
+  .sim-form { display: flex !important; flex-direction: column; gap: 6px;
+              grid-template-columns: none !important; align-items: stretch; }
+  .sim-form > div { margin-bottom: 2px; }
+  .sim-form label { font-size: 10px; margin-bottom: 2px; }
+  .sim-form input, .sim-form select { padding: 8px 10px; font-size: 14px; }
+  .sim-form button { padding: 10px 14px; font-size: 13px; font-weight: 600; width: 100%; }
+  .sim-grid { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sim-grid > div { margin-bottom: 0; }
   #sim-result { padding: 8px; font-size: 11.5px; }
   .sim-prosp-copy, .sim-suggest { font-size: 12px; padding: 8px 10px; }
+  .sim-verdict { font-size: 13px; padding: 8px 10px; }
+  .sim-blurb { font-size: 11px; line-height: 1.45; }
 
   /* Tables — let them x-scroll inside their panel rather than cramming columns.
      Locking the first 2 cols (chevron + ticker) sticky would be nice, but adds
@@ -1956,6 +1994,18 @@ td.dim { color: var(--dim); }
   .strip { grid-template-columns: 1fr !important; }
   .spotlight.spotlight-primary .spot-when b { font-size: 20px; }
   .panel h2 { font-size: 13px; }
+  .sim-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Action Zone label — shorten on the narrowest phones so it doesn't get
+   truncated mid-word by the ellipsis. The full phrase is informational; the
+   "⚡ Today's Candidates" prefix is the part that matters. */
+@media (max-width: 480px) {
+  .action-zone .az-label { font-size: 10px; }
+  .action-zone .az-label-long { display: none; }
+}
+@media (min-width: 481px) {
+  .action-zone .az-label-short { display: none; }
 }
 .refresh-btn { background: var(--accent); color: white; padding: 8px 16px;
   border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 12px;
@@ -5495,7 +5545,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   {action_rail}
   {halt_panel}
   <div class="action-zone">
-    <div class="az-label">⚡ Today's Candidates — names that might warrant action right now</div>
+    <div class="az-label">
+      <span class="az-label-long">⚡ Today's Candidates — names that might warrant action right now</span>
+      <span class="az-label-short">⚡ Today's Candidates</span>
+    </div>
     {render_contrarian_setups_panel()}
     {render_btfd_str_panel()}
     {render_retired_scan_panel()}
