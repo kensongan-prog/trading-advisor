@@ -1763,6 +1763,200 @@ td.dim { color: var(--dim); }
 .action-form select { background: var(--panel-2); color: var(--text); border: 1px solid var(--bord); padding: 4px 6px;
   border-radius: 3px; font-size: 12px; font-family: inherit; }
 .footer { color: var(--dim); font-size: 11px; text-align: center; margin-top: 24px; padding: 12px; }
+
+/* ── Action Rail (persistent top band — regime · halt · live setups) ────── */
+.action-rail {
+  display: grid; grid-template-columns: 180px 1fr 1fr; gap: 10px;
+  margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
+  background: linear-gradient(180deg, #1a1d24, #14171c); border: 1px solid var(--bord);
+  position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+.ar-slot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 8px; border-radius: 6px; }
+.ar-key { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+.ar-val { font-size: 14px; color: var(--text); }
+.ar-val b { font-size: 17px; }
+.ar-sub { font-size: 11px; color: var(--dim); }
+.ar-regime.ar-rr-tight   { background: rgba(248,113,113,0.10); }
+.ar-regime.ar-rr-loose   { background: rgba(74,222,128,0.10); }
+.ar-regime.ar-rr-neutral { background: rgba(120,130,150,0.08); }
+.ar-regime.ar-rr-tight   .ar-val b { color: var(--red); }
+.ar-regime.ar-rr-loose   .ar-val b { color: var(--green); }
+.ar-trade { font-weight: 600; }
+.ar-trade.ar-blocked { background: rgba(248,113,113,0.18); border: 1px solid var(--red); color: var(--red);
+  animation: ar-pulse 2.4s ease-in-out infinite; }
+.ar-trade.ar-warn    { background: rgba(251,191,36,0.14); border: 1px solid var(--yellow); color: var(--yellow); }
+.ar-trade.ar-go      { background: rgba(74,222,128,0.10); color: var(--green); }
+@keyframes ar-pulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(248,113,113,0.45);} 50%{ box-shadow: 0 0 0 6px rgba(248,113,113,0);} }
+.ar-setups.ar-count-hot  .ar-val b { color: var(--green); }
+.ar-setups.ar-count-cold .ar-val b { color: var(--dim); }
+.ar-chip { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 4px;
+  background: var(--panel-2); border: 1px solid var(--bord); }
+.ar-chip-p1   { color: var(--green); }
+.ar-chip-fade { color: #ff7b7b; }
+.ar-chip-buy  { color: #93c5fd; }
+.ar-chip-btfd { color: #fda4af; }
+.ar-chip-str  { color: #fcd34d; }
+
+/* ── Halt Spotlight ─────────────────────────────────────────────────────── */
+.halt-spotlight-panel { padding: 12px 16px; }
+.spotlight-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin: 6px 0 8px; }
+.spotlight { padding: 14px 18px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--bord); }
+.spotlight.spotlight-primary   { padding: 18px 22px; }
+.spotlight.spotlight-secondary { padding: 12px 16px; opacity: 0.85; }
+.spotlight .spot-type { font-size: 16px; font-weight: bold; color: var(--blue); letter-spacing: 0.04em; }
+.spotlight.spotlight-primary .spot-type { font-size: 22px; }
+.spotlight .spot-when { font-size: 13px; margin-top: 4px; }
+.spotlight.spotlight-primary .spot-when b { font-size: 28px; color: var(--text); }
+.spotlight .spot-time { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.spotlight-halt   { border: 2px solid var(--red);    background: rgba(248,113,113,0.10);
+                    animation: ar-pulse 2.4s ease-in-out infinite; }
+.spotlight-soon   { border: 1px solid var(--yellow); background: rgba(251,191,36,0.08); }
+.spotlight-future { border: 1px solid var(--bord); }
+.halt-pill { display: inline-block; margin-top: 8px; padding: 4px 10px; border-radius: 999px;
+  background: var(--red); color: white; font-weight: bold; font-size: 11px; letter-spacing: 0.04em; }
+.halt-full-cal { margin-top: 8px; }
+.halt-full-cal summary { cursor: pointer; color: var(--dim); font-size: 12px; padding: 4px 0; }
+
+/* ── Compact account strip ──────────────────────────────────────────────── */
+.strip-compact { background: var(--panel); border: 1px solid var(--bord); border-radius: 8px;
+  margin-bottom: 12px; padding: 6px 12px; font-size: 12px; }
+.strip-compact summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  list-style: none; }
+.strip-compact summary::-webkit-details-marker { display: none; }
+.strip-compact .sc-cell { color: var(--text); }
+.strip-compact .sc-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  margin-right: 4px; font-weight: 600; }
+.strip-compact .sc-detail { font-size: 11px; padding: 6px 0 2px; }
+
+/* ── Collapsible Regime panel ───────────────────────────────────────────── */
+.collapsible-panel summary { cursor: pointer; list-style: none; }
+.collapsible-panel summary::-webkit-details-marker { display: none; }
+.collapsible-panel summary h2 { margin: 0; }
+.collapsible-panel summary::before { content: "▸ "; color: var(--dim); margin-right: 4px; }
+.collapsible-panel[open] summary::before { content: "▾ "; }
+.collapsible-panel .collapsed-summary { font-size: 13px; margin-left: 8px; }
+.collapsible-panel .collapsed-summary .v-pos { color: var(--green); font-weight: 600; }
+.collapsible-panel .collapsed-summary .v-neg { color: var(--red); font-weight: 600; }
+.collapsible-panel .collapsed-summary .v-neu { color: var(--text); font-weight: 600; }
+.collapsible-panel[open] .collapsed-summary { color: var(--dim); }
+
+/* ── Action Zone (setups + simulator cluster) ───────────────────────────── */
+.action-zone { border: 2px solid var(--green); border-radius: 12px; padding: 8px 8px 6px;
+  margin: 4px 0 14px; background: rgba(74,222,128,0.025); position: relative; }
+.action-zone .az-label { position: absolute; top: -10px; left: 16px; padding: 1px 10px;
+  background: var(--bg); color: var(--green); font-size: 11px; font-weight: bold;
+  text-transform: uppercase; letter-spacing: 0.05em; }
+.action-zone .panel { margin-bottom: 8px; }
+.action-zone .panel:last-child { margin-bottom: 0; }
+
+/* ── One-click "→ Sim" button + flash ───────────────────────────────────── */
+.sim-load-btn { background: rgba(124,58,237,0.18); color: #c4b5fd; border: 1px solid rgba(124,58,237,0.5);
+  border-radius: 4px; font-size: 9.5px; font-weight: 600; padding: 1px 5px; cursor: pointer;
+  margin-left: 4px; vertical-align: middle; letter-spacing: 0.02em; }
+.sim-load-btn:hover { background: rgba(124,58,237,0.4); color: #fff; }
+.cs-row .sim-load-btn { margin-left: 6px; }
+@keyframes sim-flash-kf { 0%,100%{ box-shadow: 0 0 0 0 rgba(124,58,237,0);} 30%{ box-shadow: 0 0 0 3px rgba(124,58,237,0.65);} }
+.sim-flash { animation: sim-flash-kf 1.4s ease-out; border-color: var(--accent) !important; }
+
+/* ── Tradability row left-border (makes the sorted grid self-explanatory) ── */
+.exp-row.trk-go      > td:first-child { box-shadow: inset 3px 0 0 var(--green); }
+.exp-row.trk-watch   > td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
+.exp-row.trk-block   > td:first-child { box-shadow: inset 3px 0 0 rgba(248,113,113,0.6); }
+.exp-row.trk-context > td:first-child { box-shadow: inset 3px 0 0 rgba(120,130,150,0.35); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MOBILE LAYOUT — phone-first responsive tweaks (≤780px width)
+   The dashboard has the same information density on mobile; layout adapts to
+   give the trader the same "see → size in one flow" without horizontal scroll
+   anywhere it would break readability. Big tables get x-scroll (better than
+   sacrificing rows or columns); everything else stacks.
+   ════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 780px) {
+  /* container & panels — tighter padding, no horizontal gutter waste */
+  .container { padding: 6px; max-width: 100%; }
+  .panel { padding: 10px; margin-bottom: 10px; }
+  .panel h2 { font-size: 14px; line-height: 1.3; }
+  .panel h2 .stale { display: block; font-size: 9.5px; margin-top: 2px; }
+  body { font-size: 13px; }
+  h1 { font-size: 18px; }
+  .header { flex-wrap: wrap; }
+  .header .meta { font-size: 11px; margin-top: 4px; }
+
+  /* Action Rail — three slots stack vertically, still sticky.
+     The R:R floor + halt status + setup chips all stay visible without scroll. */
+  .action-rail { grid-template-columns: 1fr; gap: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .ar-slot { padding: 6px 8px; }
+  .ar-trade .ar-val { font-size: 13px; line-height: 1.25; }
+  .ar-val b { font-size: 16px; }
+  .ar-chip { font-size: 10px; padding: 1px 5px; }
+
+  /* Halt spotlight — primary on top (huge), secondary below (compact).
+     `width: 100%` is needed because a single-column 1fr grid otherwise sizes
+     to content width — the row was collapsing to ~100px instead of filling the panel. */
+  .spotlight-row { grid-template-columns: 1fr; width: 100%; }
+  .spotlight { width: 100%; box-sizing: border-box; }
+  .spotlight.spotlight-primary { padding: 14px 16px; }
+  .spotlight.spotlight-primary .spot-type { font-size: 18px; }
+  .spotlight.spotlight-primary .spot-when b { font-size: 24px; }
+  .halt-pill { font-size: 10px; padding: 3px 8px; }
+
+  /* Compact account strip — wrap into a multi-line readable summary */
+  .strip-compact summary { gap: 8px; row-gap: 4px; font-size: 11px; }
+
+  /* Action Zone — let it breathe; setups cards become block-level */
+  .action-zone { padding: 6px 5px 4px; }
+  .action-zone .az-label { font-size: 10px; left: 10px; }
+  .cs-row { display: block !important; padding: 8px 6px; }
+  .cs-row > * { display: inline-block; vertical-align: middle; margin-right: 4px; }
+  .cs-action, .cs-rationale { display: block !important; margin: 4px 0; font-size: 11px; }
+
+  /* Risk Simulator — single-column form, the action button stays prominent */
+  .sim-grid { display: block; }
+  .sim-grid > div { margin-bottom: 8px; }
+  #sim-result { padding: 8px; font-size: 11.5px; }
+  .sim-prosp-copy, .sim-suggest { font-size: 12px; padding: 8px 10px; }
+
+  /* Tables — let them x-scroll inside their panel rather than cramming columns.
+     Locking the first 2 cols (chevron + ticker) sticky would be nice, but adds
+     a lot of CSS; horizontal scroll is the pragmatic choice. */
+  .panel table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .panel table thead, .panel table tbody { display: table; min-width: 1100px; }
+  .panel table th, .panel table td { padding: 5px 6px; font-size: 11.5px; }
+  .sim-load-btn { font-size: 9px; padding: 1px 4px; }
+
+  /* Regime + KPI cards stack */
+  .regime-row { grid-template-columns: 1fr; }
+  .strip { grid-template-columns: 1fr 1fr !important; gap: 6px; }
+
+  /* Sector strip — let the 11 SPDRs scroll horizontally instead of cramming */
+  .sector-strip { display: flex; overflow-x: auto; gap: 4px;
+                  -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .sector-cell { min-width: 64px; flex: 0 0 auto; }
+
+  /* Watchlist Manager + Journal forms — full-width inputs, bigger touch targets */
+  .action-form input, .action-form select, .action-form textarea { font-size: 14px; padding: 8px; }
+  .action-form button, .wl-tab, .ta-action-btn { font-size: 12px; padding: 8px 10px; }
+
+  /* Floating control bar (server.py-injected) — narrower so it doesn't hide content */
+  #tactl .panel { width: calc(100vw - 28px); max-width: 360px; }
+
+  /* Prospectus action buttons — wrap into a grid instead of squishing on one row */
+  .prospectus .actions { display: flex; flex-wrap: wrap; gap: 4px; }
+  .prospectus .actions button { font-size: 11px; padding: 6px 8px; }
+
+  /* Footer — readable line height */
+  .footer { font-size: 10.5px; line-height: 1.4; padding: 16px 8px; }
+}
+
+/* Tighter phone (≤420px) — second pass for the smallest viewports */
+@media (max-width: 420px) {
+  .panel { padding: 8px; }
+  .ar-slot { padding: 4px 6px; }
+  .ar-chip { display: inline-block; margin-bottom: 2px; }
+  .strip { grid-template-columns: 1fr !important; }
+  .spotlight.spotlight-primary .spot-when b { font-size: 20px; }
+  .panel h2 { font-size: 13px; }
+}
 .refresh-btn { background: var(--accent); color: white; padding: 8px 16px;
   border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 12px;
   display: inline-block; cursor: pointer; border: none; }
@@ -2322,6 +2516,22 @@ document.querySelectorAll('table').forEach(t => {
   sel.addEventListener('change', prefillFromTicker);
   if (reset) reset.addEventListener('click', prefillFromTicker);
   [eIn, sIn, t1In, t2In, szIn].forEach(i => i.addEventListener('input', compute));
+
+  // One-click "see → size": load a ticker into the sim from any setup row / grid row,
+  // prefill doctrine defaults, scroll the sim into view and flash it. Returns false if the
+  // ticker isn't in the sim universe (e.g. crypto — sim is US+KLSE only this phase).
+  window.taLoadSim = function(tkr) {
+    if (!tkr || !sim.tickers[tkr]) return false;
+    sel.value = tkr;
+    prefillFromTicker();
+    const panel = sel.closest('.panel');
+    if (panel) {
+      panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+      panel.classList.add('sim-flash');
+      setTimeout(() => panel.classList.remove('sim-flash'), 1400);
+    }
+    return true;
+  };
 
   function compute() {
     const out = document.getElementById('sim-result');
@@ -2984,7 +3194,8 @@ document.querySelectorAll('table').forEach(t => {
     }),
   };
 
-  function renderForm(mode) {
+  function renderForm(mode, opts) {
+    opts = opts || {};
     const def = FORMS[mode]();
     host.innerHTML = '';
     const form = document.createElement('div');
@@ -3051,7 +3262,10 @@ document.querySelectorAll('table').forEach(t => {
     inputs.forEach(i => i.addEventListener('input', refresh));
     inputs.forEach(i => i.addEventListener('change', refresh));
     refresh();
-    inputs[0] && inputs[0].focus();
+    // Only auto-focus on user-driven tab switches — NOT the initial render. The first-render
+    // focus was hijacking the viewport (Chrome auto-scrolls focused inputs into view), pushing
+    // the Action Zone above the fold off-screen on page load.
+    if (opts.userInitiated && inputs[0]) inputs[0].focus();
 
     copyBtn.addEventListener('click', () => {
       const cmd = copyBtn.dataset.cmd;
@@ -3069,10 +3283,10 @@ document.querySelectorAll('table').forEach(t => {
     btn.addEventListener('click', () => {
       tabs.querySelectorAll('.wl-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      renderForm(btn.dataset.mode);
+      renderForm(btn.dataset.mode, {userInitiated: true});
     });
   });
-  renderForm('add');  // default tab
+  renderForm('add');  // default tab — no autofocus, no scroll-jack
 })();
 """
 
@@ -3156,42 +3370,37 @@ def render_html(ctx):
     budget_max = budget.get("calls_max", 25)
     budget_pct = (budget_used / budget_max * 100) if budget_max else 0
     budget_cls = "red" if budget_pct >= 90 else ("yellow" if budget_pct >= 70 else "")
+    # Compact one-line account strip (was a 5-cell card row — demoted per layout doctrine,
+    # this is "check-occasionally" data not "every-glance"). Click to expand.
     strip = f"""
-<div class="strip strip-5">
-  <div class="cell">
-    <div class="label">Account</div>
-    <div class="value">${config['account']:,}</div>
-    <div class="sub">Risk/trade ${config['max_risk']:,} ({config['risk_pct']*100:.0f}%)</div>
-  </div>
-  <div class="cell">
-    <div class="label">Phase</div>
-    <div class="value">{config['phase']}</div>
-    <div class="sub">{config['phase_desc']}</div>
-  </div>
-  <div class="cell">
-    <div class="label">Portfolio Heat</div>
-    <div class="value">${config['heat_used']:,} / ${config['heat_max']:,}</div>
-    <div class="sub">Headroom ${config['heat_max']-config['heat_used']:,}</div>
-  </div>
-  <div class="cell">
-    <div class="label">Phase 2 gate</div>
-    <div class="value">{config['trades_closed']} / 20</div>
-    <div class="sub">trades closed with ≥0R cumulative</div>
-  </div>
-  <div class="cell">
-    <div class="label">AV News Budget</div>
-    <div class="value {budget_cls}">{budget_used} / {budget_max}</div>
-    <div class="sub">reset in {reset_str} UTC · reserve {budget.get('reserve_for_ondemand', 8)} on-demand</div>
-  </div>
-</div>
+<details class="strip-compact"><summary>
+<span class="sc-cell"><b class="sc-label">Acct</b> ${config['account']:,}</span>
+<span class="sc-cell"><b class="sc-label">Phase</b> {config['phase']} <span class="dim">({config['phase_desc']})</span></span>
+<span class="sc-cell"><b class="sc-label">Heat</b> ${config['heat_used']:,}/${config['heat_max']:,} <span class="dim">(headroom ${config['heat_max']-config['heat_used']:,})</span></span>
+<span class="sc-cell"><b class="sc-label">P2 gate</b> {config['trades_closed']}/20 trades</span>
+<span class="sc-cell"><b class="sc-label">AV news</b> <span class="{budget_cls}">{budget_used}/{budget_max}</span> <span class="dim">(reset {reset_str})</span></span>
+</summary>
+<div class="sc-detail dim">Risk/trade ${config['max_risk']:,} ({config['risk_pct']*100:.0f}%) · {config['phase_desc']} · reserve {budget.get('reserve_for_ondemand', 8)} on-demand AV calls</div>
+</details>
 """
 
     # Regime
     macro_fetched = fmt_fetched(fetched_at_of(macro))
     crypto_fetched = fmt_fetched(fetched_at_of(crypto))
+    # Headline scores for the collapsed summary (matches what's inside the details below)
+    macro_label_head = f"{html.escape(macro.get('regime','—'))} ({macro.get('score',0):+.2f})"
+    crypto_label_head = f"{html.escape(crypto.get('regime','—'))} ({crypto.get('score',0):+.2f})"
+    macro_head_cls = regime_class(macro.get('score'))
+    crypto_head_cls = regime_class(crypto.get('score'))
     regime_panel = f"""
-<div class="panel">
-  <h2>Regime Read</h2>
+<details class="panel collapsible-panel">
+  <summary><h2 style="display:inline">Regime Read</h2>
+    <span class="collapsed-summary">
+      US Macro: <span class="{macro_head_cls}">{macro_label_head}</span>
+      · Crypto: <span class="{crypto_head_cls}">{crypto_label_head}</span>
+      <span class="dim">(click for factor breakdown)</span>
+    </span>
+  </summary>
   <div class="regime-row">
     <div class="regime-box">
       <div class="title">US Macro (FRED) <span style="float:right;color:var(--dim);text-transform:none;letter-spacing:normal;font-weight:normal">fetched {macro_fetched}</span></div>
@@ -3210,19 +3419,45 @@ def render_html(ctx):
       </div>
     </div>
   </div>
-</div>
+</details>
 """
 
-    # Halt timeline
-    events_html = ""
-    for ev in cal.get("events", [])[:10]:
+    # Halt-window spotlight: surface only the next 1-2 events prominently with urgency styling.
+    # The 🛑 next to "CPI in 10.8h" was lost in a uniform 10-row grid — now it's the loudest
+    # decision-relevant fact on the page. The full timeline collapses behind a <details>.
+    _all_events = cal.get("events", [])
+    next_events = _all_events[:2]
+    rest_events = _all_events[2:10]
+
+    def _spotlight_event(ev, is_first=False):
+        in_halt = ev["in_halt"]
+        hrs = ev["hours_until"]
+        when = f"{hrs:.1f}h" if hrs < 24 else f"{hrs/24:.1f}d"
+        urgency_cls = "spotlight-halt" if in_halt else ("spotlight-soon" if hrs < 48 else "spotlight-future")
+        size_cls = "spotlight-primary" if is_first else "spotlight-secondary"
+        halt_badge = '<span class="halt-pill">🛑 HALT WINDOW ACTIVE — NO NEW ENTRIES</span>' if in_halt else ""
+        return (
+            f'<div class="spotlight {urgency_cls} {size_cls}">'
+            f'  <div class="spot-type">{html.escape(ev["type"])}</div>'
+            f'  <div class="spot-when">in <b>{when}</b></div>'
+            f'  <div class="spot-time" data-utc="{html.escape(ev.get("date_iso",""), quote=True)}" '
+            f'       title="ET (source): {html.escape(ev["date_et"], quote=True)}">{html.escape(ev["date_et"])}</div>'
+            f'  {halt_badge}'
+            f'</div>'
+        )
+
+    spotlight_html = "".join(_spotlight_event(e, i == 0) for i, e in enumerate(next_events)) or '<div class="dim">no upcoming events</div>'
+    rest_html = ""
+    for ev in rest_events:
         halt_class = " halt" if ev["in_halt"] else ""
         when = f"{ev['hours_until']:.1f}h" if ev["hours_until"] < 24 else f"{ev['hours_until']/24:.1f}d"
-        events_html += f'<div class="event{halt_class}"><span class="type">{ev["type"]}</span> <span class="event-time" data-utc="{html.escape(ev.get("date_iso",""), quote=True)}" title="ET (source): {html.escape(ev["date_et"], quote=True)}">{html.escape(ev["date_et"])}</span><br><span class="when">in {when}{" 🛑" if ev["in_halt"] else ""}</span></div>'
+        rest_html += f'<div class="event{halt_class}"><span class="type">{ev["type"]}</span> <span class="event-time" data-utc="{html.escape(ev.get("date_iso",""), quote=True)}" title="ET (source): {html.escape(ev["date_et"], quote=True)}">{html.escape(ev["date_et"])}</span><br><span class="when">in {when}{" 🛑" if ev["in_halt"] else ""}</span></div>'
+
     halt_panel = f"""
-<div class="panel">
-  <h2>Macro Halt-Window Timeline <span class="stale">static schedule (loaded {fmt_fetched(now_dt.isoformat())}) · verified through {html.escape(str(cal.get('verified_through','—')))}</span></h2>
-  <div class="events">{events_html or '<div class="dim">no upcoming events</div>'}</div>
+<div class="panel halt-spotlight-panel">
+  <h2>Next Macro Event <span class="stale">static schedule · verified through {html.escape(str(cal.get('verified_through','—')))}</span></h2>
+  <div class="spotlight-row">{spotlight_html}</div>
+  {('<details class="halt-full-cal"><summary>Full calendar (next ' + str(len(rest_events)) + ' events)</summary><div class="events">' + rest_html + '</div></details>') if rest_html else ''}
 </div>
 """
 
@@ -4076,11 +4311,14 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 bull_pct = f"{s['bull']*100:.0f}%" if s['bull'] is not None else "—"
                 bear_pct = f"{s['bear']*100:.0f}%" if s['bear'] is not None else "—"
                 conv_pct = f"{s['conv']*100:.0f}%" if s['conv'] is not None else "—"
+                sim_btn = (f'<button class="sim-load-btn" onclick="taLoadSim(\'{html.escape(s["ticker"], quote=True)}\')" title="Load into Risk Simulator">→Sim</button>'
+                           if s["asset_class"] in ("us", "klse") else "")
                 rows_html.append(
                     f'<div class="cs-row">'
                     f'  <span class="cs-badge">{s["badge"]}</span>'
                     f'  <span class="{flag_cls} cs-flag">{s["flag"]}</span>'
                     f'  <span class="cs-ticker">{html.escape(s["ticker"])}</span>'
+                    f'  {sim_btn}'
                     f'  <span class="cs-class">{s["asset_class"]}</span>'
                     f'  <span class="cs-name dim">{html.escape((s["name"] or "")[:32])}</span>'
                     f'  <span class="cs-stats">bull {bull_pct} · bear {bear_pct} · conv {conv_pct}</span>'
@@ -4542,12 +4780,66 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             sort_key,
         )
 
+    def _load_rel_strength():
+        p = CACHE_DIR / "rel_strength.json"
+        if p.is_file():
+            try:
+                return json.loads(p.read_text())
+            except Exception:
+                return {}
+        return {}
+
+    def _rs_cell(tk, rs_data):
+        rec = (rs_data.get("tickers") or {}).get(tk.upper())
+        if not rec or rec.get("vs_spy_1m") is None:
+            return '<td class="num dim" data-sort="-9999" title="No RS data — run rel_strength.py refresh (yfinance history).">—</td>'
+        v1 = rec["vs_spy_1m"]
+        cls = "green" if v1 > 0 else ("red" if v1 < 0 else "dim")
+        v3 = rec.get("vs_spy_3m")
+        vsec = rec.get("vs_sector_1m")
+        tip = f"1m vs SPY {v1:+.1f}%"
+        if v3 is not None:
+            tip += f" · 3m vs SPY {v3:+.1f}%"
+        if vsec is not None:
+            tip += f" · vs {rec.get('sector_etf','sector')} {vsec:+.1f}% ({'leading' if vsec > 0 else 'lagging'} its sector)"
+        return f'<td class="num {cls}" data-sort="{v1}" title="{html.escape(tip)}">{v1:+.1f}%</td>'
+
+    rs_data = _load_rel_strength()
+
+    # Tradability priority: lower = floats to top. P1_READY first, watch tiers next,
+    # red/blocked/context/data rows sink to the bottom. The eye lands on actionable rows
+    # without manually filtering an interleaved table.
+    _TRADABILITY_RANK = {
+        "P1_READY": 0,
+        "WATCH": 1, "EXTENDED": 2, "OVERSOLD": 2, "NEW": 3,
+        "DOWNTREND": 5, "BELOW50": 5, "NO_GOLDEN_CROSS": 5,
+        "OVERBOUGHT": 5, "TREND_FAIL": 5,
+        "NEAR_CPI": 5, "NEAR_FOMC": 5, "NEAR_NFP": 5, "NEAR_PCE": 5,
+        "CONTEXT": 8, "DATA": 9,
+    }
+    def _trade_rank(lbl):
+        return _TRADABILITY_RANK.get((lbl or "").upper(), 4)
+
+    def _rank_cls(rank):
+        # Maps tradability rank → a row left-border colour class so the sorted grid is
+        # self-explanatory (you see WHY a row sits where it does without scanning 16 columns).
+        if rank == 0:   return "trk-go"      # P1_READY → green
+        if rank <= 3:   return "trk-watch"   # watch tiers → yellow
+        if rank <= 5:   return "trk-block"   # downtrend / halt / overbought → red
+        return "trk-context"                 # context / data → dim
+
     def render_us_grid():
         rows = []
-        for idx, entry in enumerate(ctx["watchlist"]["us"]):
+        # Pre-compute status, then iterate sorted by tradability so actionable rows lead.
+        scored = []
+        for entry in ctx["watchlist"]["us"]:
             tk = entry["ticker"]
             t = ctx["us_data"].get(tk, {})
             badge, label, reason = us_status({**t, "ticker": tk}, macro_events_for_status)
+            scored.append((_trade_rank(label), entry, t, badge, label, reason))
+        scored.sort(key=lambda x: x[0])
+        for idx, (_rank, entry, t, badge, label, reason) in enumerate(scored):
+            tk = entry["ticker"]
             badge_cls = {"🟢": "b-green", "🔴": "b-red", "🟡": "b-yellow", "⚪": "b-dim", "❓": "b-dim"}[badge]
             ne = t.get("next_earnings") or "—"
             days_to_e = "—"
@@ -4592,9 +4884,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'</div>'
             )
             rows.append(f"""
-<tr class="exp-row" data-row-id="us-{idx}">
+<tr class="exp-row {_rank_cls(_rank)}" data-row-id="us-{idx}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
-  <td><b>{html.escape(tk)}</b></td>
+  <td><b>{html.escape(tk)}</b> <button class="sim-load-btn" onclick="event.stopPropagation(); taLoadSim('{html.escape(tk, quote=True)}')" title="Load into Risk Simulator (prefill entry/stop/TP)">→Sim</button></td>
   <td class="dim">{html.escape((t.get('name') or '')[:24])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">{fmt_num(price,2)}{_price_age_suffix(t.get('price_date'))} <button class="ta-quote-btn" data-symbol="{html.escape(tk, quote=True)}" title="Fetch live quote (Finnhub)">🔄</button><span class="live-quote"></span></td>
   <td class="num {chg_cls}" data-sort="{chg or 0}" title="Day-over-day vs last cleanly-closed prior bar — not a true 24h read if a recent yfinance bar was NaN-skipped.">{fmt_pct(chg,2)}</td>
@@ -4602,14 +4894,15 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   <td class="num" data-sort="{atr_pct or 0}" title="Daily Average True Range as % of price — typical 1-day move. Used for stop-distance sizing.">{fmt_num(atr_pct,2)}%</td>
   <td class="num" data-sort="{v50 or 0}">{fmt_pct(v50,1)}</td>
   <td class="num" data-sort="{v200 or 0}">{fmt_pct(v200,1)}</td>
+  {_rs_cell(tk, rs_data)}
   <td class="dim" data-sort="{ne}" title="Earnings calendar date as reported by yfinance — company-local calendar date (typically NY for US listings), not a timestamp. The 'in Xd' is days from today UTC.">{ne} <span class="dim">{days_to_e}</span></td>
   <td class="num {news_cls}" data-sort="{news_sort}">{news_txt}</td>
   {sentiment_cell(tk, "us")[0]}
   <td><span class="badge {badge_cls}" title="{html.escape(status_tooltip(label), quote=True)}">{badge} {label}</span></td>
   <td class="dim">{html.escape(reason)}</td>
 </tr>
-<tr class="exp-details" id="us-{idx}-body"><td colspan="14">{details_html}</td></tr>""")
-        return "\n".join(rows) or '<tr><td colspan="14" class="dim">no US tickers in watchlist</td></tr>'
+<tr class="exp-details" id="us-{idx}-body"><td colspan="15">{details_html}</td></tr>""")
+        return "\n".join(rows) or '<tr><td colspan="15" class="dim">no US tickers in watchlist</td></tr>'
 
     news_stats = ctx.get("news_stats") or {}
     n_queue = len(news_stats.get("queued", []))
@@ -4633,7 +4926,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <th></th>
       <th>Ticker</th><th>Name</th><th>Price</th><th>24h%</th><th>RSI</th>
       <th title="Daily ATR(14) as % of price — typical 1-day move">ATR%</th>
-      <th>vs SMA50</th><th>vs SMA200</th><th>Next Earnings</th><th>News</th>
+      <th>vs SMA50</th><th>vs SMA200</th>
+      <th title="Relative strength: 1-month price return minus SPY's. Positive = leading the market. Hover a cell for 3m and vs-sector. Buying P1 pullbacks in leaders is the edge.">RS vs SPY</th>
+      <th>Next Earnings</th><th>News</th>
       <th title="Retail sentiment composite (Reddit + StockTwits, LLM-scored) + news-direction glyph (🟢/🔴/⚪ over last 72h, ❗=fresh analyst rating action). Full headlines in the row dropdown.">Retail / News</th>
       <th>P1 Status</th><th>Reason</th>
     </tr></thead>
@@ -4830,10 +5125,12 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 # Fall back to a stub row so the grid still renders something legible
                 r = {"symbol": tk, "name": tk, "price": None, "chg_24h": None, "chg_7d": None,
                      "chg_30d": None, "market_cap": None, "volume": None}
-            _pairs.append((entry, r))
-        for idx, (entry, r) in enumerate(_pairs):
             fnd = ctx["crypto_funding"].get(r.get("symbol", entry["ticker"]).upper() + "USDT", {})
             badge, label, reason = crypto_status(r, fnd)
+            _pairs.append((_trade_rank(label), entry, r, fnd, badge, label, reason))
+        # Sort actionable (P1_READY / WATCH) to the top, dim/blocked tiers sink.
+        _pairs.sort(key=lambda x: x[0])
+        for idx, (_rank, entry, r, fnd, badge, label, reason) in enumerate(_pairs):
             badge_cls = {"🟢": "b-green", "🔴": "b-red", "🟡": "b-yellow", "⚪": "b-dim", "❓": "b-dim"}[badge]
             ch24 = r.get("chg_24h"); ch7 = r.get("chg_7d"); ch30 = r.get("chg_30d")
             ann = fnd.get("annualized_pct")
@@ -4880,7 +5177,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'</div>'
             )
             rows.append(f"""
-<tr class="exp-row" data-row-id="crypto-{idx}">
+<tr class="exp-row {_rank_cls(_rank)}" data-row-id="crypto-{idx}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(entry['ticker'], quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(r.get('symbol','—'))}</b></td>
   <td class="dim">{html.escape((r.get('name') or '')[:18])}</td>
@@ -4948,6 +5245,105 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 </div>
 """
 
+    # ── Portfolio / calibration panel (heat + expectancy + MAE/MFE) ──────────
+    def render_portfolio_panel():
+        ps = ctx.get("portfolio") or {}
+        if "error" in ps:
+            return f'<div class="panel"><h2>Portfolio &amp; Calibration</h2><div class="dim">portfolio state unavailable: {html.escape(ps["error"])}</div></div>'
+        h = ps.get("heat", {})
+        exp = ps.get("expectancy", {})
+        positions = ps.get("open_positions", [])
+        # MAE/MFE excursion cache (written by mae_mfe.py snapshot)
+        mae_cache = {}
+        mp = CACHE_DIR / "mae_mfe.json"
+        if mp.is_file():
+            try:
+                mae_cache = json.loads(mp.read_text()).get("positions", {})
+            except Exception:
+                mae_cache = {}
+
+        # Open positions table
+        if positions:
+            rows = []
+            for p in positions:
+                exc = mae_cache.get(p["ticker"], {})
+                mae = exc.get("mae_r"); mfe = exc.get("mfe_r")
+                mae_s = f'{mae:+.2f}R' if isinstance(mae, (int, float)) else "—"
+                mfe_s = f'{mfe:+.2f}R' if isinstance(mfe, (int, float)) else "—"
+                rows.append(
+                    f'<tr><td><b>{html.escape(p["ticker"])}</b></td>'
+                    f'<td>{("$%.2f"%p["entry"]) if p.get("entry") else "—"}</td>'
+                    f'<td>{("$%.2f"%p["stop"]) if p.get("stop") else "—"}</td>'
+                    f'<td>${p["dollar_risk"]:.0f}</td>'
+                    f'<td>{html.escape(p.get("sector","—"))}</td>'
+                    f'<td class="dim">{mae_s}</td><td class="dim">{mfe_s}</td></tr>')
+            pos_table = (
+                '<table><thead><tr><th>Ticker</th><th>Entry</th><th>Stop</th>'
+                '<th>$ Risk</th><th>Sector</th><th title="Max adverse excursion since entry, in R">MAE</th>'
+                '<th title="Max favorable excursion since entry, in R">MFE</th></tr></thead><tbody>'
+                + "".join(rows) + '</tbody></table>')
+        else:
+            pos_table = '<div class="dim">No open positions. Heat $0 — full $1,200 (6%) available.</div>'
+
+        corr = ps.get("correlation_note") or ""
+        corr_html = f'<div class="sub" style="margin-top:6px;color:var(--yellow)">⚠ {html.escape(corr)}</div>' if corr else ""
+
+        # Expectancy line
+        if exp.get("n", 0) > 0:
+            avg = exp.get("avg_r")
+            avg_cls = "green" if (avg or 0) > 0 else "red"
+            dist = " ".join(f'{r:+.1f}' for r in exp.get("distribution", []))
+            exp_html = (
+                f'<div class="sub" style="margin-top:8px">'
+                f'<b>{exp["n"]}</b> closed · win <b>{exp["win_rate"]}%</b> ({exp["wins"]}W/{exp["losses"]}L) · '
+                f'avg <b class="{avg_cls}">{avg:+.2f}R</b> · cumulative <b class="{avg_cls}">{exp["sum_r"]:+.2f}R</b>'
+                f'<div class="dim" style="font-size:11px">R-distribution: {dist}</div></div>')
+        else:
+            exp_html = '<div class="sub dim" style="margin-top:8px">No closed trades yet — expectancy unlocks after the first close. Phase-2 gate at 20.</div>'
+
+        return f"""
+<div class="panel">
+  <h2>Portfolio &amp; Calibration <span class="dim" style="font-size:12px">— heat ${h.get('used',0):.0f}/${h.get('max',1200):.0f} ({h.get('pct_equity',0):.1f}% equity), headroom ${h.get('headroom',1200):.0f}</span></h2>
+  {pos_table}
+  {corr_html}
+  {exp_html}
+  <div class="dim" style="font-size:10.5px;margin-top:6px">Auto-derived from journal LIVE/CLOSED entries (portfolio.py). MAE/MFE from daily snapshots (mae_mfe.py); blank until first snapshot.</div>
+</div>
+"""
+
+    portfolio_panel = render_portfolio_panel()
+
+    # ── Retired-names passive re-entry scan ──────────────────────────────────
+    def render_retired_scan_panel():
+        p = CACHE_DIR / "retired_scan.json"
+        if not p.is_file():
+            return ""  # no scan yet — stay silent
+        try:
+            data = json.loads(p.read_text())
+        except Exception:
+            return ""
+        cands = data.get("candidates", [])
+        if not cands:
+            return ""  # nothing re-surfacing — no clutter (the point of the feature)
+        rows = []
+        for c in cands:
+            sent = c.get("sentiment_capitulation")
+            sent_html = (f' · 🧊 retail capitulation (bear {sent["bear_score"]:.2f}, conv {sent["conviction"]:.2f})'
+                         if sent else "")
+            a200 = "above SMA200" if c.get("above_sma200") else "below SMA200"
+            rows.append(
+                f'<div class="news-row"><span class="ticker">{c["tier"]} {html.escape(c["ticker"])}</span>'
+                f'<span class="sent {"bull" if sent else "neu"}">${c["price"]} · RSI {c["rsi"]} · '
+                f'{c["vs_sma50_pct"]:+.1f}% vs SMA50 · {a200}{sent_html}</span>'
+                f'<span class="src">retired: {html.escape(c["reason"])}</span></div>')
+        return f"""
+<div class="panel">
+  <h2>♻️ Retired — re-entry forming <span class="dim" style="font-size:12px">— constructive basing on names you'd dropped; scanned {data.get('scanned',0)}</span></h2>
+  {''.join(rows)}
+  <div class="dim" style="font-size:10.5px;margin-top:6px">A retired name re-surfaces only when basing constructively (RSI 35-55 AND within -5%..+10% of SMA50) — the technical half of the §4 🧊 BUY gate. Full 🧊 BUY-aligned tag adds a retail-capitulation extreme. Refresh: retired_scan.py refresh.</div>
+</div>
+"""
+
     refresh_cmd      = "python3 .claude/skills/dashboard/dashboard.py --with-discovery && open dashboard.html"
     refresh_cmd_news = "python3 .claude/skills/dashboard/dashboard.py --refresh-news --refresh-news-glyph --with-discovery && open dashboard.html"
     refresh_cmd_full = "python3 .claude/skills/dashboard/dashboard.py --refresh-news --refresh-news-glyph --refresh-sentiment --refresh-polymarket --with-discovery --force && open dashboard.html"
@@ -4979,9 +5375,116 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         '<span class="refresh-toast" id="refresh-toast"></span>'
     )
 
+    # ── ACTION RAIL ──────────────────────────────────────────────────────────
+    # Persistent band answering the three questions a trader needs in 2 seconds:
+    #   (1) What's my R:R floor right now? (regime → 1.5R / 2.0R / 2.5R)
+    #   (2) Can I even trade? (next macro halt window status)
+    #   (3) What setups are live? (FADE / BUY / BTFD / STR / P1_READY counts)
+    # All numbers derived from already-computed ctx — zero extra fetches.
+
+    # Setup counts: walk the sentiment map for contrarian flag totals (any alignment)
+    _ar_sent_map = ctx.get("sentiment") or {}
+    _ar_n_fade = sum(1 for s in _ar_sent_map.values()
+                     if ((s.get("composite") or {}).get("contrarian_flag") == "FADE"))
+    _ar_n_buy  = sum(1 for s in _ar_sent_map.values()
+                     if ((s.get("composite") or {}).get("contrarian_flag") == "BUY"))
+
+    # P1_READY watchlist names — same gating as us_status (US + KLSE)
+    _ar_n_p1 = 0
+    for _e in ctx.get("watchlist", {}).get("us", []):
+        _t = (ctx.get("us_data") or {}).get(_e["ticker"], {}) or {}
+        if _t.get("price") is None:
+            continue
+        _, _lbl, _ = us_status({**_t, "ticker": _e["ticker"]}, macro_events_for_status)
+        if _lbl == "P1_READY":
+            _ar_n_p1 += 1
+    for _e in ctx.get("watchlist", {}).get("klse", []):
+        _t = (ctx.get("klse_data") or {}).get(_e["ticker"], {}) or {}
+        if _t.get("price") is None:
+            continue
+        _, _lbl, _ = us_status({**_t, "ticker": _e["ticker"]}, None)
+        if _lbl == "P1_READY":
+            _ar_n_p1 += 1
+
+    # BTFD/STR rough counts — light heuristic matching the LIGHT_DIP / LIGHT_RIP tier
+    # of render_btfd_str_panel (drop ≤ -2% with vol ≥ 1.3× for equities; -4%/1.5× for crypto).
+    # Cheaper than re-running the full tier-classifier and good enough for a "what's live" count.
+    _ar_n_btfd = 0
+    _ar_n_str = 0
+    for _src, _kind in (("us_data", "equity"), ("klse_data", "equity")):
+        for _tk, _t in (ctx.get(_src) or {}).items():
+            _chg = _t.get("change_pct"); _vol = _t.get("vol_ratio")
+            if _chg is None or _vol is None: continue
+            if _chg <= -2 and _vol >= 1.3: _ar_n_btfd += 1
+            if _chg >=  4 and _vol >= 1.3: _ar_n_str  += 1
+    for _r in (ctx.get("crypto_rows") or []):
+        _chg = _r.get("chg_24h")
+        if _chg is None: continue
+        if _chg <= -4: _ar_n_btfd += 1
+        if _chg >=  6: _ar_n_str  += 1
+
+    # Halt status — derive from the spotlight events we already computed
+    _ar_halt_active = bool(next_events) and next_events[0].get("in_halt")
+    _ar_next_ev = next_events[0] if next_events else None
+    if _ar_next_ev:
+        _hrs = _ar_next_ev["hours_until"]
+        _ar_next_when = f"{_hrs:.1f}h" if _hrs < 24 else f"{_hrs/24:.1f}d"
+        _ar_next_lbl = f"{_ar_next_ev['type']} in {_ar_next_when}"
+    else:
+        _ar_next_lbl = "no upcoming events"
+
+    if _ar_halt_active:
+        _ar_trade_cls = "ar-blocked"
+        _ar_trade_lbl = f"🛑 NO NEW ENTRIES — {_ar_next_lbl} (inside halt window)"
+    elif _ar_next_ev and _ar_next_ev["hours_until"] < 24:
+        _ar_trade_cls = "ar-warn"
+        _ar_trade_lbl = f"⚠ Halt approaching — {_ar_next_lbl}"
+    else:
+        _ar_trade_cls = "ar-go"
+        _ar_trade_lbl = f"✓ Entries OK — next: {_ar_next_lbl}"
+
+    # R:R floor — same mapping macro-rates SKILL.md uses (defined later in the file, replicate)
+    _ar_score = macro.get("score") or 0
+    if   _ar_score <= -1.5: _ar_rr_floor, _ar_rr_cls = 2.5, "ar-rr-tight"
+    elif _ar_score <= -0.5: _ar_rr_floor, _ar_rr_cls = 2.0, "ar-rr-tight"
+    elif _ar_score >=  0.5: _ar_rr_floor, _ar_rr_cls = 1.5, "ar-rr-loose"
+    else:                   _ar_rr_floor, _ar_rr_cls = 1.5, "ar-rr-neutral"
+    _ar_regime_lbl = macro.get("regime", "—")
+
+    # Total live setups for the headline number
+    _ar_total = _ar_n_p1 + _ar_n_fade + _ar_n_buy + _ar_n_btfd + _ar_n_str
+    _ar_count_cls = "ar-count-hot" if _ar_total > 0 else "ar-count-cold"
+
+    action_rail = f"""
+<div class="action-rail">
+  <div class="ar-slot ar-regime {_ar_rr_cls}">
+    <span class="ar-key">R:R floor</span>
+    <span class="ar-val"><b>{_ar_rr_floor:.1f}R</b></span>
+    <span class="ar-sub dim">{html.escape(str(_ar_regime_lbl))}</span>
+  </div>
+  <div class="ar-slot ar-trade {_ar_trade_cls}">
+    <span class="ar-val">{_ar_trade_lbl}</span>
+  </div>
+  <div class="ar-slot ar-setups {_ar_count_cls}">
+    <span class="ar-key">Live setups</span>
+    <span class="ar-val"><b>{_ar_total}</b></span>
+    <span class="ar-sub">
+      <span class="ar-chip ar-chip-p1">🟢 {_ar_n_p1} P1</span>
+      <span class="ar-chip ar-chip-fade">🔥 {_ar_n_fade} FADE</span>
+      <span class="ar-chip ar-chip-buy">🧊 {_ar_n_buy} BUY</span>
+      <span class="ar-chip ar-chip-btfd">🩸 {_ar_n_btfd} BTFD</span>
+      <span class="ar-chip ar-chip-str">🚀 {_ar_n_str} STR</span>
+    </span>
+  </div>
+</div>
+"""
+
     html_out = f"""<!doctype html>
 <html lang="en"><head>
-<meta charset="utf-8"><title>Trading Dashboard</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Trading Dashboard</title>
 <style>{CSS}</style>
 </head><body>
 <div class="container">
@@ -4989,20 +5492,26 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     <h1>📊 Trading Advisor — Dashboard</h1>
     <div class="meta">Built <span class="built-at" data-utc="{now_iso_utc}">{now_str}</span> <span class="dim" style="font-size:11px">(server-local fallback: {now_local_str})</span> · {budget_bar} · {refresh_dropdown}</div>
   </div>
-  {strip}
-  {regime_panel}
+  {action_rail}
   {halt_panel}
-  {render_polymarket_panel()}
+  <div class="action-zone">
+    <div class="az-label">⚡ Today's Candidates — names that might warrant action right now</div>
+    {render_contrarian_setups_panel()}
+    {render_btfd_str_panel()}
+    {render_retired_scan_panel()}
+    {sim_panel}
+  </div>
   {prospectus_panel}
-  {sim_panel}
-  {render_contrarian_setups_panel()}
-  {render_btfd_str_panel()}
   {us_panel}
-  {news_panel}
   {klse_panel}
   {crypto_panel}
+  {render_polymarket_panel()}
+  {regime_panel}
+  {strip}
+  {portfolio_panel}
   {wl_panel}
   {discovery_panel}
+  {news_panel}
   {journal_panel}
   <div class="footer">
     Doctrine: spot-long only in Phase 1 · §5 halt rules enforced via macro-calendar + us-fundamentals earnings ·
@@ -5469,6 +5978,19 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
             "trades_closed": 0,
         },
     }
+
+    # Live portfolio state from the journal (heat + calibration) — replaces the
+    # hand-maintained zeros so the header strip and Phase-2 gate are never stale.
+    try:
+        import portfolio
+        ps = portfolio.state()
+        ctx["portfolio"] = ps
+        ctx["config"]["heat_used"] = int(round(ps["heat"]["used"]))
+        ctx["config"]["heat_max"] = int(ps["heat"]["max"])
+        ctx["config"]["trades_closed"] = ps["expectancy"]["n"]
+    except Exception as e:
+        ctx["portfolio"] = {"error": f"{type(e).__name__}: {e}"}
+
     rendered = render_html(ctx)
     OUTPUT_HTML.write_text(rendered)
 
@@ -5566,6 +6088,35 @@ def main():
             if args.force: sector_cmd.append("--refresh")
             print("[discovery] running sector-rotation…", flush=True)
             subprocess.run(sector_cmd, check=False)
+
+        # Relative-strength + retired-name scan ride along with discovery
+        # (both yfinance batch downloads; sector-rotation must run first so RS
+        # can read its vs-SPY numbers).
+        rs_cache = PROJECT_ROOT / ".claude/cache/dashboard/rel_strength.json"
+        if not args.force and _cache_fresh(rs_cache, 4):
+            print("[discovery] rel-strength cache fresh (< 4h); skipping.", flush=True)
+        else:
+            try:
+                import rel_strength
+                _, err = rel_strength.refresh()
+                print(f"[discovery] rel-strength {'refreshed' if not err else 'failed: ' + err}", flush=True)
+            except Exception as e:
+                print(f"[discovery] rel-strength error: {e}", flush=True)
+        try:
+            import retired_scan
+            d = retired_scan.refresh()
+            print(f"[discovery] retired-scan: {len(d.get('candidates', []))} re-surfacing of {d.get('scanned', 0)}", flush=True)
+        except Exception as e:
+            print(f"[discovery] retired-scan error: {e}", flush=True)
+
+    # MAE/MFE snapshot for any LIVE positions — runs every build (no-op when flat).
+    try:
+        import mae_mfe
+        upd = mae_mfe.snapshot()
+        if upd:
+            print(f"[portfolio] MAE/MFE snapshot updated {len(upd)} position(s)", flush=True)
+    except Exception as e:
+        print(f"[portfolio] MAE/MFE snapshot skipped: {e}", flush=True)
 
     if args.refresh_polymarket:
         print("[polymarket] refreshing event probabilities…", flush=True)

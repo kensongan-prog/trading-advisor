@@ -207,6 +207,18 @@ def invalidate_dashboard_cache():
     pass  # no-op for now — dashboard always re-reads journal/
 
 
+def sync_portfolio():
+    """Regenerate portfolio.md from the journal after a status change.
+    Best-effort: a sync failure must never block the journal write itself."""
+    try:
+        sys.path.insert(0, str(SKILLS_DIR / "dashboard"))
+        import portfolio
+        portfolio.write_portfolio_md()
+        print("  ↻ portfolio.md synced from journal")
+    except Exception as e:
+        print(f"  ⚠ portfolio.md sync skipped ({type(e).__name__}: {e})", file=sys.stderr)
+
+
 # ── Confirmation ──────────────────────────────────────────────────────────
 def confirm(prompt, default_no=True):
     suffix = "[y/N]" if default_no else "[Y/n]"
@@ -299,6 +311,7 @@ def cmd_live(args):
     backup_file(p)
     atomic_write(p, new_text)
     invalidate_dashboard_cache()
+    sync_portfolio()
     print(f"✓ Updated {p.name}")
     return 0
 
@@ -380,6 +393,7 @@ def cmd_close(args):
     new_text = fill_exit(new_text, args.result, args.r, price=args.price, notes=args.notes)
     backup_file(p)
     atomic_write(p, new_text)
+    sync_portfolio()
     print(f"✓ Closed {p.name}  ({args.result} {args.r:+.2f}R)")
     return 0
 

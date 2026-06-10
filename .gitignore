@@ -8,7 +8,14 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-playwright/
 venv/
+
+# Playwright dashboard screenshots (regenerated on demand by snap.py)
+snaps/
+
+# Local launch config (preview-tool experiments, not source-of-truth)
+.claude/launch.json
 
 # OS
 .DS_Store

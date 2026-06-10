@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Build a self-contained HTML trading dashboard at <project_root>/dashboard.html that consolidates all wired data sources (FRED macro regime, crypto regime, halt-window timeline, watchlist with live technicals/status, journal tail) into one decision-shaping surface. Use when the user wants to view their full trading state at a glance, refresh their dashboard, or audit which names on the watchlist are Phase 1-eligible. The dashboard is static HTML — refresh by re-running the script; no server, no automation.
+description: Build a self-contained HTML trading dashboard at <project_root>/dashboard.html that consolidates all wired data sources (FRED macro regime, crypto regime, halt-window timeline, watchlist with live technicals/status, journal tail) into one decision-shaping surface. Use when the user wants to view their full trading state at a glance, refresh their dashboard, or audit which names on the watchlist are Phase 1-eligible. The dashboard is static HTML — refresh by re-running the script. Optionally, server.py serves it at localhost:8787 with refresh buttons + watchlist/journal forms for terminal-free operation.
 ---
 
 # Dashboard Skill
@@ -66,7 +66,37 @@ Run from project root. The script logs progress through 8 phases and writes `das
   - Tickers (US, KLSE): 30 min
   - Crypto markets, funding: 30 min
 - **Output**: `dashboard.html` (~25KB, embedded CSS + vanilla JS for sortable tables)
-- **No automation**: no cron, no LaunchAgent, no server. Refresh button copies the rebuild command to clipboard.
+- **No scheduled automation**: no cron, no LaunchAgent. Refresh button copies the rebuild command to clipboard.
+
+## Control server (optional, terminal-free mode)
+
+`server.py` (same directory, stdlib-only) serves `dashboard.html` at `http://localhost:8787` and injects a control bar at serve time — `dashboard.py` and the generated HTML are untouched. Launch by double-clicking **`Trading Dashboard.command`** in the project root, or:
+
+```
+python3 .claude/skills/dashboard/server.py --open
+```
+
+What the control bar does:
+
+- **⚡ Quick refresh** — runs `dashboard.py --force --refresh-polymarket` in a background job; page shows a live log tail and reloads when done. Auto-fires once per browser session if the dashboard is >12h old (hybrid policy: cheap fetchers may auto-run).
+- **🔄 Full refresh** — adds `--refresh-sentiment --refresh-news --refresh-news-glyph --with-discovery`. Always a manual press — LLM scoring + news budget should be watched.
+- **Watchlist form** — wraps `wl.py add/remove/update --yes` (removal reason still required, per doctrine). On success, queues a cache-friendly dashboard rebuild.
+- **Journal form** — wraps `j.py live/update/close --yes`, plus a "List entries" view. Also queues a rebuild on success.
+
+The server binds to 127.0.0.1 only, runs one job at a time, and dies with the terminal/launcher window — nothing persists in the background. Source-of-truth files are still only written by the existing CLIs.
+
+## Companion tooling (same directory)
+
+These standalone scripts extend the dashboard from a research surface into an execution aid. Each is independently runnable and produces a JSON cache the dashboard reads; the server control bar wires the interactive ones.
+
+| Script | Does | Refreshed by |
+|---|---|---|
+| `watcher.py` | Fires macOS notifications on prospectus entry-trigger breaks, LIVE stop/TP touches, and watchlist P1-band entries (US, market hours, Finnhub quotes, deduped once/day). Read-only — never trades. | Server "🔔 Watcher" Start/Stop/Scan; or `watcher.py --once` |
+| `setup_queue.py` | Turns P1-ready watchlist names into doctrine-sized prospectus drafts (ATR stop, 2R TP1, §5 size math) via `j.py new`. | Server "📐 Setup Queue" panel; or `setup_queue.py create TICKER` |
+| `portfolio.py` | Derives live heat + sector correlation + closed-trade calibration (win rate, avg R, R-dist) from the journal; regenerates `portfolio.md`. Feeds the header strip + Portfolio & Calibration panel. | `j.py live`/`close` auto-sync; or `portfolio.py sync` |
+| `mae_mfe.py` | Daily MAE/MFE excursion snapshot for LIVE positions (in R). | Auto on every dashboard build (no-op when flat) |
+| `rel_strength.py` | Per-ticker 1m/3m return vs SPY + vs sector ETF → RS column on the US grid. Batched yfinance (Finnhub candles are 403 on free tier). | Rides along with `--with-discovery` (4h TTL) |
+| `retired_scan.py` | Scans Removed/retired names for a forming 🧊 BUY-aligned re-entry (constructive basing); re-surfaces only matches in the ♻️ Retired panel. | Rides along with `--with-discovery` |
 
 ## Status badge logic
 
@@ -87,7 +117,7 @@ Crypto uses a simpler bias read (no formal P1 playbook for crypto spot).
 1. **Dashboard never trades.** It's a read-only visualization layer.
 2. **Cache staleness is visible.** Each section shows its data age. If a number looks suspiciously old, run `--force`.
 3. **API budget discipline.** Alpha Vantage's 25/day is the tightest constraint. The dashboard currently does NOT pull AV news per-ticker (would burn budget); news flags come from journal/prospectus context. If you want news in the dashboard later, the right design is on-demand-per-ticker, not bulk-on-every-refresh.
-4. **The watchlist is edited in `watchlist.md`, not the dashboard.** The dashboard renders what's in the file; edits go in the file.
+4. **The watchlist is edited in `watchlist.md`, not the dashboard HTML.** The dashboard renders what's in the file. Edits go through `wl.py` (directly, or via the control server's watchlist form, which shells out to it).
 5. **If a skill source fails**, the section shows "data unavailable" with the error. No fabrication.
 
 ## Known limits (mostly addressed in later releases)
