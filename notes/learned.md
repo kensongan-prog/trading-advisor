@@ -4,6 +4,22 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-10 — News-glyph LLM scoring: KLSE non-English headlines need a company-label in the prompt
+
+**Symptom:** Auditing 2110 cached LLM-scored items across 25 tickers (`audit_glyph.py`), the spot-checks looked clean on US/crypto but the four KLSE codes showed a striking pattern: 80%+ of Chinese-press headlines (e.g. `盛艺机构发股收购…`, `亚泛控股…`) scored `relevance=none / score=0.0` and silently dropped from the news signal. Latin-name headlines for the same companies scored fine.
+
+**What was happening:** The scorer's prompt sent `TICKER: 9431` — a 4-digit Bursa code with zero semantic content. The model had no way to know `9431 = Seni Jaya = 盛艺机构`. It pattern-matched recurring proper nouns in English headlines but couldn't bridge to Chinese-only ones. The system prompt already said "TICKER or commonly-known company name" — the language was right, the data wasn't there.
+
+**Fix (shipped in this commit):** Added a `COMPANY_LABELS` map per asset class in `news_glyph.py`. KLSE entries carry both Latin and Chinese forms (`"9431": "Seni Jaya Corporation Berhad / SJC (also written 盛艺机构)"`). The prompt now sends `TICKER: 9431 (Seni Jaya Corporation Berhad / SJC (also written 盛艺机构))`. Threaded `asset_class` through `llm_score_items_for_ticker → _llm_score_batch`. After force-rescoring the 4 KLSE codes, all Chinese-only relevant headlines correctly resolve to `primary` with non-zero scores; unrelated Chinese headlines (世界杯魔咒, 越南黄金) still correctly score `none`. US/crypto unchanged.
+
+**Operational gotcha while validating:** OpenRouter free-tier rate-limit (429) kicked in after re-scoring 1 batch. The GPT-OSS-120B fallback handled the next batch cleanly (verifiable in cache: `models: {'gemma-4-31b-it:free', 'gpt-oss-120b:free'}`). For multi-ticker re-scoring, expect to space requests by ~60s to avoid the 429 → fallback → 429 → empty cache result.
+
+**What NOT to do:** don't auto-add COMPANY_LABELS entries via watchlist parsing. The KLSE entries especially need Chinese forms which can't be auto-derived from the watchlist's English-only thesis line. Manual map entry on watchlist add is correct (~20 KLSE-relevant rows total across all foreseeable watchlist sizes).
+
+**Audit tool:** `python3 .claude/skills/us-news/audit_glyph.py [--ticker X --asset-class Y] [--flagged-only]` joins every cached score to its headline, flags FALSE-NONE/FALSE-PRIMARY/ROUNDUP/NON-ASCII/DIR-MISMATCH. Treat the FALSE-PRIMARY flag as a *suggestion* — it has false positives on analyst-rating items (already filtered) and on legitimate primary headlines where the company name appears in a non-canonical form ("Cipher Unit" vs "Cipher Mining").
+
+---
+
 ### 2026-06-10 — Finnhub free tier: `/stock/candle` returns HTTP 403 (premium-gated)
 
 **Symptom:** `finnhub_client.candle_closes()` / `stock_candle()` return `HTTP 403`. Quotes (`/quote`) still work fine.

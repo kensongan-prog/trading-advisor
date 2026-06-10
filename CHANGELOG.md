@@ -101,7 +101,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **Reddit-comment scoring calibration watch.** Want a few weeks across the watchlist to confirm (a) the 5-comments-per-post cap, (b) the RSS-comments uniform-weight floor, (c) the LLM relevance filter on comment off-topicness.
 - **Threshold calibration watch.** A few weeks of operator use across changing market regimes to confirm sentiment 0.80/0.70 + alignment thresholds, plus BTFD/STR equity/crypto tiers.
 - **HN coverage + 1.2× source weight calibration watch.** A few weeks across the watchlist to confirm the 1.2× HN source weight and the curated `TICKER → company name` map.
-- **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency.
+- **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
 
@@ -114,6 +114,20 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.0.1] — 2026-06-10
+
+Quality PATCH addressing a silent miss the v2.0 news-glyph audit surfaced: ~80% of Chinese-language Bursa headlines were scoring `relevance=none / score=0.0` because the LLM scorer's prompt sent only the 4-digit Bursa code (e.g. `TICKER: 9431`) — semantically opaque, with no way to connect 9431 → Seni Jaya → 盛艺机构. The system prompt already invited "TICKER or commonly-known company name"; v2.0.1 actually delivers the company name in the prompt.
+
+### Added
+
+- **News-glyph LLM audit tool (`audit_glyph.py`).** Joins every cached LLM score to its source headline and auto-flags five failure modes: FALSE-NONE (ticker/name in headline but scored none), FALSE-PRIMARY? (scored primary with no apparent ticker/name reference), ROUNDUP? (sector-roundup headlines that should usually be 'mention'), NON-ASCII (likely non-English — verify model handled it), DIR-MISMATCH (crude keyword polarity vs LLM score sign disagreement). Excludes analyst-rating items (which legitimately omit the company name). Surface area: `python3 .claude/skills/us-news/audit_glyph.py [--ticker X --asset-class Y] [--flagged-only]`. Used to find and validate the KLSE fix; first pass scanned 2110 items across 25 tickers.
+
+### Fixed
+
+- **News-glyph scorer now passes company name to the LLM (not just the ticker code).** Added a `COMPANY_LABELS` map (`us`/`klse`/`crypto`) and threaded `asset_class` through `llm_score_items_for_ticker → _llm_score_batch`. KLSE entries carry both Latin and Chinese forms — e.g. `"9431": "Seni Jaya Corporation Berhad / SJC (also written 盛艺机构)"`. Before the fix: Chinese-press headlines for KLSE names silently scored `none/0.0`, dropping ~80% of the news signal for any Bursa name with substantial Chinese-press coverage. After the fix: validated on all 4 watchlist KLSE codes — Chinese-only relevant headlines now correctly score `primary` with non-zero values; unrelated Chinese headlines still correctly score `none`. US and crypto scoring unchanged (the model already knew AAPL=Apple, BTC=Bitcoin etc. from pre-training). The watch-thread "news-glyph LLM scoring quality" is downgraded from "tracking" to "monitor as watchlist evolves."
 
 ---
 

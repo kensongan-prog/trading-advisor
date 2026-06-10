@@ -172,6 +172,66 @@ def _item_hash(headline):
     return hashlib.sha256(h.encode("utf-8")).hexdigest()[:16]
 
 
+# Company-label map per asset class — passed to the LLM in the prompt so it can
+# resolve TICKER → SUBJECT-OF-HEADLINE for cases the model can't know from
+# pre-training. KLSE codes (4 digits) are opaque AND many headlines arrive in
+# Chinese where the company name is only in Chinese characters — that case was
+# the largest miss in the v2.0 audit. US/crypto entries here are belt-and-braces.
+COMPANY_LABELS = {
+    "us": {
+        # Watchlist names — extended by the operator as needed. Major US tickers
+        # the model already knows from training (NVDA=Nvidia, KO=Coca-Cola) work
+        # fine without this map; entries here are insurance.
+        "AUPH": "Aurinia Pharmaceuticals",
+        "CIFR": "Cipher Mining",
+        "CLOV": "Clover Health",
+        "CLSK": "CleanSpark",
+        "EONR": "EON Resources",
+        "KTOS": "Kratos Defense",
+        "KO":   "Coca-Cola",
+        "MRVL": "Marvell Technology",
+        "PURR": "Hyperliquid Strategies (PURR is the equity-treasury proxy for HYPE)",
+        "RDDT": "Reddit",
+        "RGLD": "Royal Gold",
+        "RKLB": "Rocket Lab",
+        "RYDE": "Ryde Group",
+        "SPY":  "S&P 500 ETF",
+    },
+    "klse": {
+        # Bursa Malaysia — Latin name + Chinese name (where the company appears
+        # in Chinese-press headlines). The audit found 80% of 9431's Chinese-only
+        # headlines silently scored to relevance=none because the model couldn't
+        # know 盛艺机构 = Seni Jaya = 9431.
+        "0293": "KJTS Group Berhad (also written KJTS集团)",
+        "4057": "Asian Pac Holdings / ASIAPAC (also written 亚泛控股)",
+        "7241": "Nextgreen Global Berhad / NGGB",
+        "9431": "Seni Jaya Corporation Berhad / SJC (also written 盛艺机构)",
+    },
+    "crypto": {
+        # Crypto slugs are usually self-explanatory (bitcoin, ethereum, solana)
+        # but a few aliases help: HYPE/Hyperliquid, ENA/Ethena.
+        "binancecoin": "BNB / Binance Coin",
+        "ethena":      "Ethena (ENA)",
+        "hyperliquid": "Hyperliquid (HYPE)",
+        "hedera-hashgraph": "Hedera (HBAR)",
+    },
+}
+
+
+def _company_label(ticker, asset_class):
+    """Return the prompt subject — the canonical name the LLM should look for
+    in headlines to decide TICKER relevance. Falls back to the raw ticker if no
+    mapping exists (US majors are usually fine; KLSE codes without a mapping
+    will continue to underperform on Chinese headlines until they're added)."""
+    if not asset_class:
+        return ticker
+    m = COMPANY_LABELS.get(asset_class, {})
+    # Match case-insensitively for US/crypto; KLSE codes are numeric strings
+    key = ticker if asset_class == "klse" else ticker.upper()
+    name = m.get(key) or m.get(ticker.lower())
+    return f"{ticker} ({name})" if name else ticker
+
+
 def _llm_cache_path(ticker):
     return LLM_SCORE_CACHE / f"{ticker.upper()}.json"
 
@@ -202,16 +262,22 @@ LLM_SYSTEM = (
 )
 
 
-def _llm_score_batch(ticker, headlines, model=None, timeout=60):
-    """POST a batch of headlines to OpenRouter. Returns (list_of_dicts, error)."""
+def _llm_score_batch(ticker, headlines, model=None, timeout=60, asset_class=None):
+    """POST a batch of headlines to OpenRouter. Returns (list_of_dicts, error).
+
+    asset_class is used to look up a curated company label (resolves Bursa
+    codes and disambiguates non-English headlines). Without it the prompt
+    falls back to the raw ticker — fine for major US names the model knows
+    from pre-training, lossy for opaque codes like KLSE 9431."""
     if not headlines:
         return [], None
     if not _load_llm_env():
         return None, "OPENROUTER_API_KEY missing (set in .claude/skills/sentiment-cache/.env)"
     model = model or LLM_DEFAULT_MODEL
     api_key = os.environ["OPENROUTER_API_KEY"]
+    subject = _company_label(ticker, asset_class) if asset_class else ticker
     numbered = "\n".join(f"{i+1}. {h[:300]}" for i, h in enumerate(headlines))
-    user = f"TICKER: {ticker}\nHeadlines (n={len(headlines)}):\n{numbered}\n\nReturn JSON array only."
+    user = f"TICKER: {subject}\nHeadlines (n={len(headlines)}):\n{numbered}\n\nReturn JSON array only."
     body = json.dumps({
         "model": model,
         "messages": [
@@ -271,9 +337,11 @@ def _llm_score_batch(ticker, headlines, model=None, timeout=60):
     return out, None
 
 
-def llm_score_items_for_ticker(ticker, items, force=False, verbose=False):
+def llm_score_items_for_ticker(ticker, items, force=False, verbose=False, asset_class=None):
     """Enrich items with LLM scores. Caches by hash(headline) — only LLM-calls
-    items that aren't already cached. Returns (n_cached, n_fetched, error_or_none)."""
+    items that aren't already cached. Returns (n_cached, n_fetched, error_or_none).
+
+    asset_class threads through to _llm_score_batch for the company-label lookup."""
     if not items:
         return 0, 0, None
     cache = _llm_cache_load(ticker)
@@ -298,7 +366,7 @@ def llm_score_items_for_ticker(ticker, items, force=False, verbose=False):
         headlines = [c[2] for c in chunk]
         # Try primary model, fall back to secondary on hard failure
         for model in (LLM_DEFAULT_MODEL, LLM_FALLBACK_MODEL):
-            out, err = _llm_score_batch(ticker, headlines, model=model)
+            out, err = _llm_score_batch(ticker, headlines, model=model, asset_class=asset_class)
             if not err:
                 break
             if verbose:
@@ -976,7 +1044,11 @@ def _autoscore_after_refresh(asset_class, key, verbose=True):
     needs_llm = [it for it in raw if not (it.get("origin") or "").startswith("av")]
     if not needs_llm:
         return
-    n_cached, n_fetched, err = llm_score_items_for_ticker(key.upper(), needs_llm, verbose=verbose)
+    # Preserve original key casing for KLSE (numeric codes have no case);
+    # for US/crypto upper-case is conventional.
+    ticker_for_scoring = key if asset_class == "klse" else key.upper()
+    n_cached, n_fetched, err = llm_score_items_for_ticker(
+        ticker_for_scoring, needs_llm, verbose=verbose, asset_class=asset_class)
     if verbose:
         if err and n_fetched == 0:
             print(f"    [llm] {key}: ERR {err[:100]}")
@@ -1040,7 +1112,10 @@ def _cli():
                 elif args.asset_class == "klse":  items = _load_klse_items(k)
                 else:                              items = _load_crypto_items(k)
                 needs_llm = [it for it in items if not (it.get("origin") or "").startswith("av")]
-                llm_score_items_for_ticker(k.upper(), needs_llm, force=True, verbose=True)
+                ticker_for_scoring = k if args.asset_class == "klse" else k.upper()
+                llm_score_items_for_ticker(ticker_for_scoring, needs_llm,
+                                           force=True, verbose=True,
+                                           asset_class=args.asset_class)
     elif args.cmd == "show":
         result = glyph_for(args.ticker, args.asset_class)
         print(json.dumps(result, indent=2, default=str))
