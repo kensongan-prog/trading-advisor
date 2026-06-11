@@ -6,18 +6,22 @@ The operating doctrine lives in **[AGENTS.md](AGENTS.md)** — the cross-agent s
 
 ## Auto-bootstrap (do this at session start, without being asked)
 
-After loading AGENTS.md, in a fresh session you must also read these files **before responding to the operator's first request**:
+After loading AGENTS.md, in a fresh session you must also do these things **before responding to the operator's first request**:
 
 1. **`notes/learned.md`** — known gotchas (XProtect, FMP paywall, yfinance edge cases). Don't re-discover landmines we already mapped.
 2. **`CHANGELOG.md`** — specifically the `[Unreleased]` section (anything in flight from the last session) and the most recent shipped version (so you know what "now" looks like).
 3. **`git log --oneline -10`** — last 10 commits for recent activity context.
+4. **`.venv-playwright/bin/python3 -m pytest --tb=line -q`** — run the test suite (uses the project-local venv since pytest isn't installed system-wide). Should complete in <1s with all tests passing. If any fail, the codebase is in a known-broken state — flag this prominently in the orientation and do NOT make code changes until the operator decides how to handle it. If the venv is missing (fresh clone), say so and ask the operator before assuming tests don't matter.
 
-Then orient yourself out loud with **three short bullets**:
+Then orient yourself out loud with **three short bullets + a test-status line**:
 - Current version (latest tag from changelog)
 - Most recent shipped change (one line from the latest version's release notes)
 - Anything in `[Unreleased]` still in flight (one line, or "nothing pending")
+- Tests: `N/N passing` (or `N failing — needs attention before code changes`)
 
 Keep this orientation under ~5 lines total. Then wait for the operator's actual request. The orientation tells the operator you're caught up; it isn't a status report — they wrote what's in those files, they don't need it read back to them.
+
+**Why the test step matters:** v2.0.5 codified a contract — every bug fix leaves a regression test behind. A test failure at session start means either someone introduced a regression since the last green commit, or the test suite has drifted from current code reality. Either case is worth a beat before adding more code on top.
 
 **Do NOT auto-read `PROJECT_LOG.md`** — it's heavy (~600 lines, architecture + setup + replication guide). Read it on demand when a question requires architectural context. For most session tasks, AGENTS.md + notes/learned.md is enough.
 
@@ -32,4 +36,11 @@ Skip the auto-bootstrap and respond immediately to the operator if:
 
 ## End-of-session ritual
 
-Before the operator clears or closes the session **mid-task**, write an `### In flight` paragraph to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's auto-bootstrap will pick it up. If the operator forgets, prompt them once: *"Want me to capture an in-flight note before you clear?"*
+Before the operator clears or closes the session **mid-task**:
+
+1. **Run `.venv-playwright/bin/python3 -m pytest --tb=line -q`** one last time. If tests are red, either fix them or capture that fact in the in-flight note — don't leave the next session walking into broken tests without warning.
+2. **Write an `### In flight` paragraph** to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's auto-bootstrap will pick it up. If the operator forgets, prompt them once: *"Want me to capture an in-flight note before you clear?"*
+
+## Before any release (PATCH / MINOR / MAJOR)
+
+Run the test suite. A green commit is the floor for shipping; releases inherit that floor. If you cut a tag against a red suite, you've broken the v2.0.5 contract — fix the tests first or hold the release.
