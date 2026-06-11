@@ -98,7 +98,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 **Carry-over watch-threads (still in flight after v2.0.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified.
-- **Reddit-comment scoring calibration watch.** Want a few weeks across the watchlist to confirm (a) the 5-comments-per-post cap, (b) the RSS-comments uniform-weight floor, (c) the LLM relevance filter on comment off-topicness.
+- **Reddit-comment scoring calibration watch.** Sub-point (c) the LLM relevance filter on comment off-topicness — addressed in v2.0.4 by adding a relevance gate to the classifier (works for HN, Reddit comments, and StockTwits). Sub-points (a) and (b) still require trade-outcome data to calibrate — deferred.
 - **Threshold calibration watch.** A few weeks of operator use across changing market regimes to confirm sentiment 0.80/0.70 + alignment thresholds, plus BTFD/STR equity/crypto tiers.
 - **HN coverage + 1.2× source weight calibration watch.** Coverage half addressed in v2.0.2 (filter floor relaxed, RYDE skip). Source-weight (1.2×) tuning still requires trade-outcome data; deferred.
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
@@ -114,6 +114,22 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.0.4] — 2026-06-10
+
+Relevance-gate PATCH for the retail-sentiment classifier. v2.0.2 noted a tradeoff: relaxing the HN comment filter let real Solana coverage through, but also admitted noise like "Microsoft Project Solara" stories. The downstream classifier had no way to flag off-topic items — it scored every body as bull/bear/neutral, silently diluting the on-topic read. v2.0.4 closes that gap.
+
+### Changed
+
+- **Sentiment classifier (`sentiment_cache.classify_messages`) now returns a `relevance` field.** Schema is now `{relevance: "primary"|"mention"|"none", sentiment, conviction}` (same trichotomy as the news-glyph scorer). `llm_pcts` weights `primary` at 1.0, `mention` at 0.5, `none` at 0.0 — so off-topic items drop out instead of polluting the bull/bear/neutral percentages. Multi-ticker peer-mention posts ("$SOL.X + $MA = cool") count at half-weight instead of full. The aggregator now exposes `n_primary` / `n_mention` / `n_off_topic` per source so downstream UI can show how much real signal underlies a reading.
+- **Classifier prompt now carries the company name, not just the ticker.** Same pattern as the v2.0.1 news-glyph fix. The LLM resolves `SOL → Solana (the L1 blockchain, NOT 'Solara' which is a Microsoft product)` and uses that to decide relevance. The lookup imports the existing `news_glyph.COMPANY_LABELS` map lazily — single source of truth for both scorers, no duplication.
+- **`score_ticker` injects `asset_class` into all raw caches before processing.** StockTwits and Reddit fetchers already store `asset_class`; the HN fetcher didn't. Older HN caches now get the asset class inferred from ticker patterns (`.KL` → klse, BTC/ETH/SOL etc. → crypto, otherwise us) and injected at score time, so the company-label lookup works without requiring an HN cache rebuild.
+
+### Fixed
+
+- **Off-topic items no longer pollute the sentiment composite.** Before this fix, the SOL HN cache had 4 Microsoft Project Solara items that scored as neutral or low-confidence bull, diluting the genuine on-topic read. Validated end-to-end: SOL HN now reports 0 primary / 0 mention / 4 off-topic — correctly identifying "no real HN signal for SOL today" instead of falsely smoothing toward neutral. BTC HN shows 14 primary / 3 mention / 10 off-topic — bull/bear% now computed from the actual on-topic subset. SOL StockTwits shows 15 primary / 14 mention / 1 off-topic — multi-ticker chatter recognized and half-weighted.
 
 ---
 

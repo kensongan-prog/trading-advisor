@@ -4,6 +4,26 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-10 — Sentiment classifier had no relevance gate — off-topic items polluted bull/bear%
+
+**Symptom (already noted in v2.0.2):** the HN coverage fix admitted "Microsoft Project Solara" stories into the SOL HN signal. The downstream classifier (`sentiment_cache.classify_messages`) scored every body as bull/bear/neutral with no way to flag "this isn't actually about the ticker." Off-topic content silently diluted the on-topic read.
+
+**Fix (this commit):** Added `relevance` to the classifier output schema. The prompt now asks for `{relevance: primary|mention|none, sentiment, conviction}`; bodies marked `none` get zero weight in `llm_pcts`, `mention` get half weight, `primary` get full weight. The company-name label (`TICKER (Company Name)`) is passed in the prompt — same pattern as the v2.0.1 news-glyph fix — so the LLM can correctly distinguish "Solana" from "Microsoft Project Solara" or "Federal" from "Hedera".
+
+Validated end-to-end:
+- **SOL HN**: 4 bodies (Microsoft Project Solara stories + comments) → 4 off-topic, 0 primary. HN signal correctly reads as no-on-topic-data instead of polluted-neutral.
+- **BTC HN**: 27 bodies → 14 primary, 3 mention, 10 off-topic. Pre-fix bull/bear/neutral was diluted by the 10 off-topic items; now reflects only the on-topic 17 (14 primary + 3 mention at half-weight).
+- **SOL StockTwits**: 30 messages → 15 primary, 14 mention, 1 off-topic. Multi-ticker posts ("$SOL.X + $MA = cool") correctly recognized as mention not primary — half-weighted so they contribute but don't dominate.
+- **BTC StockTwits**: 30 messages → 25 primary, 5 mention, 0 off-topic. Almost entirely clean signal as expected.
+
+**Architecture note:** the company-label resolution is `sentiment_cache._company_label() → news_glyph._company_label()` via lazy import. Single source-of-truth map in `news_glyph.COMPANY_LABELS`; both the per-headline scorer and the per-body classifier read it.
+
+**Asset-class plumbing fix:** HN raw caches were missing the `asset_class` field that StockTwits/Reddit raw caches carry. `score_ticker` now infers it (via ticker-pattern fallback when no source has it) and injects into all three raw payloads before per-source processing — so the lazy import + label lookup work for HN even on older cache files.
+
+**Operational gotcha:** OpenRouter free-tier `gemma-4-31b-it:free` 429s easily on consecutive scores. The `gpt-oss-120b:free` fallback handles overflow cleanly; specify `--model openai/gpt-oss-120b:free` for batch re-scoring sessions.
+
+---
+
 ### 2026-06-10 — BTFD/STR panel: naïve zip() pairing crypto rows by index silently dropped candidates
 
 **Symptom:** The Action Rail showed `2 BTFD` (counted from watchlist iteration) but the BTFD/STR panel rendered only 1 candidate (MRVL). ENA was qualifying (chg=-10.21%, vol=1.59x — passes crypto LIGHT_DIP gate of chg≤-4% AND vol≥1.5×) but never appeared.

@@ -74,14 +74,48 @@ SYSTEM_PROMPT = (
     "You are a financial sentiment classifier. You receive a numbered list of short "
     "messages about a single ticker, and return ONLY a JSON array, one object per "
     "message in the same order. Each object: "
-    '{"sentiment": "bullish" | "bearish" | "neutral", "conviction": 0.0-1.0}. '
-    "Conviction reflects how clear the sentiment is, NOT how strong the directional "
-    "view is. Sarcasm, irony, and hedge-language reduce conviction. No prose, no markdown."
+    '{"relevance": "primary"|"mention"|"none", "sentiment": "bullish"|"bearish"|"neutral", "conviction": 0.0-1.0}. '
+    "relevance='primary' = the TICKER (or its commonly-known company name) is the main "
+    "subject. relevance='mention' = the ticker appears but isn't the focus (peer mention, "
+    "sector roundup, broad watchlist). relevance='none' = ticker doesn't actually appear, "
+    "e.g. similar-looking word for a different company/topic (Solana vs 'Solara'). "
+    "Conviction reflects how clear the sentiment is, NOT how strong the directional view. "
+    "Sarcasm, irony, hedge-language reduce conviction. No prose, no markdown."
 )
 
 
-def classify_messages(messages, ticker, model=None, timeout=60):
-    """Classify a list of message body strings. Returns (results, error_or_none, raw_response_str)."""
+# Pulled from .claude/skills/us-news/news_glyph.py:COMPANY_LABELS. Sentiment lives
+# in a separate skill module so we import lazily; the operator maintains a single
+# source-of-truth map and this fetcher uses it. Falls back to bare ticker if the
+# import fails (older deployments) — same degraded behavior as before.
+def _company_label(ticker, asset_class=None):
+    # Normalize asset_class — sentiment caches use "us_equity" but the
+    # news_glyph COMPANY_LABELS keys use "us". Map common synonyms here so
+    # both inputs work.
+    ac = (asset_class or "us").lower()
+    if ac in ("us_equity", "equity", "stock"): ac = "us"
+    elif ac in ("crypto", "cryptocurrency"):   ac = "crypto"
+    elif ac in ("klse", "bursa", "malaysia"):  ac = "klse"
+    try:
+        # Add the us-news skill to sys.path lazily, only on first use
+        import sys
+        ng_dir = str(SCRIPT_DIR.parent / "us-news")
+        if ng_dir not in sys.path:
+            sys.path.insert(0, ng_dir)
+        import news_glyph as ng
+        return ng._company_label(ticker, ac)
+    except Exception:
+        return ticker
+
+
+def classify_messages(messages, ticker, model=None, timeout=60, asset_class=None):
+    """Classify a list of message body strings. Returns (results, error_or_none, raw_response_str).
+
+    asset_class is used to look up the company label, threaded to the LLM prompt
+    so it can correctly distinguish "Solana" from "Microsoft Project Solara" etc.
+    Each result now includes `relevance` (primary|mention|none) which the
+    aggregator uses to downweight off-topic items.
+    """
     if not messages:
         return [], None, ""
     model = model or get_model()
@@ -89,10 +123,12 @@ def classify_messages(messages, ticker, model=None, timeout=60):
     if not api_key:
         return None, f"OPENROUTER_API_KEY missing — set in {ENV_FILE}", ""
 
+    subject = _company_label(ticker, asset_class)
+
     # Truncate each message body to 400 chars; trim collection to cap
     msgs = messages[:MAX_MESSAGES_PER_TICKER]
     numbered = "\n".join(f"{i+1}. {m[:400]}" for i, m in enumerate(msgs))
-    user = f"Classify these {len(msgs)} messages about ${ticker}. Return JSON only.\n{numbered}"
+    user = f"TICKER: {subject}\nClassify these {len(msgs)} messages. Return JSON only.\n{numbered}"
 
     body = json.dumps({
         "model": model,
@@ -149,11 +185,12 @@ def classify_messages(messages, ticker, model=None, timeout=60):
             shortfall = len(msgs) - len(parsed)
             parsed = parsed + [{"sentiment": "neutral", "conviction": 0.0}] * shortfall
 
-    # Normalize each entry
+    # Normalize each entry. Older prompts didn't return `relevance`; default to
+    # "primary" so legacy classifications continue to count at full weight.
     out = []
     for i, item in enumerate(parsed):
         if not isinstance(item, dict):
-            out.append({"sentiment": "neutral", "conviction": 0.0})
+            out.append({"sentiment": "neutral", "conviction": 0.0, "relevance": "primary"})
             continue
         sent = str(item.get("sentiment", "neutral")).lower().strip()
         if sent not in ("bullish", "bearish", "neutral"):
@@ -163,7 +200,10 @@ def classify_messages(messages, ticker, model=None, timeout=60):
             conv = max(0.0, min(1.0, conv))
         except Exception:
             conv = 0.0
-        out.append({"sentiment": sent, "conviction": conv})
+        rel = str(item.get("relevance", "primary")).lower().strip()
+        if rel not in ("primary", "mention", "none"):
+            rel = "primary"  # tolerate missing/garbage — assume relevant
+        out.append({"sentiment": sent, "conviction": conv, "relevance": rel})
     return out, None, content
 
 
@@ -189,34 +229,58 @@ def _engagement_weight(engagement):
     return 1.0 + math.log1p(e)
 
 
+# Relevance → weight multiplier. 'none' fully discounts off-topic items (the
+# "Microsoft Project Solara" tagged-as-SOL case the v2.0.2 HN audit found).
+# 'mention' counts at half — a peer-mention is real signal but should not
+# dominate a single name's read. 'primary' is the unmodified standard.
+_RELEVANCE_WEIGHT = {"primary": 1.0, "mention": 0.5, "none": 0.0}
+
+
 def llm_pcts(classifications, engagements=None):
-    """Convert list of {sentiment, conviction} into weighted bull/bear/neutral pcts.
+    """Convert list of {sentiment, conviction, relevance} into weighted bull/bear/neutral pcts.
 
     If `engagements` is provided (parallel list of floats — upvotes, likes, etc.),
-    each message's effective weight becomes `conviction × engagement_weight(e)`.
-    Otherwise reverts to conviction-only weighting (old behavior).
+    each message's effective weight becomes `conviction × relevance × engagement_weight(e)`.
+    Otherwise weight is `conviction × relevance`.
+    Items with `relevance="none"` drop out entirely (weight 0) — they were classified
+    as off-topic noise (the SOL/Solara case) and shouldn't dilute the on-topic read.
     """
     if not classifications:
         return None
+    rel_w = [_RELEVANCE_WEIGHT.get(c.get("relevance", "primary"), 1.0) for c in classifications]
     if engagements is None or len(engagements) != len(classifications):
-        weights = [c["conviction"] for c in classifications]
+        weights = [c["conviction"] * r for c, r in zip(classifications, rel_w)]
     else:
-        weights = [c["conviction"] * _engagement_weight(e)
-                   for c, e in zip(classifications, engagements)]
+        weights = [c["conviction"] * r * _engagement_weight(e)
+                   for c, r, e in zip(classifications, rel_w, engagements)]
     total_w = sum(weights)
     if total_w == 0:
-        # All zero weight = treat as uniform neutral
+        # All-zero-weight = no on-topic signal. Report as "uniform neutral" so
+        # the composite calculator can include it as a low-conviction read; the
+        # n_off_topic counter lets downstream UI flag "no real HN signal" to
+        # distinguish from a genuine neutral 50/50 read.
         return {"bull": 0.0, "bear": 0.0, "neutral": 1.0, "avg_conviction": 0.0,
-                "engagement_weighted": engagements is not None}
+                "engagement_weighted": engagements is not None,
+                "n_off_topic": sum(1 for c in classifications if c.get("relevance") == "none"),
+                "n_mention":   sum(1 for c in classifications if c.get("relevance") == "mention"),
+                "n_primary":   sum(1 for c in classifications if c.get("relevance") == "primary"),
+                "n_scored":    len(classifications)}
     bull = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "bullish") / total_w
     bear = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "bearish") / total_w
     neut = sum(w for c, w in zip(classifications, weights) if c["sentiment"] == "neutral") / total_w
+    # Only the on-topic subset contributes to avg_conviction — keeps the metric
+    # honest when half the batch is off-topic noise.
+    on_topic = [c for c in classifications if c.get("relevance") != "none"]
+    avg_conv = (sum(c["conviction"] for c in on_topic) / len(on_topic)) if on_topic else 0.0
     return {
         "bull": round(bull, 3),
         "bear": round(bear, 3),
         "neutral": round(neut, 3),
-        "avg_conviction": round(sum(c["conviction"] for c in classifications) / len(classifications), 3),
+        "avg_conviction": round(avg_conv, 3),
         "engagement_weighted": engagements is not None,
+        "n_off_topic": sum(1 for c in classifications if c.get("relevance") == "none"),
+        "n_mention": sum(1 for c in classifications if c.get("relevance") == "mention"),
+        "n_primary": sum(1 for c in classifications if c.get("relevance") == "primary"),
     }
 
 
@@ -281,7 +345,9 @@ def process_hackernews(raw, model):
             engagements.append(c.get("points") or 0)
     if not bodies:
         return None, None
-    classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
+    classifications, err, _raw = classify_messages(
+        bodies, raw["ticker"], model=model,
+        asset_class=raw.get("asset_class"))
     if err:
         return None, f"LLM scoring failed: {err}"
     engagements = engagements[:len(classifications)]
@@ -295,6 +361,9 @@ def process_hackernews(raw, model):
         "llm_bear_pct": pcts["bear"] if pcts else None,
         "llm_neutral_pct": pcts["neutral"] if pcts else None,
         "llm_avg_conviction": pcts["avg_conviction"] if pcts else None,
+        "n_off_topic": pcts.get("n_off_topic") if pcts else None,
+        "n_mention": pcts.get("n_mention") if pcts else None,
+        "n_primary": pcts.get("n_primary") if pcts else None,
     }, None
 
 
@@ -311,7 +380,9 @@ def process_stocktwits(raw, model):
     # found it worth their followers' attention — heavier signal than a like).
     engagements = [(m.get("likes") or 0) + 2 * (m.get("reshares") or 0) for m in msgs]
 
-    classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
+    classifications, err, _raw = classify_messages(
+        bodies, raw["ticker"], model=model,
+        asset_class=raw.get("asset_class"))
     if err:
         return None, f"LLM scoring failed: {err}"
 
@@ -329,6 +400,9 @@ def process_stocktwits(raw, model):
         "llm_bear_pct": pcts["bear"] if pcts else None,
         "llm_neutral_pct": pcts["neutral"] if pcts else None,
         "llm_avg_conviction": pcts["avg_conviction"] if pcts else None,
+        "n_off_topic": pcts.get("n_off_topic") if pcts else None,
+        "n_mention": pcts.get("n_mention") if pcts else None,
+        "n_primary": pcts.get("n_primary") if pcts else None,
     }, None
 
 
@@ -369,7 +443,9 @@ def process_reddit(raw, model):
     bodies      = [x[0] for x in items]
     engagements = [x[1] for x in items]
 
-    classifications, err, _raw = classify_messages(bodies, raw["ticker"], model=model)
+    classifications, err, _raw = classify_messages(
+        bodies, raw["ticker"], model=model,
+        asset_class=raw.get("asset_class"))
     if err:
         return None, f"LLM scoring failed: {err}"
     engagements = engagements[:len(classifications)]
@@ -385,6 +461,9 @@ def process_reddit(raw, model):
         "llm_bear_pct": pcts["bear"] if pcts else None,
         "llm_neutral_pct": pcts["neutral"] if pcts else None,
         "llm_avg_conviction": pcts["avg_conviction"] if pcts else None,
+        "n_off_topic": pcts.get("n_off_topic") if pcts else None,
+        "n_mention": pcts.get("n_mention") if pcts else None,
+        "n_primary": pcts.get("n_primary") if pcts else None,
     }, None
 
 
@@ -512,6 +591,23 @@ def score_ticker(ticker, model=None, verbose=True):
         rd_status = "ok" if (rd_raw and rd_raw.get("posts")) else "missing"
         hn_status = "ok" if (hn_raw and (hn_raw.get("stories") or [])) else ("skip" if hn_raw and hn_raw.get("no_coverage") else "missing")
         print(f"  sources: stocktwits={st_status}  reddit={rd_status}  hn={hn_status}")
+
+    # Resolve asset_class once and inject into every raw cache so the per-source
+    # processors can pass it to classify_messages → _company_label. StockTwits
+    # and Reddit raw files store it; the HN fetcher doesn't yet. Fall back to a
+    # crude ticker-pattern guess so older caches without the field still get a
+    # useful prompt subject.
+    inferred_asset_class = (st_raw or rd_raw or hn_raw or {}).get("asset_class")
+    if not inferred_asset_class:
+        if ticker.upper().endswith(".KL"):
+            inferred_asset_class = "klse"
+        elif ticker.upper() in {"BTC","ETH","SOL","BNB","XRP","HBAR","HYPE","ENA","ONDO","ADA","DOGE"}:
+            inferred_asset_class = "crypto"
+        else:
+            inferred_asset_class = "us_equity"
+    for raw in (st_raw, rd_raw, hn_raw):
+        if raw is not None and "asset_class" not in raw:
+            raw["asset_class"] = inferred_asset_class
 
     st_summary, st_err = process_stocktwits(st_raw, model) if st_raw else (None, None)
     if st_err and verbose:
