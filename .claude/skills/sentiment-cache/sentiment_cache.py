@@ -108,6 +108,23 @@ def _company_label(ticker, asset_class=None):
         return ticker
 
 
+def _is_transient_error(err_msg):
+    """Decide if an LLM error is worth retrying against the fallback model.
+    429 (rate limit) and 5xx (server-side) are transient; 4xx other than 429
+    (bad request, auth failure) and JSON parse failures are not — the fallback
+    would just produce the same error."""
+    if not err_msg:
+        return False
+    # urllib errors come back as "HTTP 429: ..." or "HTTP 503: ..."
+    for code in ("429", "500", "502", "503", "504"):
+        if f"HTTP {code}" in err_msg:
+            return True
+    # Network-level errors (timeout, connection reset) — worth a fallback attempt
+    if "URLError" in err_msg or "timeout" in err_msg.lower():
+        return True
+    return False
+
+
 def classify_messages(messages, ticker, model=None, timeout=60, asset_class=None):
     """Classify a list of message body strings. Returns (results, error_or_none, raw_response_str).
 
@@ -115,10 +132,31 @@ def classify_messages(messages, ticker, model=None, timeout=60, asset_class=None
     so it can correctly distinguish "Solana" from "Microsoft Project Solara" etc.
     Each result now includes `relevance` (primary|mention|none) which the
     aggregator uses to downweight off-topic items.
+
+    On a 429/5xx from the primary model, automatically falls back to
+    FALLBACK_MODEL. The pattern mirrors news_glyph's _llm_score_batch fallback.
     """
     if not messages:
         return [], None, ""
-    model = model or get_model()
+    primary = model or get_model()
+    # Try primary; on a transient failure, retry against the fallback model.
+    out, err, raw = _classify_one_attempt(messages, ticker, primary, timeout, asset_class)
+    if err and primary != FALLBACK_MODEL and _is_transient_error(err):
+        # Brief pace + retry. The fallback uses a different provider so a
+        # 429 on Gemma doesn't preclude GPT-OSS-120B succeeding.
+        time.sleep(1.5)
+        out2, err2, raw2 = _classify_one_attempt(
+            messages, ticker, FALLBACK_MODEL, timeout, asset_class)
+        if not err2:
+            return out2, None, raw2
+        # Both failed — return the SECOND error (more recent) but mention both
+        return None, f"primary={primary} {err[:120]} ; fallback={FALLBACK_MODEL} {err2[:120]}", raw2 or raw
+    return out, err, raw
+
+
+def _classify_one_attempt(messages, ticker, model, timeout, asset_class):
+    """A single LLM call with the relevance-gated prompt. Returns the same
+    shape as classify_messages."""
     api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not api_key:
         return None, f"OPENROUTER_API_KEY missing — set in {ENV_FILE}", ""

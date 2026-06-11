@@ -117,6 +117,24 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.0.6] — 2026-06-11
+
+Silent-failure PATCH. The operator noticed RGLD's dashboard row showed "RETAIL SENTIMENT — UNKNOWN (no source data)" despite having 30 StockTwits messages cached. Investigation revealed `sentiment_cache.classify_messages` made a single LLM call and gave up on any failure — the `FALLBACK_MODEL` constant defined at module-top was never actually used. A transient Gemma 429 was silently nuking the entire StockTwits source for any ticker scored during the rate-limit window.
+
+### Fixed
+
+- **`classify_messages` now falls back to `gpt-oss-120b:free` on transient errors from the primary model.** Extracted the single-attempt logic into `_classify_one_attempt`; the wrapper tries primary, then retries with `FALLBACK_MODEL` on 429/5xx/network errors. Permanent errors (401/403/404, JSON parse failure) skip the fallback because it'd produce the same result. The fallback path mirrors what `news_glyph._llm_score_batch` already did — `sentiment_cache` was missing it.
+- **Re-validation:** RGLD after re-scoring surfaces 🔥 EXTREME_BULL (84% bull / 77% conviction) — a FADE flag that was being silently hidden whenever the Gemma rate limit was active. This is a real, actionable contrarian signal that the operator was being denied because of an unimplemented fallback.
+
+### Added
+
+- **`tests/test_classifier_fallback.py` — 21 new tests** locking the fallback contract:
+  - `_is_transient_error` parametrized over 7 transient codes (429, 500, 502, 503, 504, URLError, timeout) and 6 permanent ones (401, 403, 404, JSON parse, expected-list, key-missing). Future tweaks can't accidentally widen or narrow what counts as transient.
+  - `classify_messages` retries fallback exactly once on 429, doesn't retry on 401, doesn't retry when caller already explicitly specified the fallback model (no infinite loop), reports both errors when both fail, skips fallback on success.
+  - Suite now sits at **112 tests, ~3s**.
+
+---
+
 ## [v2.0.5] — 2026-06-10
 
 Test-suite PATCH. Every silent bug the v2.0.x series surfaced (the two zip-by-index recurrences, the KLSE Chinese-headlines miss, the HN comment-filter floor) shared a failure mode: degraded data produced no operator-visible error. The dashboard rendered cleanly; the numbers were just quietly wrong. This release adds a pytest suite so the pure-logic core has a safety net under it.

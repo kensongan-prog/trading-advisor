@@ -4,6 +4,24 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-10 — Sentiment classifier had no LLM fallback — a single Gemma 429 killed the whole source
+
+**Symptom:** RGLD dashboard row showed "RETAIL SENTIMENT — UNKNOWN (no source data)". But `.claude/cache/stocktwits_sentiment/RGLD.json` clearly had 30 messages. Reading `.claude/cache/sentiment/RGLD.json` revealed the bug: the StockTwits source's `present: false` had `error: "HTTP 429: gemma-4-31b-it:free is temporarily rate-limited upstream"`. Reddit and HN were legitimately absent (no posts/stories for Royal Gold), so the composite went UNKNOWN.
+
+**Root cause:** `sentiment_cache.classify_messages` made ONE LLM call. On any failure (including transient 429s), it gave up. The `FALLBACK_MODEL = "openai/gpt-oss-120b:free"` constant was defined at module-top but **never referenced anywhere**. By contrast, `news_glyph._llm_score_batch` HAS the retry-with-fallback loop. The two scorers had divergent reliability.
+
+**Fix (this commit):** Extracted the single-attempt body into `_classify_one_attempt`; `classify_messages` now calls it once with the primary model, and on a transient error (429, 5xx, network) retries with `FALLBACK_MODEL`. Permanent errors (4xx other than 429, JSON parse failure) don't trigger fallback — the fallback would just fail the same way. Added a `_is_transient_error` helper with explicit codes so future tweaks can't accidentally widen "transient" to include programming errors.
+
+**Validated end-to-end:** Re-scoring RGLD with the fix surfaced 🔥 **EXTREME_BULL (bull 84% / conviction 77%) — FADE flag**. That actionable contrarian read was being silently hidden whenever Gemma 429'd.
+
+**Tests:** `tests/test_classifier_fallback.py` — 21 new tests cover the transient classifier (parametrized over codes), fallback trigger on 429, no-retry on permanent errors, no-loop when caller already specifies the fallback, both-fail error reporting.
+
+**Operational gotcha (still):** Gemma 429s are common during batched scoring runs. The fallback now handles each call individually, so a single 429 no longer kills a source — but if BOTH models are rate-limited at the same time, the source still fails. `--model openai/gpt-oss-120b:free` to start on the fallback directly is still the way to do a large batch re-score session.
+
+**This is the kind of bug the data-health surface (logged in notes/ideas.md) would also make visible** — `present: false + error: "HTTP 429"` should be operator-visible as "transient failure, will retry next refresh" not silently identical to `present: false + error: null` (legitimate no-coverage). Worth pairing the two fixes when the data-health work happens.
+
+---
+
 ### 2026-06-10 — Sentiment classifier had no relevance gate — off-topic items polluted bull/bear%
 
 **Symptom (already noted in v2.0.2):** the HN coverage fix admitted "Microsoft Project Solara" stories into the SOL HN signal. The downstream classifier (`sentiment_cache.classify_messages`) scored every body as bull/bear/neutral with no way to flag "this isn't actually about the ticker." Off-topic content silently diluted the on-topic read.
