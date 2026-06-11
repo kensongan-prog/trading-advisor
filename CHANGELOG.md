@@ -117,6 +117,32 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.0.5] — 2026-06-10
+
+Test-suite PATCH. Every silent bug the v2.0.x series surfaced (the two zip-by-index recurrences, the KLSE Chinese-headlines miss, the HN comment-filter floor) shared a failure mode: degraded data produced no operator-visible error. The dashboard rendered cleanly; the numbers were just quietly wrong. This release adds a pytest suite so the pure-logic core has a safety net under it.
+
+### Added
+
+- **pytest suite at `tests/`.** 91 tests covering the six functions where silent regressions would actually corrupt trading decisions:
+  - `test_r_math.py` — `j.compute_r` single-leg + partial fills + the entry-must-be-above-stop invariant. Drives every calibration metric the Phase-2 gate depends on.
+  - `test_btfd_str.py` — full tier table for `_classify_btfd_str_shared` (equity + crypto, all three tiers each direction, edge cases). Pins the thresholds that the Action Rail and BTFD panel both reference, so they can never drift apart again.
+  - `test_us_status.py` — Phase 1 status gating across P1_READY, blocked tiers, warnings, edge cases (missing SMA200, macro halt windows).
+  - `test_llm_pcts.py` — relevance-weighted aggregation. Pins the weight constants (primary 1.0, mention 0.5, none 0.0), engagement-weighting interactions, all-off-topic fallback, backward compat for legacy classifications without the relevance field.
+  - `test_company_label.py` — TICKER→company-name resolution across asset classes. Includes parametrized coverage over every watchlist ticker so no future watchlist add can land without a label.
+  - `test_data_join.py` — symbol-keyed join regression test that documents both the correct pattern AND the bug pattern. The naïve-zip bug was found twice in production; the test will fail the moment anyone re-introduces it.
+- **Test runner config (`pytest.ini`)** so `python3 -m pytest` works from the project root with concise output.
+- **`tests/README.md`** documenting what's covered, what's intentionally out of scope (network calls, HTML rendering, LLM responses), and the contract for adding regression tests after future bugs.
+
+### Changed
+
+- **Hoisted `_classify_btfd_str_shared` + tier tables to module scope in `dashboard.py`** so they can be imported and tested. Previously the function was a closure inside `render_html`; now both the render closure and the test suite reference the same module-level definition. Aliases inside `render_html` keep the call sites identical.
+
+### Fixed
+
+- **`llm_pcts` backward-compat with pre-v2.0.4 classifications without `relevance`.** Previously the relevance counter (`n_primary`) reported 0 for legacy items even though they were correctly weighted at 1.0. Now normalizes missing/invalid relevance to "primary" at the start of `llm_pcts` so the weight and the count agree. Caught by `test_llm_pcts.py::test_missing_relevance_field_defaults_primary`.
+
+---
+
 ## [v2.0.4] — 2026-06-10
 
 Relevance-gate PATCH for the retail-sentiment classifier. v2.0.2 noted a tradeoff: relaxing the HN comment filter let real Solana coverage through, but also admitted noise like "Microsoft Project Solara" stories. The downstream classifier had no way to flag off-topic items — it scored every body as bull/bear/neutral, silently diluting the on-topic read. v2.0.4 closes that gap.

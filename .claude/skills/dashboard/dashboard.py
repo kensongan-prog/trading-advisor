@@ -3403,6 +3403,55 @@ def _budget_bar_html():
             f'</span>')
 
 
+# ── BTFD/STR threshold tables + classifier (module-level so tests can import) ──
+# Hoisted out of render_html for testability. Both the Action Rail and the
+# BTFD/STR panel reference _classify_btfd_str_shared so they never drift on
+# threshold tweaks. Aliases inside render_html keep the call sites readable.
+_BTFD_TIERS_SHARED = {
+    "equity": [
+        ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
+        ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
+        ("⬇️ LIGHT DIP",   "btfd-light",-2.0, 1.3, None),
+    ],
+    "crypto": [
+        ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
+        ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
+        ("⬇️ LIGHT DIP",   "btfd-light", -4.0,  1.5, None),
+    ],
+}
+_STR_TIERS_SHARED = {
+    "equity": [
+        ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
+        ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
+        ("⬆️ LIGHT RIP","str-light", 2.0, 1.3, None),
+    ],
+    "crypto": [
+        ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
+        ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
+        ("⬆️ LIGHT RIP","str-light", 4.0,  1.5, None),
+    ],
+}
+
+
+def _classify_btfd_str_shared(chg, vol_ratio, rsi, asset_kind):
+    """Return direction ('BTFD'|'STR'|None) — used by both the panel and rail
+    count. Same threshold logic everywhere; never drift again.
+
+    asset_kind ∈ {'equity', 'crypto'}. equity tiers handle US + KLSE.
+    chg, vol_ratio: required (None returns None — incomplete data).
+    rsi: optional — only the highest BTFD/STR tiers gate on RSI.
+    """
+    if chg is None or vol_ratio is None:
+        return None
+    for _lbl, _cls, thr_chg, thr_vol, thr_rsi in _BTFD_TIERS_SHARED.get(asset_kind, []):
+        if chg <= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi <= thr_rsi)):
+            return "BTFD"
+    for _lbl, _cls, thr_chg, thr_vol, thr_rsi in _STR_TIERS_SHARED.get(asset_kind, []):
+        if chg >= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi >= thr_rsi)):
+            return "STR"
+    return None
+
+
 def render_html(ctx):
     # ── Header ─────
     now_dt = datetime.now(timezone.utc)
@@ -4082,47 +4131,11 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             cls = "dim"
         return (txt, f"{age:.1f}", cls)
 
-    # Hoisted out of render_btfd_str_panel so the Action Rail can use the
-    # IDENTICAL thresholds + classifier. Previously the rail had a simplified
-    # counter (chg<=-2 + vol>=1.3 for equities, chg<=-4 with no vol filter for
-    # crypto) which over- and under-counted vs the actual panel rendering.
-    BTFD_TIERS_SHARED = {
-        "equity": [
-            ("🩸 CAPITULATION", "btfd-cap",   -7.0, 2.5, 30),
-            ("💧 REAL DIP",     "btfd-real", -4.0, 1.8, 40),
-            ("⬇️ LIGHT DIP",   "btfd-light",-2.0, 1.3, None),
-        ],
-        "crypto": [
-            ("🩸 CAPITULATION", "btfd-cap",   -12.0, 3.0, 25),
-            ("💧 REAL DIP",     "btfd-real",  -7.0,  2.0, 35),
-            ("⬇️ LIGHT DIP",   "btfd-light", -4.0,  1.5, None),
-        ],
-    }
-    STR_TIERS_SHARED = {
-        "equity": [
-            ("🚀 BLOW-OFF",  "str-blow",  7.0, 2.5, 70),
-            ("💸 REAL RIP",  "str-real",  4.0, 1.8, 60),
-            ("⬆️ LIGHT RIP","str-light", 2.0, 1.3, None),
-        ],
-        "crypto": [
-            ("🚀 BLOW-OFF",  "str-blow",  12.0, 3.0, 75),
-            ("💸 REAL RIP",  "str-real",  7.0,  2.0, 65),
-            ("⬆️ LIGHT RIP","str-light", 4.0,  1.5, None),
-        ],
-    }
-
-    def classify_btfd_str_shared(chg, vol_ratio, rsi, asset_kind):
-        """Return direction ('BTFD'|'STR'|None) only — the rail just wants a count.
-        Same threshold logic as render_btfd_str_panel; never get out of sync again."""
-        if chg is None or vol_ratio is None:
-            return None
-        for _lbl, _cls, thr_chg, thr_vol, thr_rsi in BTFD_TIERS_SHARED.get(asset_kind, []):
-            if chg <= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi <= thr_rsi)):
-                return "BTFD"
-        for _lbl, _cls, thr_chg, thr_vol, thr_rsi in STR_TIERS_SHARED.get(asset_kind, []):
-            if chg >= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi >= thr_rsi)):
-                return "STR"
-        return None
+    # Reference the module-level shared classifier/thresholds. Both this panel
+    # and the Action Rail call classify_btfd_str_shared so they never drift.
+    BTFD_TIERS_SHARED = _BTFD_TIERS_SHARED
+    STR_TIERS_SHARED  = _STR_TIERS_SHARED
+    classify_btfd_str_shared = _classify_btfd_str_shared
 
     def render_btfd_str_panel():
         """Surface watchlist names showing large % moves on outsized volume.

@@ -4,6 +4,36 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
+### 2026-06-10 — Data-health surface on the dashboard
+
+**Motivation:** The v2.0.x patch series uncovered three bugs (crypto-zip × 2 panels, KLSE Chinese headlines, HN comment-filter) that all shared a failure mode: **degraded data looked identical to good data**. Dashboard rendered normally; numbers were just silently wrong or missing. No operator-visible signal.
+
+**Sketch:**
+- A small "Data Health" tile / section that surfaces per-source health: how many tickers have stale cache (>N hours), how many returned `no_coverage`, how many were skipped due to errors, how many off-topic ratios above some threshold.
+- Threshold-fired warnings: e.g. "3 of 4 KLSE codes have no fresh news cache" or "Reddit comment count = 0 across the watchlist for 5+ days".
+- Could be a slot in the Action Rail ("📊 Data: 4/27 stale") or its own collapsed-by-default panel before reference data.
+- Implementation: each cache loader returns a tiny health summary; aggregator at render time.
+
+**Why deferred:** the pytest suite (built in v2.0.5) closes the same class of problem from a different angle — by preventing silent regression. The data-health surface tells you when a fetcher is failing in production; the tests tell you when code is broken before it ships. Tests first; revisit data-health surface after.
+
+---
+
+### 2026-06-10 — Paper-trade execution implementer
+
+**Motivation:** The system already finds setups (Discovery, Setup Queue), drafts prospectuses (`j.py new`), and watches levels (`watcher.py`). But the operator still has to manually fill a prospectus and execute the paper trade. The 20-trade Phase-2 gate isn't filling because of that friction — every step exists but the chain takes effort to walk.
+
+**Sketch:**
+- "Take this trade as paper" button on each P1_READY row or each Setup Queue candidate.
+- One click: writes the prospectus stub (`j.py new`), flips to LIVE — paper at the displayed sim levels, logs the entry. No keystrokes between "I see the setup" and "it's in the journal."
+- Optional 2-step confirm: preview the prospectus that *would* be written, then commit.
+- A paper-execution mode where the watcher fires "trigger hit — auto-flipped to LIVE-paper at fill price X" instead of just notifying — so the operator literally cannot miss it.
+
+**Why deferred:** doctrine §1 says the agent never trades. Paper-trade-implementer is a soft interpretation — it's not real money, it's filling out the log on the operator's behalf — but it deserves explicit operator consent and a design pass to make sure it doesn't slide toward "agent decides when to enter." Worth designing carefully, not rushing.
+
+**Could pair well with:** a journal-quality check that confirms every auto-paper-traded entry has a doctrine-eligible reason recorded before LIVE flip.
+
+---
+
 ### 2026-06-09 — Standalone app (v2.0.0) — DESIGNED, DEFERRED
 
 Decision: not worth the cost right now. The current static-HTML + paste-command workflow is friction-y but functional; rebuilding it as a long-running local server costs 5-6 weeks of focused work for a UX win that's nice-to-have, not load-bearing.

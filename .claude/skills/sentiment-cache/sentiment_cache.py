@@ -247,7 +247,13 @@ def llm_pcts(classifications, engagements=None):
     """
     if not classifications:
         return None
-    rel_w = [_RELEVANCE_WEIGHT.get(c.get("relevance", "primary"), 1.0) for c in classifications]
+    # Normalize missing relevance to "primary" so legacy classifications (pre-v2.0.4
+    # callers that don't yet emit the field) count at full weight — matches the
+    # default in classify_messages's output normalization.
+    for c in classifications:
+        if c.get("relevance") not in ("primary", "mention", "none"):
+            c["relevance"] = "primary"
+    rel_w = [_RELEVANCE_WEIGHT[c["relevance"]] for c in classifications]
     if engagements is None or len(engagements) != len(classifications):
         weights = [c["conviction"] * r for c, r in zip(classifications, rel_w)]
     else:
