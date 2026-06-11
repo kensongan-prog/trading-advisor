@@ -4,6 +4,46 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
+### 2026-06-11 — X (Twitter) as a 4th retail-sentiment leg
+
+**Motivation:** Current retail stack is StockTwits (volume workhorse) + Reddit (meme-stocks) + HN (tech-substance) + Polymarket (money-weighted macro). All free tier. X would add **live retail pulse for fast-moving headline reactions** and **crypto-Twitter native signal**.
+
+**Where X helps most:**
+- Crypto sentiment — X is where crypto Twitter actually lives; Reddit's r/CryptoCurrency lags by hours
+- Breaking-news reactions — tickers reacting to news in the first 30 minutes, faster than StockTwits cashtags fill up
+- Influencer-driven moves (where the signal is direction-of-momentum not consensus)
+
+**Where X helps least:**
+- Established US equities with active StockTwits cashtags — duplicates
+- Long-form opinion / fundamental analysis — Reddit/HN do this better
+
+**Sketch:**
+- `.claude/skills/x-sentiment/` mirroring `stocktwits-sentiment` shape
+- Cashtag search (`$NVDA`, `$BTC`) with bot/spam filter (account age > 30d, follower count > N, no link-only posts)
+- Raw cache → processed through the existing `sentiment_cache` classifier (relevance gate + LLM fallback already in place from v2.0.4/v2.0.6)
+- Surfaces as 4th chip in the retail-sentiment column ("X: bull 47% · 60 tweets")
+- Doctrine treatment: same as StockTwits/Reddit — contrarian filter, not primary signal
+
+**Pricing reality (verified 2026-06-11, sources below):** X killed the tiered pricing model in February 2026. Current scheme is **pay-per-use**: $0.005 per post read, $0.010 per post create. Existing free-tier accounts got a one-time **$10 credit voucher** (~2,000 post reads) and then it's metered. **No recurring free tier exists.**
+
+**Realistic monthly cost for this watchlist:**
+- 80 posts/ticker × 25 tickers × daily refresh = ~$300/mo
+- Top-10 active tickers × daily = ~$120/mo
+- Top-5 × twice-weekly = ~$16/mo
+- One-shot benchmark on $10 credit = $0
+
+**Open questions:**
+- Bot filtering — paid shills game cashtags. Pre-filter on account age + follower-to-following ratio before spending classifier tokens.
+- Engagement weighting — likes vs reposts vs replies. Reposts are the strongest "moving-the-conversation" signal.
+- KLSE coverage — Twitter has thin Bursa coverage; degraded-gracefully behavior as other sources.
+- **Whether the signal justifies any cost** — needs a $10-credit benchmark run before committing to a recurring budget.
+
+**Sources:** [Postproxy 2026 pricing](https://postproxy.dev/blog/x-api-pricing-2026/) · [xpoz.ai tier guide](https://www.xpoz.ai/blog/guides/understanding-twitter-api-pricing-tiers-and-alternatives/) · [SociaVault — free tier removed](https://sociavault.com/blog/twitter-api-alternative-2025)
+
+**Status (2026-06-11):** Operator has a Bearer token from the pre-Feb-2026 free tier — now effectively a $10 credit. **Decided not to build** until either (a) X data becomes load-bearing for a specific signal gap, or (b) a free alternative re-emerges. Re-open this entry when one of those triggers.
+
+---
+
 ### 2026-06-11 — One-click refresh from the Data Health rail chip
 
 **Motivation:** Right now the see→fix loop for data degradation is: glance the DATA chip → click it (jumps to panel) → scroll to find the Control widget → click ⚡ Quick or 🔄 Full → wait. That's 3 clicks + scroll. The chip already knows *what's wrong* (transient vs permanent vs stale); it could trigger the right refresh kind directly.
