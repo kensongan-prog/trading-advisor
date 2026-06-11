@@ -4,6 +4,8 @@ This file is the **replication guide**. Hand it (along with everything in the pr
 
 **Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
+**Last reconciled with reality: v2.1.0 (2026-06-11).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
+
 ---
 
 ## TL;DR — what this project is
@@ -41,6 +43,11 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 | `finnhub` | Real-time quote endpoint (live US prices) — also embedded in dashboard JS | Finnhub | `FINNHUB_API_KEY` |
 | `twelve-data` | Bulk historical OHLCV (sector rotation + screener technicals) | Twelve Data | `TWELVE_DATA_API_KEY` |
 | `fmp` | Per-ticker fundamentals via `/stable/` endpoints (Buffett Q+V) | FMP | `FMP_API_KEY` |
+| `reddit-sentiment` | Per-ticker posts + (OAuth-only) top comments — raw retail-forum cache | Reddit RSS (free) / OAuth (optional) | optional `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` |
+| `stocktwits-sentiment` | Per-ticker messages + user-tagged bull/bear% — raw retail-forum cache | StockTwits public | none |
+| `hn-sentiment` | Per-ticker stories + top comments via Algolia HN — the "less-gameable" retail leg (1.2× source weight) | Algolia HN | none |
+| `sentiment-cache` | LLM-scores raw retail caches into composite per-ticker read with 🔥 FADE / 🧊 BUY contrarian flags; relevance-gated (primary/mention/none) since v2.0.4; transient-error fallback to gpt-oss-120b since v2.0.6 | OpenRouter free | `OPENROUTER_API_KEY` |
+| `polymarket-events` | Implied probabilities on Fed cuts, recession, inflation, BTC/ETH ranges, geopolitics — money-weighted macro confluence (additive, not contrarian) | Polymarket Gamma | none |
 
 ### Analysis + discovery skills
 
@@ -52,19 +59,51 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 | `watchlist` | CLI for `watchlist.md` add/remove/update/resolve | Maintains resolution cache so new alts auto-discover their CoinGecko id + Binance pair |
 | `journal` | Lifecycle CLI for `journal/*.md` (new / live / update / close / dead / R-multiple calc) | Backups + audit trail |
 
+### Operator-loop CLIs (added v2.0.0 — signal → logged trade)
+
+These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invoked either via the local server's control bar or directly from terminal.
+
+| Tool | Purpose |
+|---|---|
+| `server.py` | Local control server at `http://localhost:8787`. Serves `dashboard.html` with a control bar (Quick / Full refresh, Watchlist form, Journal form, watcher start/stop). Hybrid auto-refresh: stale-by->12h triggers one quick refresh per session. `--lan` binds 0.0.0.0 for phone access (Tailscale-trusted networks). Launch via `Trading Dashboard.command` in project root. |
+| `watcher.py` | Level/alert watcher — polls Finnhub during US market hours, fires macOS notifications on prospectus entry-trigger breaks, stop hits, TP1/TP2 touches, and watchlist names entering the Phase-1 band. Read-only and doctrine-clean: never trades, never writes journal. |
+| `setup_queue.py` | Turns Phase-1-band watchlist names into decision-ready prospectus drafts (ATR stop, 2R TP1, §5 size math) with one click via `j.py new`. Cuts friction from "P1-ready" to "logged paper trade." |
+| `portfolio.py` | Auto-derives portfolio heat + calibration metrics from the journal (source of truth). `j.py live` / `close` auto-regenerate `portfolio.md` — no hand-maintained drift. |
+| `mae_mfe.py` | Daily snapshot recording max adverse / favourable excursion in R for every open position. Tells you whether stops are too tight or targets too small after 15-20 closes. |
+| `rel_strength.py` | 1m return vs SPY + 3m + vs-sector-ETF spreads per US watchlist name. Batched yfinance download (avoids the per-ticker pattern). |
+| `retired_scan.py` | Scans names in "Removed / retired" for forming 🧊 BUY re-entry conditions. Surfaces only when triggered — no row clutter. |
+| `snap.py` | Playwright screenshot harness (desktop/tablet/mobile + per-component closeups). Uses project-local `.venv-playwright/`. |
+| `health.py` | Pure-logic health classifier (fresh / stale / error_transient / error_permanent / no_coverage / missing) — backs the v2.1.0 Data Health surface. |
+| `audit_glyph.py` (under `us-news/`) | Joins every LLM-scored news item to its source headline and flags FALSE-NONE / FALSE-PRIMARY / ROUNDUP / NON-ASCII / DIR-MISMATCH. |
+
 ### Dashboard features (rendered in `dashboard.html`)
 
-- **Regime strip** (US macro + crypto regime + macro halt-window timeline)
-- **Risk Simulator** — interactive form per market (US/KLSE/crypto); 12-gate doctrine check + R:R + heat math + "Create prospectus" command generator
-- **US grid** — RSI · ATR% · vs SMA50/200 · earnings · news · P1 status with click-to-expand thesis + 8-gate breakdown
-- **KLSE grid** — same shape with fundamentals + Bursa-filing watch
-- **Crypto grid** — vs SMA50 · ATR% · funding · regime + expandable thesis
-- **🔭 Discovery panel** — sector rotation heat strip + top-20 P1 + Q+V candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE / ⚡ TECH) with one-click "+ Add to watchlist"
-- **Watchlist Manager** — inline forms generating `wl.py add/remove/update` commands with live preview
-- **Prospectus cards** + per-prospectus action forms (live / update / close with auto-R / dead)
-- **Journal tail**
-- **Live quote buttons** — 🔄 next to each US price (Finnhub real-time), 🔄 for crypto (Binance/CoinGecko), 📊 link for KLSE (klsescreener.com)
-- **Status badge tooltips** explaining every state ("OVERBOUGHT", "DOWNTREND", etc.) with recommended action
+**Action-first layout (v2.0.0 reorder — first screen answers "what's my R:R floor / can I trade right now / what setups are live?"):**
+
+- **Action Rail (sticky top band)** — 4 slots: R:R floor (regime-derived), next macro halt window (red-pulsing 🛑 inside window), live setup chip counts (🟢 P1_READY, 🔥 FADE, 🧊 BUY, 🩸 BTFD, 🚀 STR), and a **DATA chip** (v2.1.0) — `✓ N% healthy` / `⚠ N sources need refresh` / `🛑 N permanent errors`.
+- **Halt-window spotlight** — 2-event spotlight panel with countdown + 🛑 HALT WINDOW ACTIVE pill; full calendar collapses behind expander.
+- **Action Zone** (green-bordered region — see→size is one eye movement):
+  - **⚠ Contrarian Setups** — surfaces only names where retail FADE/BUY flags *align* with technical state (RSI/vs-SMA50 thresholds). The §4 operational rule: sentiment modifies conviction on existing setups; it doesn't generate them.
+  - **🩸 BTFD / 🚀 STR — Price × Volume Setups** — 24h move × volume × RSI tiers (asset-class scaled). Cross-signal boosts/warnings (🧊 BUY on a BTFD-flagged name, halt-window proximity, earnings within 24h) layer inline.
+  - **♻️ Retired re-entry forming** — names in "Removed / retired" that re-enter constructive 🧊 BUY conditions.
+  - **Risk Simulator** — interactive form per market (US/KLSE/crypto); 12-gate doctrine check + R:R + heat math + "Create prospectus" command generator.
+- **Active Prospectuses cards** + per-prospectus action forms (live / update / close with auto-R / dead).
+- **US grid** — RSI · ATR% · vs SMA50/200 · earnings · **Retail/News** (composite badge + news glyph 🟢🔴⚪ with ❗ analyst-action modifier) · **vs SPY relative-strength** · P1 status. Click-to-expand: thesis + 8-gate breakdown + sentiment block + news 72h list + Polymarket markets. Sorted by tradability (P1_READY floats up). Status-coloured left border per row. One-click `→Sim` per row.
+- **KLSE grid** — same shape with fundamentals + Bursa-filing watch + KLSE-specific news (klsescreener.com Chinese-press headlines correctly LLM-attributed since v2.0.1).
+- **Crypto grid** — watchlist-declaration order (not market-cap), vs SMA50 · ATR% · funding · regime + expandable thesis + per-coin Polymarket markets.
+- **🪙 Event Probabilities (Polymarket)** — money-weighted speculator consensus on Fed cuts, recession, inflation, BTC/ETH ranges, geopolitics. Color-coded by extremity; Δ7d arrows when historical snapshot is available.
+- **Regime Read** — collapsed headline (`US Macro: ... · Crypto: ...`); full factor breakdown one click away.
+- **📊 Data Health panel** (v2.1.0) — per-source rows with chip counts (✓/⏰/⚠/🛑/—/?); expandable per-ticker detail with exact error or staleness reason. The thing that makes degraded data visible instead of silently identical to good data.
+- **🔭 Discovery panel** — sector-rotation heat strip + Q+V tagged candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE — ⚡ TECH retired in v1.9.1) with one-click "+ Add to watchlist". Tightened qualification (RSI 38-48, SMA50 slope ≥ 1%/5d).
+- **Portfolio & Calibration panel** — auto-derived heat, sector-correlation warning, expectancy line, MAE/MFE per open position.
+- **Watchlist Manager** — inline forms generating `wl.py add/remove/update` commands with live preview. 🗑️ remove buttons on every row.
+- **Journal tail**.
+- **Account KPI strip** — single-line collapsible (`$20k · Phase 1 · Heat $0/$1,200 · P2 gate · AV news`).
+- **Live quote buttons** — 🔄 next to each US price (Finnhub real-time), 🔄 for crypto (Binance/CoinGecko), 📊 link for KLSE (klsescreener.com).
+- **Status badge tooltips** explaining every state ("OVERBOUGHT", "DOWNTREND", etc.) with recommended action.
+- **Refresh dropdown** — 3 options: ↻ Quick (cache-only, ~10-15s) / 📰 News (fresh AV + Finnhub + klsescreener + crypto RSS, LLM-score new items) / ⟳ Full (sentiment + Polymarket + force-refetch all).
+- **Mobile layout (≤780px / ≤420px)** — Action Rail stacks, halt spotlight reflows, BTFD/Contrarian rows wrap, Risk Simulator becomes single-column, big grids horizontally scroll inside their panels. `theme-color` meta for iOS Safari. Validated via Playwright at 1440×900 / 768×1024 / 390×844.
+- **Viewer-timezone reformat** — every absolute UTC timestamp (Built at, halt event times, fmt_fetched chips) gets rewritten to the viewer's browser timezone via `Intl.DateTimeFormat`. Static HTML stays portable across build host / viewing device.
 
 ### Architectural patterns established
 
@@ -75,10 +114,34 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 - **Daily-only markers** — full screener pass < 18h ago short-circuits the next refresh
 - **Skip-if-fresh subprocess spawn** — `dashboard.py --with-discovery` skips spawning subprocesses when their caches are still warm
 - **Provider fallback chains** — FMP paywalled symbol → yfinance fallback; yfinance NaN-Close bar → Twelve Data fallback
+- **LLM fallback chains** — both the news-glyph scorer AND `sentiment-cache.classify_messages` retry with `gpt-oss-120b:free` on transient errors from Gemma (v2.0.6 closed the parity gap; the fallback constant was defined but never referenced before that release). `_is_transient_error` explicitly enumerates 429/5xx/URLError/timeout so future tweaks can't accidentally widen the trigger.
 - **Live quote endpoints** are browser-side (JS fetches Finnhub/Binance directly), separate from cached daily-close pipeline
 - **Bulk resolution cache** — single directory scan instead of per-ticker file reads (T3-S2)
 - **Parallel I/O** — yfinance per-ticker calls use `ThreadPoolExecutor` (T3-S3)
 - **Watchlist auto-inclusion** in screener universe (T3-E3)
+- **Per-item LLM-score immutability** — news headlines and forum messages are immutable once published, so per-item LLM scores key on `hash(text)` and bank forever. Re-fetches only re-score the truly new items, keeping OpenRouter spend near zero after warmup.
+- **Relevance gate on every LLM scorer** — `relevance: primary|mention|none` with weights 1.0/0.5/0.0 in the aggregate. Off-topic items drop out instead of polluting bull/bear% (solves the SOL ↔ "Microsoft Project Solara" type collision). Same trichotomy in both `news_glyph` and `sentiment_cache.classify_messages`, single `COMPANY_LABELS` source-of-truth.
+- **Engagement-weighted sentiment** — each Reddit post / StockTwits message / HN comment contributes `1 + log1p(engagement)` instead of equal weight. Logarithmic so one viral 50k-upvote post can't drown out the sample. v1.9.0.
+- **Symbol-keyed joins (not zip-by-index)** — the crypto grid + BTFD panel + Action Rail all look up rows by ticker explicitly because `crypto_rows` comes back from CoinGecko in market-cap order and zip-pairing silently mis-pairs candidates. Bug found twice in production (v1.7.0, v2.0.3); `test_data_join.py` now locks the regression.
+- **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
+- **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
+
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 — currently 153 tests, ~3s)
+
+Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
+
+| File | Covers |
+|---|---|
+| `test_r_math.py` | `j.compute_r` single-leg + partial fills + entry-above-stop invariant. Drives every calibration metric the Phase-2 gate depends on. |
+| `test_btfd_str.py` | Full tier table for `_classify_btfd_str_shared` (equity + crypto, all three tiers each direction). Pins the thresholds the Action Rail + BTFD panel both reference. |
+| `test_us_status.py` | Phase 1 status gating across P1_READY, blocked tiers, warnings, edge cases (missing SMA200, macro halt windows). |
+| `test_llm_pcts.py` | Relevance-weighted aggregation. Pins the weight constants (primary 1.0, mention 0.5, none 0.0), engagement-weighting interactions, all-off-topic fallback, backward compat for legacy classifications. |
+| `test_company_label.py` | TICKER→company-name resolution across asset classes. Parametrized over every watchlist ticker so no future watchlist add can land without a label. |
+| `test_data_join.py` | Symbol-keyed join regression test. Documents both correct pattern AND the zip-bug pattern; fails the moment anyone re-introduces it. |
+| `test_classifier_fallback.py` | `_is_transient_error` parametrized across 7 transient codes (429, 5xx, URLError, timeout) + 6 permanent ones. `classify_messages` retries fallback exactly once on 429, doesn't retry on 401, no infinite loop when caller already specifies fallback. |
+| `test_health.py` | State classifier across every state + TTL boundaries + all 5 timestamp-key variants different caches use + sentiment-composite classifier (including exact RGLD failure mode) + summarizer counts + state priority. |
+
+Run: `.venv-playwright/bin/python3 -m pytest --tb=line -q` (the project-local venv since pytest isn't installed system-wide). Auto-runs at session start per `CLAUDE.md`.
 
 ---
 
@@ -127,8 +190,10 @@ Refresh model: **operator-driven** (no cron, no auto-poll). The dashboard's refr
 | Need | macOS | Linux | Windows |
 |---|---|---|---|
 | Python ≥ 3.9 | `brew install python` | `apt install python3 python3-pip` (or distro equiv) | Install from python.org, ensure `python3` is on PATH |
-| Claude Code | Install from `claude.ai/code` | Install from `claude.ai/code` | Use WSL2 (recommended) — most scripts assume Unix shell |
+| Claude Code (or Codex) | Install from `claude.ai/code` | Install from `claude.ai/code` | Use WSL2 (recommended) — most scripts assume Unix shell |
 | pandas + yfinance | `pip3 install pandas yfinance` | same | same |
+| pytest (for the session-bootstrap test gate) | `python3 -m venv .venv-playwright && .venv-playwright/bin/pip install pytest playwright` | same | same |
+| Playwright Chromium (optional, for `snap.py` screenshot harness) | `.venv-playwright/bin/playwright install chromium` | same | same |
 | node (optional) | `brew install node` | distro pkg manager | from nodejs.org |
 
 `node` is only used for the JS syntax check at the end of `dashboard.py`; it's `--check` only, doesn't run anything. Dashboard works without it.
@@ -140,14 +205,18 @@ Refresh model: **operator-driven** (no cron, no auto-poll). The dashboard's refr
 Take the entire `Trading Advisor/` directory and place it under whatever project root the brother prefers (e.g. `~/Documents/Claude/Projects/Trading Advisor/`).
 
 **Files to copy:**
-- `AGENTS.md`
+- `AGENTS.md`, `CLAUDE.md` (CLAUDE auto-loads its bootstrap; AGENTS.md is the cross-agent doctrine)
 - `PROJECT_LOG.md` (this file)
+- `CHANGELOG.md` (version history)
+- `notes/learned.md`, `notes/decisions.md`, `notes/ideas.md` (gotcha log + decision rationale + deferred-features log)
 - `.gitignore`
-- `.claude/skills/` (all 21 skill folders)
+- `.claude/skills/` (all 27 skill folders)
+- `tests/` (153 pytest cases — the session-bootstrap test gate runs these)
 - `rules/` (playbooks + risk doctrine)
 - `journal/README.md` (keep the template; rest can be empty)
 - `watchlist.md` (keep as a template — see Step 5)
-- `portfolio.md` (template)
+- `portfolio.md` (template — auto-regenerated by `portfolio.py` once the journal has entries)
+- `Trading Dashboard.command` (double-click launcher for `server.py`)
 
 **Files to wipe / start empty:**
 - `.claude/cache/` (don't copy — let it regenerate)
@@ -167,17 +236,23 @@ All free tiers. Total time ~15 minutes.
 | 4 | **Twelve Data** | https://twelvedata.com/register | Free, 800/day + 8/min | Sector rotation + screener technicals (bulk historical OHLCV) |
 | 5 | **FMP** (Financial Modeling Prep) | https://site.financialmodelingprep.com/developer/docs → "Get my Free API key" | Free, 250/day | Screener fundamentals (Buffett Q+V) |
 | 6 | **CoinGecko Pro** (optional) | https://www.coingecko.com/en/api/pricing | Free demo or skip | Crypto regime + per-coin data (works without key on free public endpoints; Pro raises rate limits) |
+| 7 | **OpenRouter** (required for sentiment + news LLM scoring) | https://openrouter.ai/keys | Free tier (Gemma 4 31B IT + GPT-OSS 120B both free) | LLM-scoring of retail forum messages, news headline sentiment + relevance, KLSE Chinese-headline attribution |
+| 8 | **Reddit OAuth** (optional, unlocks per-comment upvote weighting) | https://www.reddit.com/prefs/apps → "create app" → script type | Free, 2-4 week review | Engagement-weighted comment scoring on Reddit. Without it, the skill auto-degrades to RSS with uniform comment weight (still works, just less precise). |
 
 For each, drop the key into the matching skill's `.env` file:
 
 ```bash
-echo "FRED_API_KEY=YOUR_KEY"        > .claude/skills/macro-rates/.env
-echo "ALPHAVANTAGE_API_KEY=YOUR_KEY" > .claude/skills/us-news/.env
-echo "FINNHUB_API_KEY=YOUR_KEY"      > .claude/skills/finnhub/.env
-echo "TWELVE_DATA_API_KEY=YOUR_KEY"  > .claude/skills/twelve-data/.env
-echo "FMP_API_KEY=YOUR_KEY"          > .claude/skills/fmp/.env
+echo "FRED_API_KEY=YOUR_KEY"         > .claude/skills/macro-rates/.env
+echo "ALPHAVANTAGE_API_KEY=YOUR_KEY"  > .claude/skills/us-news/.env
+echo "FINNHUB_API_KEY=YOUR_KEY"       > .claude/skills/finnhub/.env
+echo "TWELVE_DATA_API_KEY=YOUR_KEY"   > .claude/skills/twelve-data/.env
+echo "FMP_API_KEY=YOUR_KEY"           > .claude/skills/fmp/.env
+echo "OPENROUTER_API_KEY=YOUR_KEY"    > .claude/skills/sentiment-cache/.env
 # CoinGecko Pro optional:
 # echo "COINGECKO_API_KEY=YOUR_KEY"   > .claude/skills/crypto-coingecko/.env
+# Reddit OAuth optional (auto-detected when present):
+# echo "REDDIT_CLIENT_ID=YOUR_KEY"    > .claude/skills/reddit-sentiment/.env
+# echo "REDDIT_CLIENT_SECRET=YOUR_KEY" >> .claude/skills/reddit-sentiment/.env
 ```
 
 Each skill's `.env.template` shows the expected variable name.
@@ -242,25 +317,55 @@ Subsequent builds with the same `--with-discovery` flag: **~0.15 seconds** when 
 
 ### Step 7: Verify everything works
 
-Open `dashboard.html` in a browser. You should see:
+**First — confirm the test gate is green:**
 
-1. ✅ Header strip with US macro regime + crypto regime + halt-window timeline
-2. ✅ Risk Simulator panel (try picking a ticker, fill in entry/stop/TP1, see gate verdict)
-3. ✅ US grid with technical columns + status badges
-4. ✅ KLSE grid (if any KLSE tickers in watchlist)
-5. ✅ Crypto grid
-6. ✅ 🔭 Discovery panel with sector rotation heat strip + candidates
-7. ✅ Watchlist Manager form (try adding a test ticker via the form)
-8. ✅ Click a 🔄 button next to any US price → live Finnhub quote appears inline
-9. ✅ Click a row chevron → expandable details with full gate breakdown + synthesized thesis
+```bash
+.venv-playwright/bin/python3 -m pytest --tb=line -q
+```
 
-If anything fails: check the corresponding skill's `.env` for the API key, then re-run `dashboard.py`.
+Should report `153 passed in ~3s`. If anything is red, fix the test or capture it in `CHANGELOG.md` `[Unreleased]` before stacking more code on top — every session's bootstrap re-runs this and refuses code changes on a red suite (`CLAUDE.md` contract).
+
+**Then — open `dashboard.html` (or `http://localhost:8787` via `Trading Dashboard.command`) and walk through:**
+
+1. ✅ **Action Rail** at top (sticky) — 4 slots: R:R floor, halt-window status, live setup chip counts, DATA health chip
+2. ✅ **Halt-window spotlight** with countdown to next FOMC/CPI/NFP
+3. ✅ **Action Zone** — Contrarian Setups + BTFD/STR + Risk Simulator clustered together
+4. ✅ Risk Simulator (try picking a ticker, fill in entry/stop/TP1, see 12-gate verdict)
+5. ✅ Active Prospectuses cards (empty on a fresh install — populates as `j.py new` runs)
+6. ✅ US grid with technical columns + Retail/News glyph + relative-strength column + status badges
+7. ✅ KLSE grid (if any KLSE tickers in watchlist)
+8. ✅ Crypto grid (in watchlist-declaration order)
+9. ✅ 🪙 Polymarket Event Probabilities panel
+10. ✅ 📊 Data Health panel — expand a source row to see per-ticker detail
+11. ✅ 🔭 Discovery panel with sector-rotation heat strip + Q+V candidates
+12. ✅ Portfolio & Calibration panel (shows "no open positions" on fresh install)
+13. ✅ Watchlist Manager form
+14. ✅ Click a 🔄 button next to any US price → live Finnhub quote appears inline
+15. ✅ Click a row chevron → expandable details with gate breakdown + thesis + sentiment block + 72h news list + Polymarket markets
+16. ✅ Click `→Sim` on any P1-ready row → Risk Simulator loads ticker + prefills entry / 1.5×ATR stop / 2R TP1 / max size, scrolls itself into view
+17. ✅ Mobile check (open `dashboard.html` on phone via Tailscale or `server.py --lan`) — Action Rail stacks, grids horizontally scroll inside their panels
+
+If a per-source data row shows ⚠ or 🛑 in the Data Health panel, click it for the exact reason (transient 429, stale TTL, missing cache file, permanent auth failure). Then refresh that source via the appropriate CLI or the dashboard refresh dropdown.
+
+If sentiment shows UNKNOWN across many tickers: confirm `OPENROUTER_API_KEY` is set and `sentiment-cache` re-scored after the v2.0.6 fallback was wired in.
 
 ---
 
 ## Day-to-day operator usage
 
 ### Daily routine (~2 min)
+
+**Preferred — local control server (terminal-free):**
+
+Double-click `Trading Dashboard.command` in the project root. Opens `http://localhost:8787` with control bar:
+- **⚡ Quick refresh** — prices/macro/Polymarket (~10-15s, auto-tails the build log)
+- **🔄 Full refresh** — Quick + sentiment + news + news-glyph + discovery (always manual press)
+- **Watchlist** + **Journal** forms wired to `wl.py` / `j.py`
+- **Watcher** start/stop (level alerts + macOS notifications during market hours)
+
+Hybrid policy: when the dashboard is >12h old, a quick refresh fires automatically once per browser session. LLM-scored sentiment never auto-runs (that's deliberate — OpenRouter free-tier 429s during burst scoring).
+
+**CLI fallback (when not using the server):**
 
 ```bash
 # Refresh dashboard with discovery scan (skips fresh caches automatically)
@@ -270,8 +375,24 @@ python3 .claude/skills/dashboard/dashboard.py --with-discovery && open dashboard
 ### When you want fresh news for a watchlist ticker
 
 ```bash
-# Burns 1 of 25 daily AV calls
+# Per-row news-glyph refresh — re-fetches all sources at hourly TTL + LLM-scores new items
+python3 .claude/skills/dashboard/dashboard.py --refresh-news-glyph
+
+# Legacy single-shot news+sentiment refresh (still burns 1 of 25 daily AV calls)
 python3 .claude/skills/dashboard/dashboard.py --refresh-news
+```
+
+### When you want fresh retail sentiment
+
+```bash
+# Force-refresh sentiment for all watchlist tickers (Reddit + StockTwits + HN raw fetch → LLM score)
+python3 .claude/skills/dashboard/dashboard.py --refresh-sentiment
+
+# Or on a single ticker (avoids OpenRouter 429s during burst scoring):
+python3 .claude/skills/sentiment-cache/score_ticker.py NVDA --force
+
+# If Gemma is rate-limited, start on the fallback model directly:
+python3 .claude/skills/sentiment-cache/score_ticker.py NVDA --model openai/gpt-oss-120b:free
 ```
 
 ### When you spot a new candidate
@@ -336,6 +457,24 @@ Finnhub free + Twelve Data free don't cover Bursa Malaysia. Live KLSE quotes req
 
 ### CoinGecko 429s aggressively on bursts
 Especially without a Pro key. Dashboard now has a 30-min cooldown + stale-fallback pattern. The Pro key (free demo tier) helps if rate limits keep biting.
+
+### OpenRouter free-tier 429s on consecutive scores
+`gemma-4-31b-it:free` 429s easily during batched scoring runs. Since v2.0.6, both `news_glyph` and `sentiment_cache.classify_messages` retry with `gpt-oss-120b:free` on transient errors — so a single 429 no longer kills a source. **But if BOTH models are rate-limited simultaneously, the source still fails.** For large batch re-scoring sessions: pass `--model openai/gpt-oss-120b:free` to start on the fallback directly, or space requests ~60s apart.
+
+### KLSE non-English headlines need a company-label in the LLM prompt
+The news-glyph scorer used to send `TICKER: 9431` — semantically opaque to the LLM, no way to know `9431 = Seni Jaya = 盛艺机构`. Chinese-press headlines silently scored `relevance=none`, dropping ~80% of the KLSE news signal. Fixed in v2.0.1 via the `COMPANY_LABELS` map (carries both Latin AND Chinese forms for KLSE). **When adding a new KLSE name to the watchlist, hand-add a `COMPANY_LABELS` entry** for it — can't be auto-derived from the watchlist's English-only thesis line. Same map is now used by `sentiment_cache.classify_messages` (v2.0.4) so HN/Reddit/StockTwits also resolve company names correctly.
+
+### Zip-by-index silently mis-pairs crypto rows
+CoinGecko returns market-cap-ordered data; the watchlist is operator-declaration-ordered. Any code that does `zip(watchlist.crypto, crypto_rows)` will pair the wrong data per ticker — found twice in production (v1.7.0 live-quote button, v2.0.3 BTFD panel). **Always look up crypto rows by ticker explicitly** (`_rows_by_sym = {sym: row for ...}`). `test_data_join.py` locks the regression.
+
+### Mobile expanded-row dropdown inherited table min-width
+The mobile CSS gives the watchlist table `tbody { min-width: 1100px }` so columns stay legible. The expanded-row `<tr>` lives inside that same tbody, so the `<td>` inherited 1100px+ and rendered ~1543px wide on a 390px viewport. Fix: `.exp-details-content` uses `position: sticky; left: 0; max-width: calc(100vw - 24px)` so it visually clamps to viewport regardless of horizontal scroll. v2.0.3.
+
+### Dashboard auto-scroll past the Action Zone (caught by Playwright)
+The Watchlist Manager's add-form auto-focused its ticker input on initial render → Chrome scroll-jacked past the entire action-first layout. Auto-focus now only fires on user-driven tab click. Invisible to code review; caught only by `snap.py`'s fresh-load fold screenshot. **Lesson: visual regression suite earns its keep on UI changes that don't break tests but do break the user experience.** v2.0.0.
+
+### Degraded data renders identically to good data
+v2.0.x found four bugs where the dashboard rendered cleanly but inputs were silently wrong (crypto-zip × 2, KLSE Chinese-headline silent score=none, HN comment-filter dropping coverage, sentiment 429s hiding behind `present:false`). The v2.1.0 Data Health surface explicitly distinguishes fresh / stale / transient-error / permanent-error / no-coverage / missing per source — degraded data now triggers an operator-visible warning instead of silently identical rendering. **When adding a new data source: register it with `health.py`'s TTL table** so the panel can classify it.
 
 ---
 
@@ -514,40 +653,67 @@ def load_universe(include_watchlist=True):
 ```
 Trading Advisor/
 ├── AGENTS.md                      # Doctrine + USER CONFIG (10 sections)
-├── PROJECT_LOG.md                 # This file
-├── .gitignore                     # Excludes .env, dashboard.html, caches
+├── CLAUDE.md                      # Bootstrap shim — pointer to AGENTS.md + auto-bootstrap rules
+├── PROJECT_LOG.md                 # This file — replication/handover guide
+├── CHANGELOG.md                   # Version history (semver MAJOR.MINOR.PATCH since v1.4.1)
+├── .gitignore                     # Excludes .env, dashboard.html, caches, .venv-playwright, .agents/
+├── pytest.ini                     # Test runner config
 ├── watchlist.md                   # Source of truth for tracked tickers
-├── portfolio.md                   # Open positions (manually updated)
+├── portfolio.md                   # Auto-derived from journal by portfolio.py (don't hand-edit)
 ├── dashboard.html                 # Generated artifact (don't edit)
+├── Trading Dashboard.command      # Double-click launcher for server.py
+├── notes/
+│   ├── learned.md                 # Append-only gotcha log, newest first (auto-loaded at session start)
+│   ├── decisions.md               # Why things are the way they are (read on demand)
+│   └── ideas.md                   # Deferred features + investigations (read on demand)
 ├── rules/
 │   ├── playbooks.md               # Named pre-approved setups (P1, P2, P3)
 │   └── risk-doctrine.md           # Operational expansion of AGENTS.md §5-6
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
+├── tests/                         # 153 pytest cases (~3s); session bootstrap runs these
+│   ├── conftest.py
+│   ├── README.md                  # What's covered, what's not, contract for adding regression tests
+│   ├── test_r_math.py
+│   ├── test_btfd_str.py
+│   ├── test_us_status.py
+│   ├── test_llm_pcts.py
+│   ├── test_company_label.py
+│   ├── test_data_join.py
+│   ├── test_classifier_fallback.py
+│   └── test_health.py
+├── .venv-playwright/              # Project-local venv: pytest + Playwright (don't commit)
 └── .claude/
     ├── cache/                     # Runtime data (don't commit)
-    └── skills/                    # 21 skill folders, each with SKILL.md + code
+    └── skills/                    # 27 skill folders, each with SKILL.md + code
         ├── crypto-coingecko/
         ├── crypto-derivatives/
-        ├── crypto-unlocks/        # Agent-only (WebFetch)
+        ├── crypto-unlocks/         # Agent-only (WebFetch)
         ├── crypto-unlocks-cache/
-        ├── dashboard/             # The main render skill
+        ├── dashboard/              # The main render skill + server.py + watcher.py
+        │                           # + setup_queue.py + portfolio.py + mae_mfe.py
+        │                           # + rel_strength.py + retired_scan.py + snap.py + health.py
         ├── finnhub/
         ├── fmp/
+        ├── hn-sentiment/           # NEW (v1.9.0) — third retail-sentiment leg
         ├── hyperliquid-flow/
         ├── journal/
         ├── klse-announcements/
         ├── klse-history/
-        ├── klse-news/             # Agent-only (WebFetch)
-        ├── klse-quote/            # Agent-only (WebFetch)
+        ├── klse-news/              # Agent-only (WebFetch)
+        ├── klse-quote/             # Agent-only (WebFetch)
         ├── klse-refresh/
         ├── macro-calendar/
         ├── macro-rates/
+        ├── polymarket-events/      # NEW (v1.5.0) — macro confluence leg
+        ├── reddit-sentiment/       # NEW (v1.5.0) — raw retail-forum cache
         ├── sector-rotation/
+        ├── sentiment-cache/        # NEW (v1.5.0) — LLM scorer + composite + 🔥/🧊 flags
+        ├── stocktwits-sentiment/   # NEW (v1.5.0) — raw retail-forum cache
         ├── twelve-data/
         ├── us-fundamentals/
-        ├── us-news/
+        ├── us-news/                # + news_glyph.py + audit_glyph.py (v1.8.0)
         ├── us-screener/
         └── watchlist/
 ```
@@ -576,34 +742,49 @@ Trading Advisor/
 When opening this project in Claude Code (or any agent) for the first time:
 
 ```
-"Read PROJECT_LOG.md, AGENTS.md, and CHANGELOG.md. Then check the .env files
-for any missing API keys, run a test dashboard build, and tell me what's
-working and what's missing. Don't make any recommendations until I've
-confirmed the setup is complete."
+"Read AGENTS.md (doctrine + USER CONFIG), PROJECT_LOG.md (this file —
+replication guide), CHANGELOG.md (version history + what's [Unreleased]),
+and notes/learned.md (known gotchas). Then run the test suite
+(.venv-playwright/bin/python3 -m pytest --tb=line -q), check the .env files
+for any missing API keys, try a dashboard build, and tell me what's working
+and what's missing. Don't make any recommendations until I've confirmed
+the setup is complete."
 ```
 
 The agent should:
-1. Read all three context files (doctrine + replication + version history)
-2. List which API keys are configured vs missing
-3. Try a build (will fail gracefully on missing keys)
-4. Report status + ask for missing pieces
+1. Read AGENTS.md + PROJECT_LOG.md + CHANGELOG.md + notes/learned.md (doctrine + replication + version history + gotchas)
+2. Run the pytest suite — green is the gate; if red, flag and stop before code changes
+3. List which API keys are configured vs missing (FRED, AV, Finnhub, TD, FMP, OpenRouter are required; Reddit OAuth + CoinGecko Pro are optional)
+4. Try a build (will fail gracefully on missing keys)
+5. Report status + ask for missing pieces
+
+If your harness uses a different file convention (e.g. Cursor's `.cursorrules`), add a one-paragraph pointer there saying *"The operating doctrine lives in AGENTS.md — read that first."* AGENTS.md is the cross-agent canonical; never duplicate doctrine across pointer files.
 
 ---
 
 ## Versioning + changelog
 
-The project uses a **`MAJOR.MINOR`** scheme tagged in git as `vX.Y`:
+The project uses **`MAJOR.MINOR.PATCH`** semver (adopted v1.4.1) tagged in git as `vX.Y.Z`:
 
 | Bump | When |
 |---|---|
-| **MINOR** (e.g. v1.0 → v1.1) | Backward-compatible changes — bug fixes, optimizations, new columns, threshold tuning, documentation, new data sources for existing functionality |
-| **MAJOR** (e.g. v1.x → v2.0) | Doctrine changes, breaking interface changes, new asset class, phase unlock changes, architectural rewrites |
+| **PATCH** (e.g. v2.1.0 → v2.1.1) | Backward-compatible fix, no new capability, operator's mental model unchanged |
+| **MINOR** (e.g. v2.0.6 → v2.1.0) | New capability (skill, panel, field, command, convention) OR mental model shifts |
+| **MAJOR** (e.g. v1.x → v2.0.0) | Doctrine §1-10 change re-classifying past recommendations, breaking interface, existing setup silently breaks |
 
 **When you make a meaningful change, update `CHANGELOG.md`.** Add entries under `## [Unreleased]` at the top, categorized as `### Added` / `### Changed` / `### Fixed` / `### Removed` / `### Deprecated` / `### Security`. Write entries from the user's perspective, past tense. When ready to release, rename `[Unreleased]` to the new version and create a fresh empty `[Unreleased]` above it.
 
-**Git, GitHub, and remote backups are entirely optional.** The project ships with no automatic git or GitHub operations — nothing pushes anywhere on your behalf. You can use the changelog policy with or without version control. If you do maintain a git repository, you can optionally tag and publish releases (`git tag -a vX.Y` + `git push origin vX.Y` + `gh release create vX.Y` — see `CHANGELOG.md` for the full optional workflow).
+**For MINOR and MAJOR releases additionally, update PROJECT_LOG.md (this file).** Edit sections in place to reflect the new capability — new skill/tool row, new env var, new convention. The changelog owns history; the log describes *now*. PATCH releases don't touch it. Rule added 2026-06-11 after the log drifted from v1.3 to v2.1.0 unmaintained.
 
-Full policy + procedure live in `CHANGELOG.md`. **If you're unsure whether a change is MAJOR or MINOR, ask the operator. Never silently break a published interface or doctrine.**
+**Pre-release checklist** (every PATCH / MINOR / MAJOR):
+1. Run `.venv-playwright/bin/python3 -m pytest --tb=line -q` — green is the floor for shipping (v2.0.5 contract). Never tag against a red suite.
+2. If MINOR or MAJOR: update PROJECT_LOG.md.
+3. Rename `[Unreleased]` to `vX.Y.Z` + ISO date in CHANGELOG.md, open a fresh `[Unreleased]`.
+4. `git tag -a vX.Y.Z -m "Short release summary"` (optional but recommended).
+
+**Git, GitHub, and remote backups are entirely optional.** The project ships with no automatic git or GitHub operations — nothing pushes anywhere on your behalf. You can use the changelog policy with or without version control. If you do maintain a git repository, you can optionally tag and publish releases (`git tag -a vX.Y.Z` + `git push origin vX.Y.Z` + `gh release create vX.Y.Z` — see `CHANGELOG.md` for the full optional workflow).
+
+Full policy + procedure live in `CHANGELOG.md`. **If you're unsure whether a change is PATCH, MINOR, or MAJOR, ask the operator. Never silently break a published interface or doctrine.**
 
 ---
 

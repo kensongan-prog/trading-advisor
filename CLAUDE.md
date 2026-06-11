@@ -44,3 +44,5 @@ Before the operator clears or closes the session **mid-task**:
 ## Before any release (PATCH / MINOR / MAJOR)
 
 Run the test suite. A green commit is the floor for shipping; releases inherit that floor. If you cut a tag against a red suite, you've broken the v2.0.5 contract — fix the tests first or hold the release.
+
+**For MINOR and MAJOR releases additionally:** update `PROJECT_LOG.md` (the replication/handover guide) to reflect the new capability — new skill/tool row, new env var, new convention — before tagging. Edit its sections in place; the changelog owns history, the log describes *now*. PATCH releases don't touch it. (Rule added 2026-06-11 after the log drifted from v1.3 to v2.1.0 unmaintained.)
