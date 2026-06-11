@@ -4,6 +4,28 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
+### 2026-06-11 — One-click refresh from the Data Health rail chip
+
+**Motivation:** Right now the see→fix loop for data degradation is: glance the DATA chip → click it (jumps to panel) → scroll to find the Control widget → click ⚡ Quick or 🔄 Full → wait. That's 3 clicks + scroll. The chip already knows *what's wrong* (transient vs permanent vs stale); it could trigger the right refresh kind directly.
+
+**Sketch:**
+- Make the DATA rail chip click POST to the server's `/api/refresh` endpoint (already exists in `server.py`).
+- Smart dispatch based on what's broken:
+  - Pure stale → ⚡ Quick (prices/macro/Polymarket)
+  - Sentiment transient errors → 🔄 Full (re-runs LLM scoring)
+  - Mix → 🔄 Full
+- Show a small spinner overlay on the chip while the job runs; page auto-reloads on completion (same as the Control widget already does).
+- The panel itself stays clickable to see *what's wrong* before triggering.
+
+**Why deferred:** v2.1.0 was meant to make degradation visible. Making it one-click fixable is the natural next step but worth thinking about carefully:
+- Should the chip refresh on every load if data is unhealthy? (probably no — could trap you in a refresh loop if there's a permanent issue)
+- Should permanent errors disable the chip click? (probably yes — refresh won't fix HTTP 401)
+- Mobile UX — chip is small for a thumb target; might need a different interaction
+
+Small build, ~1-2h. Pairs naturally with the next paper-trade-execution work since both close UX loops.
+
+---
+
 ### 2026-06-10 — Data-health surface on the dashboard — SHIPPED in v2.1.0
 
 Action Rail's 4th slot now shows DATA: `✓/⚠/🛑` summary; the `📊 Data Health` panel under the rail expands per-source breakdowns with chip counts (fresh/stale/transient-error/permanent-error/no-coverage/missing). State classifier in `.claude/skills/dashboard/health.py`, pure-logic tests in `tests/test_health.py` (41 tests). First deployment immediately surfaced 6 sentiment sources still cached in the pre-v2.0.6 HTTP 429 state — exactly the silent degradation this was meant to catch.
