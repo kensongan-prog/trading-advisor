@@ -117,6 +117,22 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.1.1] — 2026-06-11
+
+Three operator-visible PATCH fixes that surfaced from a single fresh dashboard load and cluster around the same theme: the dashboard's freshness contracts (TTLs, auto-refresh, button behavior) need to be consistent and visible, not hidden behind `--force` flags or stale-cache silent renders.
+
+### Changed
+
+- **Data Health panel: source-name layout.** The per-source rows used `justify-content: space-between` on a flex container, which (combined with the chevron `▸` rendered as a `::before` pseudo-element) treated chevron + name + chips as three flex items spread across the full row width. The source name ended up dead-centered with hundreds of px of empty space on either side — looked like a layout bug because it was one. Now: chevron + name sit flush left together, chips are right-aligned via `margin-left: auto`. No content change; pure visual.
+
+- **Server control bar's ⚡ Quick refresh now honors source TTLs instead of force-refetching every cache.** `QUICK_FLAGS` previously included `--force`, which busts every TTL system-wide — meaning the screener (18h TTL), sector rotation (4h), rel-strength (4h), macro-rates, yfinance ticker data, and crypto markets all refetched on every Quick click, even if cached and fresh. That contradicted the v2.0.0 documented behavior ("Rebuilds from caches; only fetches what's expired") and worked against the same TTL-honoring philosophy the new Polymarket auto-refresh establishes. Now: Quick = `--refresh-polymarket` only. Stale and missing caches are still refetched (TTLs do that work); fresh caches are skipped. Polymarket stays explicit because clicking Quick signals operator intent ("I want fresh now") — plus the >18h auto-refresh handles overnight-aged caches regardless. Full refresh keeps `--force` because that button explicitly means "nuke and rebuild." Measured Quick path: ~10.6s on warm caches, matching the v2.0.0 doc claim of "~10-15s."
+
+### Fixed
+
+- **Polymarket cache auto-refreshes on dashboard build when >18h old or missing.** Previously polymarket only refreshed on explicit `--refresh-polymarket` (or via the Quick/Full refresh buttons). That worked fine for the macro/geo categories — those events are long-dated (Fed cuts in 2026, recession-by-EOY, Taiwan-by-EOY). But the crypto category queries hit *daily* price-band events ("Bitcoin price on June 10?") which Polymarket flips to `closed=true` at midnight UTC. An overnight-stale cache silently rendered the Crypto column empty on every morning build, even though the API had fresh "today" events available. Auto-refresh closes that gap. See `notes/learned.md` (2026-06-11) for the full diagnosis.
+
+---
+
 ## [v2.1.0] — 2026-06-11
 
 Data Health surface — MINOR. v2.0.x found four bugs where degraded data looked identical to good data on the dashboard (crypto-zip × 2 panels, KLSE Chinese headlines silently scoring to none, HN comment-filter dropping coverage, sentiment 429s hiding behind `present:false`). Pytest catches code regressions before they ship; the Data Health surface catches data degradation *after* it ships. v2.1.0 closes that gap.

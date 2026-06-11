@@ -37,7 +37,12 @@ J_PY = SKILLS_DIR / "journal" / "j.py"
 
 AUTO_REFRESH_AGE_H = 12  # quick-refresh auto-fires when dashboard.html is older
 
-QUICK_FLAGS = ["--force", "--refresh-polymarket"]
+# Quick honors existing TTLs — fresh caches are skipped, stale/missing ones refetch.
+# Matches the v2.0.0 doc'd behavior ("Rebuilds from caches; only fetches what's expired").
+# Polymarket stays explicit because the operator clicking Quick is signaling "I want
+# fresh now"; it'd also auto-refresh at >18h via dashboard.py's age check.
+# Full keeps --force because the operator is explicitly asking to nuke and rebuild.
+QUICK_FLAGS = ["--refresh-polymarket"]
 FULL_FLAGS = ["--force", "--refresh-polymarket", "--refresh-sentiment",
               "--refresh-news", "--refresh-news-glyph", "--with-discovery"]
 

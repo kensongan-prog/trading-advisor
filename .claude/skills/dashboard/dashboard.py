@@ -1814,13 +1814,13 @@ td.dim { color: var(--dim); }
 .hl-explainer.hl-warn { border-left-color: var(--yellow); }
 .hl-sources { display: flex; flex-direction: column; gap: 4px; }
 .hl-source { background: var(--panel-2); border: 1px solid var(--bord); border-radius: 4px; padding: 4px 8px; }
-.hl-source summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between;
-                     gap: 12px; padding: 4px 0; list-style: none; }
+.hl-source summary { cursor: pointer; display: flex; align-items: center;
+                     gap: 8px; padding: 4px 0; list-style: none; }
 .hl-source summary::-webkit-details-marker { display: none; }
-.hl-source summary::before { content: "▸"; color: var(--dim); margin-right: 6px; font-size: 10px; }
+.hl-source summary::before { content: "▸"; color: var(--dim); font-size: 10px; flex: 0 0 auto; }
 .hl-source[open] summary::before { content: "▾"; }
-.hl-src-name { font-weight: 600; font-size: 12px; color: var(--text); font-family: monospace; }
-.hl-src-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.hl-src-name { font-weight: 600; font-size: 12px; color: var(--text); font-family: monospace; flex: 1 1 auto; }
+.hl-src-chips { display: flex; gap: 4px; flex-wrap: wrap; flex: 0 0 auto; margin-left: auto; }
 .hl-chip { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10.5px;
            font-variant-numeric: tabular-nums; }
 .hl-chip.hl-fresh           { background: rgba(74,222,128,0.12); color: var(--green); }
@@ -6440,8 +6440,28 @@ def main():
     except Exception as e:
         print(f"[portfolio] MAE/MFE snapshot skipped: {e}", flush=True)
 
-    if args.refresh_polymarket:
-        print("[polymarket] refreshing event probabilities…", flush=True)
+    # Auto-refresh Polymarket when cache is >18h old or missing. Polymarket crypto
+    # events are *daily* price-band markets ("Bitcoin price on June 11?") that close
+    # at midnight UTC — unlike macro/geo events which are long-dated. An overnight-old
+    # cache silently shows an empty Crypto column on the Event Probabilities panel.
+    # See notes/learned.md (2026-06-11).
+    _pm_auto = False
+    if not args.refresh_polymarket:
+        try:
+            import time as _time
+            _pm_age_h = None
+            if POLYMARKET_CACHE_FILE.exists():
+                _pm_age_h = (_time.time() - POLYMARKET_CACHE_FILE.stat().st_mtime) / 3600
+            if _pm_age_h is None or _pm_age_h > 18:
+                _pm_auto = True
+                _why = "missing" if _pm_age_h is None else f"{_pm_age_h:.1f}h old (>18h)"
+                print(f"[polymarket] auto-refresh: cache {_why}", flush=True)
+        except Exception as e:
+            print(f"[polymarket] auto-refresh age check failed ({e}); skipping", flush=True)
+
+    if args.refresh_polymarket or _pm_auto:
+        if args.refresh_polymarket:
+            print("[polymarket] refreshing event probabilities…", flush=True)
         subprocess.run(
             [sys.executable, str(PROJECT_ROOT / ".claude/skills/polymarket-events/polymarket_events.py")],
             check=False, capture_output=True,

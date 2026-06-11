@@ -4,6 +4,22 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-11 — Polymarket crypto events expire daily; macro/geo don't — cache needed an age-based auto-refresh
+
+**Symptom:** Dashboard's Event Probabilities panel rendered "no events" under the Crypto · Price column. Macro, Econ, and Geopolitics columns all populated normally. Data Health panel showed `polymarket ✓ 1` (fresh) — the cache wasn't broken, just empty for that category.
+
+**Root cause:** The polymarket cache was 9h old (fetched yesterday afternoon). The crypto queries (`"bitcoin price"`, `"ethereum price"`) hit Polymarket markets that are *daily* price-band events — e.g. "Bitcoin price on June 10?", "Ethereum price on June 10?". These resolve at midnight UTC and Polymarket flips them to `closed=true`. The fetcher's `if ev.get("closed") or not ev.get("active", True): continue` filter at `polymarket_events.py:236-237` correctly dropped them — leaving the crypto category empty. Meanwhile macro_rates ("Fed rate cuts in 2026"), macro_econ ("US recession by end of 2026"), and geopolitics ("China invade Taiwan by EOY") are all **long-dated events** that survive cache age comfortably.
+
+So Polymarket has **categorically different cache half-lives by category** — and the dashboard's "Quick refresh" wasn't pulling polymarket (only the explicit Full refresh or `--refresh-polymarket` was), so an overnight-aged cache silently emptied the Crypto column on every morning rebuild.
+
+**Fix (this commit):** Polymarket now auto-refreshes during `dashboard.py` when its cache is >18h old or missing. Code path lives in `dashboard.py` main() just before `build_dashboard()`, mirroring the existing `--refresh-polymarket` block. Validated: with a fresh cache no refresh fires; with mtime set 20h back, `[polymarket] auto-refresh: cache 20.0h old (>18h)` prints and the fetcher runs. The 18h threshold matches the project's existing "daily marker" pattern used by the screener — assumes one rebuild per day catches the day's crypto events shortly after they're published.
+
+**What I considered but didn't do:** tightening to 12h (would catch same-day flips earlier but doubles fetcher load with no real-world payoff — operator builds in the morning either way). Adding a per-query staleness signal to the fetcher (over-engineered for a 2-line problem).
+
+**Audit recipe:** if Crypto column ever shows "no events" again, check cache age (`stat .claude/cache/polymarket/events.json`) and run `python3 .claude/skills/polymarket-events/polymarket_events.py` to confirm the API has active events today. The auto-refresh should make this a non-issue going forward, but if Polymarket changes the way they resolve daily events, this is the failure mode that surfaces first.
+
+---
+
 ### 2026-06-11 — Data Health surface (v2.1.0) — what to expect on bootstrap
 
 The dashboard now carries a sticky **DATA slot in the Action Rail** (R:R / Entries / Setups / DATA) plus a collapsed **Data Health panel** right below the rail. Each per-source row shows chip counts (✓ fresh, ⏰ stale, ⚠ transient-error, 🛑 permanent-error, — no-coverage, ? missing). Clicking a row expands a per-ticker detail list with the exact error or staleness reason.
