@@ -117,6 +117,28 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.1.0] — 2026-06-11
+
+Data Health surface — MINOR. v2.0.x found four bugs where degraded data looked identical to good data on the dashboard (crypto-zip × 2 panels, KLSE Chinese headlines silently scoring to none, HN comment-filter dropping coverage, sentiment 429s hiding behind `present:false`). Pytest catches code regressions before they ship; the Data Health surface catches data degradation *after* it ships. v2.1.0 closes that gap.
+
+### Added
+
+- **`📊 Data Health` panel and Action Rail slot.** A 4th rail slot (R:R / Entries / Setups / DATA) shows a one-glance summary: `✓ N% healthy` (green), `⚠ N sources need refresh · M stale · N% healthy` (yellow, transient errors present), or `🛑 N permanent error(s)` (red, pulsing). Clicking jumps to the full Data Health panel rendered right below the rail. Each per-source row shows chip counts (✓ fresh, ⏰ stale, ⚠ transient-error, 🛑 permanent-error, — no-coverage, ? missing); expanding the row lists exactly which tickers are in non-healthy states and why ("LLM scoring failed: HTTP 429: …", "165h old (TTL 48h)", "no cache file"). Mobile-aware layout: stacks to single-column on phones with full-width row detail.
+- **`.claude/skills/dashboard/health.py` — health classification module.** Pure-logic functions covering the state taxonomy (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`), per-source TTL defaults, the `is_transient_error()` helper (mirrors `sentiment_cache._is_transient_error`), the sentiment-composite per-source classifier (`classify_sentiment_sources()`), the cache walker (`collect_health()`), and the global summarizer.
+- **`tests/test_health.py` — 41 new tests.** Covers the transient-error classifier across known transient codes (429, 5xx, URLError, timeout) and permanent ones (401-404, parse failures), the file-state classifier across every state including TTL boundaries, all five timestamp-key variants the different caches use (`fetched_at`, `_fetched_at`, `scored_at`, `_generated_at`, `_last_full_pass_at`), the sentiment-composite classifier (including the exact RGLD failure mode), the summarizer counts, and the state-priority ordering. Suite now at **153 tests, ~3s**.
+
+### Validation
+
+First deployment of the surface immediately uncovered:
+- **6 sentiment sources still cached in the pre-v2.0.6 HTTP 429 state** for MRVL / RYDE / RKLB / ETH (the v2.0.6 fix is in, but the cached results from before still need re-scoring — the operator now sees this).
+- 8 crypto news files **missing** entirely.
+- 4 KLSE announcement caches **stale** at 154h.
+- 7 us_news entries **stale** at 131-165h (one full week without refresh).
+
+None of these were operator-visible before. All four categories produced clean-looking dashboard renders that silently hid degraded inputs.
+
+---
+
 ## [v2.0.6] — 2026-06-11
 
 Silent-failure PATCH. The operator noticed RGLD's dashboard row showed "RETAIL SENTIMENT — UNKNOWN (no source data)" despite having 30 StockTwits messages cached. Investigation revealed `sentiment_cache.classify_messages` made a single LLM call and gave up on any failure — the `FALLBACK_MODEL` constant defined at module-top was never actually used. A transient Gemma 429 was silently nuking the entire StockTwits source for any ticker scored during the rate-limit window.

@@ -4,6 +4,22 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-11 — Data Health surface (v2.1.0) — what to expect on bootstrap
+
+The dashboard now carries a sticky **DATA slot in the Action Rail** (R:R / Entries / Setups / DATA) plus a collapsed **Data Health panel** right below the rail. Each per-source row shows chip counts (✓ fresh, ⏰ stale, ⚠ transient-error, 🛑 permanent-error, — no-coverage, ? missing). Clicking a row expands a per-ticker detail list with the exact error or staleness reason.
+
+When investigating a "why is X showing no data" question:
+1. Glance the rail's DATA chip first — yellow `⚠ N sources need refresh` vs red `🛑 permanent errors` vs green `✓ N% healthy` is the one-second answer.
+2. Open `📊 Data Health` and look at the source you care about (sentiment.stocktwits, us_news, etc).
+3. Per-row detail will say e.g. `STALE — 165h old (TTL 48h)` or `ERROR_TRANSIENT — LLM scoring failed: HTTP 429: …`.
+4. Transient errors → run a refresh (it'll go through the v2.0.6 fallback path now). Permanent errors → code/config issue. Stale → just old, refresh if you want fresh.
+
+The health classifier (`.claude/skills/dashboard/health.py`) is pure-logic and tested (`tests/test_health.py` — 41 tests). The TTL defaults are in `health.TTL_HOURS`; if you change a fetcher's expected freshness, update there too.
+
+**What this catches that nothing else does:** v2.0.x found four bugs where degraded data rendered identically to good data. The Data Health surface makes the difference visible. The first deployment immediately surfaced **6 sentiment sources still cached in the pre-v2.0.6 HTTP 429 state** for MRVL/RYDE/RKLB/ETH — the operator had no way to know those tickers' sentiment was broken until the panel showed it.
+
+---
+
 ### 2026-06-10 — Sentiment classifier had no LLM fallback — a single Gemma 429 killed the whole source
 
 **Symptom:** RGLD dashboard row showed "RETAIL SENTIMENT — UNKNOWN (no source data)". But `.claude/cache/stocktwits_sentiment/RGLD.json` clearly had 30 messages. Reading `.claude/cache/sentiment/RGLD.json` revealed the bug: the StockTwits source's `present: false` had `error: "HTTP 429: gemma-4-31b-it:free is temporarily rate-limited upstream"`. Reddit and HN were legitimately absent (no posts/stories for Royal Gold), so the composite went UNKNOWN.

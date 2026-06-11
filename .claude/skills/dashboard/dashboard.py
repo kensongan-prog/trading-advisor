@@ -1766,7 +1766,7 @@ td.dim { color: var(--dim); }
 
 /* ── Action Rail (persistent top band — regime · halt · live setups) ────── */
 .action-rail {
-  display: grid; grid-template-columns: 180px 1fr 1fr; gap: 10px;
+  display: grid; grid-template-columns: 180px 1fr 1fr 1fr; gap: 10px;
   margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
   background: linear-gradient(180deg, #1a1d24, #14171c); border: 1px solid var(--bord);
   position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.35);
@@ -1796,6 +1796,49 @@ td.dim { color: var(--dim); }
 .ar-chip-buy  { color: #93c5fd; }
 .ar-chip-btfd { color: #fda4af; }
 .ar-chip-str  { color: #fcd34d; }
+
+/* Data Health slot in the rail */
+.ar-data.ar-data-ok   { background: rgba(74,222,128,0.08); }
+.ar-data.ar-data-warn { background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.4); }
+.ar-data.ar-data-bad  { background: rgba(248,113,113,0.16); border: 1px solid var(--red);
+                        animation: ar-pulse 2.4s ease-in-out infinite; }
+.ar-data .ar-data-link { color: inherit; text-decoration: none; font-size: 12px; font-weight: 600; }
+.ar-data .ar-data-link:hover { text-decoration: underline; }
+.ar-data.ar-data-ok   .ar-data-link { color: var(--green); }
+.ar-data.ar-data-warn .ar-data-link { color: var(--yellow); }
+.ar-data.ar-data-bad  .ar-data-link { color: var(--red); }
+
+/* Data Health panel — collapsed-by-default per-source dropdowns */
+.hl-explainer { font-size: 11px; padding: 6px 10px; line-height: 1.45; border-radius: 4px;
+                background: var(--panel-2); margin: 4px 0 10px; border-left: 3px solid var(--bord); }
+.hl-explainer.hl-warn { border-left-color: var(--yellow); }
+.hl-sources { display: flex; flex-direction: column; gap: 4px; }
+.hl-source { background: var(--panel-2); border: 1px solid var(--bord); border-radius: 4px; padding: 4px 8px; }
+.hl-source summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+                     gap: 12px; padding: 4px 0; list-style: none; }
+.hl-source summary::-webkit-details-marker { display: none; }
+.hl-source summary::before { content: "▸"; color: var(--dim); margin-right: 6px; font-size: 10px; }
+.hl-source[open] summary::before { content: "▾"; }
+.hl-src-name { font-weight: 600; font-size: 12px; color: var(--text); font-family: monospace; }
+.hl-src-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.hl-chip { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10.5px;
+           font-variant-numeric: tabular-nums; }
+.hl-chip.hl-fresh           { background: rgba(74,222,128,0.12); color: var(--green); }
+.hl-chip.hl-stale           { background: rgba(251,191,36,0.12); color: var(--yellow); }
+.hl-chip.hl-error-transient { background: rgba(251,146,60,0.18); color: #ffb267; }
+.hl-chip.hl-error-permanent { background: rgba(248,113,113,0.18); color: var(--red); }
+.hl-chip.hl-no-coverage     { background: rgba(120,130,150,0.10); color: var(--dim); }
+.hl-chip.hl-missing         { background: rgba(120,130,150,0.18); color: var(--dim); }
+.hl-rows { margin: 6px 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.hl-row { display: grid; grid-template-columns: 100px 130px 1fr; gap: 8px; font-size: 11px;
+          padding: 3px 8px; border-radius: 3px; align-items: center; }
+.hl-row.hl-error-transient { background: rgba(251,146,60,0.08); }
+.hl-row.hl-error-permanent { background: rgba(248,113,113,0.10); }
+.hl-row.hl-stale           { background: rgba(251,191,36,0.06); }
+.hl-row-t { font-family: monospace; font-weight: 600; }
+.hl-row-s { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.hl-row-d { font-size: 10.5px; }
+.hl-more { font-size: 11px; padding: 4px 8px; }
 
 /* ── Halt Spotlight ─────────────────────────────────────────────────────── */
 .halt-spotlight-panel { padding: 12px 16px; }
@@ -1885,6 +1928,10 @@ td.dim { color: var(--dim); }
   /* Action Rail — three slots stack vertically, still sticky.
      The R:R floor + halt status + setup chips all stay visible without scroll. */
   .action-rail { grid-template-columns: 1fr; gap: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  /* Data Health rows reflow to vertical stack on mobile so labels don't squeeze */
+  .hl-row { grid-template-columns: 1fr; gap: 2px; padding: 6px 8px; }
+  .hl-row-s, .hl-row-d { padding-left: 4px; }
+  .hl-source summary { flex-wrap: wrap; gap: 4px; }
   .ar-slot { padding: 6px 8px; }
   .ar-trade .ar-val { font-size: 13px; line-height: 1.25; }
   .ar-val b { font-size: 16px; }
@@ -5622,6 +5669,43 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     _ar_total = _ar_n_p1 + _ar_n_fade + _ar_n_buy + _ar_n_btfd + _ar_n_str
     _ar_count_cls = "ar-count-hot" if _ar_total > 0 else "ar-count-cold"
 
+    # ── Data health (rail slot + standalone panel) ────────────────────────
+    # Why: v2.0.x found four bugs where degraded data looked identical to
+    # good data (silent failures rendered cleanly). Surfaces transient
+    # errors, staleness, and missing caches so the operator sees them.
+    try:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        import health as _health
+    except Exception as _e:
+        _health = None
+        _health_err = str(_e)
+    if _health is not None:
+        _health_records = _health.collect_health(ctx.get("watchlist") or {})
+        _health_summary = _health.summarize(_health_records)
+        _health_grouped = _health.group_by_source(_health_records)
+    else:
+        _health_records, _health_summary, _health_grouped = [], None, {}
+
+    # Rail health slot — cls + chip text reflect the most-actionable state
+    if _health_summary is None:
+        _hl_cls = "ar-data-warn"
+        _hl_text = f"⚠ data-health module unavailable ({_health_err})"
+    elif _health_summary["n_transient"] > 0:
+        _hl_cls = "ar-data-warn"
+        _hl_text = (f"⚠ {_health_summary['n_transient']} source(s) need refresh "
+                    f"· {_health_summary['n_stale']} stale "
+                    f"· {_health_summary['healthy_pct']:.0f}% healthy")
+    elif _health_summary["n_permanent"] > 0:
+        _hl_cls = "ar-data-bad"
+        _hl_text = (f"🛑 {_health_summary['n_permanent']} permanent error(s) "
+                    f"· {_health_summary['healthy_pct']:.0f}% healthy")
+    elif _health_summary["n_stale"] >= 5:
+        _hl_cls = "ar-data-warn"
+        _hl_text = f"⚠ {_health_summary['n_stale']} stale source(s) · {_health_summary['healthy_pct']:.0f}% healthy"
+    else:
+        _hl_cls = "ar-data-ok"
+        _hl_text = f"✓ {_health_summary['healthy_pct']:.0f}% data healthy"
+
     action_rail = f"""
 <div class="action-rail">
   <div class="ar-slot ar-regime {_ar_rr_cls}">
@@ -5643,8 +5727,75 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
       <span class="ar-chip ar-chip-str">🚀 {_ar_n_str} STR</span>
     </span>
   </div>
+  <div class="ar-slot ar-data {_hl_cls}">
+    <span class="ar-key">Data</span>
+    <a href="#data-health-panel" class="ar-val ar-data-link">{_hl_text}</a>
+  </div>
 </div>
 """
+
+    # ── Data Health panel (collapsed by default) ──────────────────────────
+    def render_health_panel():
+        if not _health_summary:
+            return ('<div class="panel"><h2>📊 Data Health</h2>'
+                    f'<div class="dim">health module unavailable: {_health_err}</div></div>')
+        rows = []
+        for src, recs in sorted(_health_grouped.items()):
+            counts = {}
+            for r in recs:
+                counts[r["state"]] = counts.get(r["state"], 0) + 1
+            chips = []
+            for st, sym in [(_health.STATE_FRESH, "✓"),
+                            (_health.STATE_STALE, "⏰"),
+                            (_health.STATE_ERR_TRANSIENT, "⚠"),
+                            (_health.STATE_ERR_PERMANENT, "🛑"),
+                            (_health.STATE_NO_COVERAGE, "—"),
+                            (_health.STATE_MISSING, "?")]:
+                n = counts.get(st, 0)
+                if n:
+                    chips.append(f'<span class="hl-chip hl-{st.replace("_","-")}">{sym} {n}</span>')
+            # Per-source detail: list non-fresh entries only
+            problem_rows = [r for r in recs
+                            if _health.state_priority(r["state"]) >= 1]
+            detail_rows = ""
+            if problem_rows:
+                rows_html = []
+                for r in problem_rows[:15]:  # cap to keep panel sane
+                    t = html.escape(r["ticker"] or "—")
+                    rows_html.append(
+                        f'<div class="hl-row hl-{r["state"].replace("_","-")}">'
+                        f'<span class="hl-row-t">{t}</span>'
+                        f'<span class="hl-row-s">{html.escape(r["state"])}</span>'
+                        f'<span class="hl-row-d dim">{html.escape((r["detail"] or "")[:80])}</span>'
+                        f'</div>')
+                if len(problem_rows) > 15:
+                    rows_html.append(f'<div class="dim hl-more">… and {len(problem_rows)-15} more</div>')
+                detail_rows = '<div class="hl-rows">' + "".join(rows_html) + '</div>'
+            rows.append(
+                f'<details class="hl-source"><summary>'
+                f'<span class="hl-src-name">{html.escape(src)}</span>'
+                f'<span class="hl-src-chips">{" ".join(chips)}</span>'
+                f'</summary>{detail_rows}</details>'
+            )
+        headline_cls = "hl-ok"
+        if _health_summary["n_transient"] > 0 or _health_summary["n_permanent"] > 0:
+            headline_cls = "hl-warn"
+        return (
+            f'<div class="panel" id="data-health-panel">'
+            f'<h2>📊 Data Health <span class="stale">'
+            f'{_health_summary["healthy_pct"]:.0f}% healthy · '
+            f'{_health_summary["counts"][_health.STATE_FRESH]} fresh · '
+            f'{_health_summary["n_stale"]} stale · '
+            f'{_health_summary["n_transient"]} transient · '
+            f'{_health_summary["n_permanent"]} permanent · '
+            f'{_health_summary["counts"][_health.STATE_NO_COVERAGE]} no-coverage · '
+            f'{_health_summary["counts"][_health.STATE_MISSING]} missing'
+            f'</span></h2>'
+            f'<div class="hl-explainer dim {headline_cls}">'
+            f'Per-source breakdown of cache freshness. Transient errors (HTTP 429 / 5xx) will be fixed by a refresh — click the dropdown to see exactly which tickers + sources. Permanent errors need code/config attention. Stale items are real data, just older than the source\'s TTL.'
+            f'</div>'
+            f'<div class="hl-sources">{"".join(rows)}</div>'
+            f'</div>')
 
     html_out = f"""<!doctype html>
 <html lang="en"><head>
@@ -5660,6 +5811,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     <div class="meta">Built <span class="built-at" data-utc="{now_iso_utc}">{now_str}</span> <span class="dim" style="font-size:11px">(server-local fallback: {now_local_str})</span> · {budget_bar} · {refresh_dropdown}</div>
   </div>
   {action_rail}
+  {render_health_panel()}
   {halt_panel}
   <div class="action-zone">
     <div class="az-label">

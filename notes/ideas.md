@@ -4,17 +4,9 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
-### 2026-06-10 — Data-health surface on the dashboard
+### 2026-06-10 — Data-health surface on the dashboard — SHIPPED in v2.1.0
 
-**Motivation:** The v2.0.x patch series uncovered three bugs (crypto-zip × 2 panels, KLSE Chinese headlines, HN comment-filter) that all shared a failure mode: **degraded data looked identical to good data**. Dashboard rendered normally; numbers were just silently wrong or missing. No operator-visible signal.
-
-**Sketch:**
-- A small "Data Health" tile / section that surfaces per-source health: how many tickers have stale cache (>N hours), how many returned `no_coverage`, how many were skipped due to errors, how many off-topic ratios above some threshold.
-- Threshold-fired warnings: e.g. "3 of 4 KLSE codes have no fresh news cache" or "Reddit comment count = 0 across the watchlist for 5+ days".
-- Could be a slot in the Action Rail ("📊 Data: 4/27 stale") or its own collapsed-by-default panel before reference data.
-- Implementation: each cache loader returns a tiny health summary; aggregator at render time.
-
-**Why deferred:** the pytest suite (built in v2.0.5) closes the same class of problem from a different angle — by preventing silent regression. The data-health surface tells you when a fetcher is failing in production; the tests tell you when code is broken before it ships. Tests first; revisit data-health surface after.
+Action Rail's 4th slot now shows DATA: `✓/⚠/🛑` summary; the `📊 Data Health` panel under the rail expands per-source breakdowns with chip counts (fresh/stale/transient-error/permanent-error/no-coverage/missing). State classifier in `.claude/skills/dashboard/health.py`, pure-logic tests in `tests/test_health.py` (41 tests). First deployment immediately surfaced 6 sentiment sources still cached in the pre-v2.0.6 HTTP 429 state — exactly the silent degradation this was meant to catch.
 
 ---
 
