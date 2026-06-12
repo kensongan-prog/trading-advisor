@@ -1839,6 +1839,11 @@ td.dim { color: var(--dim); }
 .hl-row-s { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
 .hl-row-d { font-size: 10.5px; }
 .hl-more { font-size: 11px; padding: 4px 8px; }
+.hl-refresh-btn, .hl-refresh-all-btn { background: rgba(74,144,226,0.15); border: 1px solid rgba(74,144,226,0.3); color: #7ab8f5; border-radius: 4px; font-size: 11px; cursor: pointer; }
+.hl-refresh-btn:hover, .hl-refresh-all-btn:hover { background: rgba(74,144,226,0.3); }
+.hl-refresh-btn { padding: 1px 7px; margin-left: 4px; }
+.hl-refresh-all-btn { padding: 2px 10px; margin-right: 8px; vertical-align: middle; }
+.hl-src-agent { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(120,130,150,0.15); margin-left: 4px; }
 
 /* ── Halt Spotlight ─────────────────────────────────────────────────────── */
 .halt-spotlight-panel { padding: 12px 16px; }
@@ -5686,25 +5691,30 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     else:
         _health_records, _health_summary, _health_grouped = [], None, {}
 
-    # Rail health slot — cls + chip text reflect the most-actionable state
+    # Rail health slot — cls + chip text reflect server-refreshable reality.
+    # n_actionable_server = records fixable by Quick/Full button click
+    # n_actionable_agent  = records that need an agent session (not counted as "refreshable")
     if _health_summary is None:
         _hl_cls = "ar-data-warn"
         _hl_text = f"⚠ data-health module unavailable ({_health_err})"
-    elif _health_summary["n_transient"] > 0:
-        _hl_cls = "ar-data-warn"
-        _hl_text = (f"⚠ {_health_summary['n_transient']} source(s) need refresh "
-                    f"· {_health_summary['n_stale']} stale "
-                    f"· {_health_summary['healthy_pct']:.0f}% healthy")
-    elif _health_summary["n_permanent"] > 0:
-        _hl_cls = "ar-data-bad"
-        _hl_text = (f"🛑 {_health_summary['n_permanent']} permanent error(s) "
-                    f"· {_health_summary['healthy_pct']:.0f}% healthy")
-    elif _health_summary["n_stale"] >= 5:
-        _hl_cls = "ar-data-warn"
-        _hl_text = f"⚠ {_health_summary['n_stale']} stale source(s) · {_health_summary['healthy_pct']:.0f}% healthy"
     else:
-        _hl_cls = "ar-data-ok"
-        _hl_text = f"✓ {_health_summary['healthy_pct']:.0f}% data healthy"
+        _n_server = _health_summary.get("n_actionable_server", 0)
+        _n_agent  = _health_summary.get("n_actionable_agent", 0)
+        if _n_server > 0:
+            _hl_cls = "ar-data-warn"
+            _agent_sfx = f" · {_n_agent} agent-only" if _n_agent else ""
+            _hl_text = (f"⚠ {_n_server} source(s) refreshable{_agent_sfx}"
+                        f" · {_health_summary['healthy_pct']:.0f}% healthy")
+        elif _n_agent > 0:
+            _hl_cls = "ar-data-warn"
+            _hl_text = f"⚠ {_n_agent} source(s) need agent refresh · {_health_summary['healthy_pct']:.0f}% healthy"
+        elif _health_summary["n_permanent"] > 0:
+            _hl_cls = "ar-data-bad"
+            _hl_text = (f"🛑 {_health_summary['n_permanent']} permanent error(s)"
+                        f" · {_health_summary['healthy_pct']:.0f}% healthy")
+        else:
+            _hl_cls = "ar-data-ok"
+            _hl_text = f"✓ {_health_summary['healthy_pct']:.0f}% data healthy"
 
     action_rail = f"""
 <div class="action-rail">
@@ -5739,6 +5749,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
         if not _health_summary:
             return ('<div class="panel"><h2>📊 Data Health</h2>'
                     f'<div class="dim">health module unavailable: {_health_err}</div></div>')
+        _n_server = _health_summary.get("n_actionable_server", 0)
         rows = []
         for src, recs in sorted(_health_grouped.items()):
             counts = {}
@@ -5771,18 +5782,55 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 if len(problem_rows) > 15:
                     rows_html.append(f'<div class="dim hl-more">… and {len(problem_rows)-15} more</div>')
                 detail_rows = '<div class="hl-rows">' + "".join(rows_html) + '</div>'
+            # Determine refresh affordance for this source
+            via = _health.source_refresh_via(src)
+            has_problems = bool(problem_rows)
+            if via is None or via[0] == "agent":
+                # agent-only or unknown: show badge, no button
+                refresh_el = (f'<span class="hl-src-agent dim">agent</span>'
+                              if (via and via[0] == "agent" and has_problems) else '')
+            elif has_problems:
+                # server-refreshable with stale/transient records: show ↻ button
+                src_esc = html.escape(src, quote=True).replace("'", "\\'")
+                refresh_el = (f'<button class="hl-refresh-btn" '
+                              f'onclick="taRefreshSource(\'{src_esc}\')" '
+                              f'title="Refresh {html.escape(src)}">↻</button>')
+            else:
+                refresh_el = ''
             rows.append(
                 f'<details class="hl-source"><summary>'
                 f'<span class="hl-src-name">{html.escape(src)}</span>'
-                f'<span class="hl-src-chips">{" ".join(chips)}</span>'
+                f'<span class="hl-src-chips">{" ".join(chips)}{refresh_el}</span>'
                 f'</summary>{detail_rows}</details>'
             )
         headline_cls = "hl-ok"
         if _health_summary["n_transient"] > 0 or _health_summary["n_permanent"] > 0:
             headline_cls = "hl-warn"
+        # "refresh all stale" button — only when there's something the server can fix
+        refresh_all_btn = ""
+        if _n_server > 0:
+            refresh_all_btn = ('<button class="hl-refresh-all-btn" '
+                               'onclick="taRefresh(\'quick\')" '
+                               'title="Quick refresh: refresh all stale sources">↻ refresh all stale</button> ')
+        # Hidden data element for post-refresh toast JS to diff before/after counts
+        health_data = (
+            f'<div id="ta-health-data" style="display:none" '
+            f'data-stale="{_health_summary["n_stale"]}" '
+            f'data-transient="{_health_summary["n_transient"]}" '
+            f'data-permanent="{_health_summary["n_permanent"]}" '
+            f'data-server="{_health_summary.get("n_actionable_server", 0)}" '
+            f'data-agent="{_health_summary.get("n_actionable_agent", 0)}"></div>'
+        )
+        # Explainer: honest about what refresh can and cannot fix
+        if _health_summary.get("n_actionable_agent", 0) > 0:
+            explainer_extra = (" Agent-only sources (e.g. crypto_unlocks) cannot be refreshed by the server"
+                               " — use a Claude session to update them.")
+        else:
+            explainer_extra = ""
         return (
+            f'{health_data}'
             f'<div class="panel" id="data-health-panel">'
-            f'<h2>📊 Data Health <span class="stale">'
+            f'<h2>📊 Data Health {refresh_all_btn}<span class="stale">'
             f'{_health_summary["healthy_pct"]:.0f}% healthy · '
             f'{_health_summary["counts"][_health.STATE_FRESH]} fresh · '
             f'{_health_summary["n_stale"]} stale · '
@@ -5792,7 +5840,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             f'{_health_summary["counts"][_health.STATE_MISSING]} missing'
             f'</span></h2>'
             f'<div class="hl-explainer dim {headline_cls}">'
-            f'Per-source breakdown of cache freshness. Transient errors (HTTP 429 / 5xx) will be fixed by a refresh — click the dropdown to see exactly which tickers + sources. Permanent errors need code/config attention. Stale items are real data, just older than the source\'s TTL.'
+            f'Per-source cache freshness. Stale and transient errors are fixable by a server refresh'
+            f' — use ↻ per-row or "refresh all stale" above. Permanent errors need code/config attention.'
+            f'{explainer_extra}'
             f'</div>'
             f'<div class="hl-sources">{"".join(rows)}</div>'
             f'</div>')
@@ -5842,6 +5892,15 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   </div>
 </div>
 <script>{JS}</script>
+<script>
+// Fallback for file:// mode (server not running): taRefreshSource defined in
+// CONTROL_BAR when served; here we provide a static-mode stub that shows the CLI.
+if(!window.taRefreshSource){{
+  window.taRefreshSource=function(src){{
+    alert('To refresh '+src+', run:\\npython3 .claude/skills/dashboard/dashboard.py --refresh-stale');
+  }};
+}}
+</script>
 </body></html>
 """
     return html_out
@@ -6377,8 +6436,75 @@ def main():
     ap.add_argument("--refresh-news-glyph", action="store_true", help="Pull fresh per-row news glyph data (Finnhub headlines + yfinance analyst actions for US, klsescreener for KLSE, RSS for crypto). 60-call/min Finnhub free tier — runs on full watchlist.")
     ap.add_argument("--no-news-glyph", action="store_true", help="Skip news-glyph entirely (per-row glyph column shows nothing).")
     ap.add_argument("--with-discovery", action="store_true", help="Also run us-screener + sector-rotation before rendering (TTL-cached, no-op if fresh).")
+    ap.add_argument("--refresh-stale", action="store_true", help="Inspect the Data Health panel, then refresh exactly what is stale/transient/missing using the appropriate flags or CLIs. Agent-only sources are skipped with a note. Sets the appropriate --refresh-* flags automatically.")
     ap.add_argument("--open", action="store_true", help="Open dashboard.html in default browser when done.")
     args = ap.parse_args()
+
+    # Import health module once — used for --refresh-stale and TTL gate alignment.
+    _hm = None
+    try:
+        sys.path.insert(0, str(SCRIPT_DIR))
+        import health as _hm
+    except Exception as _hm_err:
+        print(f"[warning] cannot import health module: {_hm_err}", flush=True)
+
+    if args.refresh_stale:
+        if _hm is None:
+            print("[stale-refresh] health module unavailable; running plain rebuild", flush=True)
+        else:
+            wl = parse_watchlist()
+            try:
+                records = _hm.collect_health(wl)
+            except Exception as _he:
+                print(f"[stale-refresh] health check failed: {_he}; running plain rebuild", flush=True)
+                records = []
+            _refreshable_states = {_hm.STATE_STALE, _hm.STATE_ERR_TRANSIENT, _hm.STATE_MISSING}
+            stale_sources = {}
+            for _r in records:
+                if _r["state"] in _refreshable_states:
+                    stale_sources.setdefault(_r["source"], 0)
+                    stale_sources[_r["source"]] += 1
+            if not stale_sources:
+                print("[stale-refresh] all sources fresh — nothing to do", flush=True)
+            else:
+                flags_needed = set()
+                clis_needed = []
+                agent_sources = []
+                for _src in stale_sources:
+                    _via = _hm.source_refresh_via(_src)
+                    if _via is None:
+                        continue
+                    if _via[0] == "agent":
+                        agent_sources.append(_src)
+                    elif _via[0] == "flag":
+                        flags_needed.add(_via[1])
+                    elif _via[0] == "cli":
+                        _cp = PROJECT_ROOT / _via[1]
+                        if _cp not in clis_needed:
+                            clis_needed.append(_cp)
+                # Flag → argparse attribute is argparse's own dest convention
+                # ("--refresh-news" → "refresh_news"), so derive it rather than
+                # maintaining a second copy of the mapping that can drift from
+                # health.REFRESH_VIA. (Guarded by a test that every REFRESH_VIA
+                # flag resolves to a real argparse dest.)
+                for _f in flags_needed:
+                    _attr = _f.lstrip("-").replace("-", "_")
+                    if hasattr(args, _attr):
+                        setattr(args, _attr, True)
+                n_src = len(stale_sources)
+                flag_str = " ".join(sorted(flags_needed)) or "(none)"
+                cli_str  = " ".join(p.name for p in clis_needed) or "(none)"
+                agent_str = " ".join(agent_sources) or "(none)"
+                print(f"[stale-refresh] {n_src} stale/transient source(s) → "
+                      f"flags: {flag_str} · CLIs: {cli_str} · agent-only (skipped): {agent_str}", flush=True)
+                for _cp in clis_needed:
+                    print(f"[stale-refresh] running {_cp.name}…", flush=True)
+                    _res = subprocess.run([sys.executable, str(_cp)], check=False,
+                                          capture_output=True, text=True)
+                    _status = "ok" if _res.returncode == 0 else f"exit {_res.returncode}"
+                    print(f"[stale-refresh] {_cp.name}: {_status}", flush=True)
+                for _s in agent_sources:
+                    print(f"[stale-refresh] {_s}: agent-refresh only — skipped", flush=True)
 
     if args.with_discovery:
         # Skip subprocess spawn if caches are still fresh — save ~3-5s per refresh.
@@ -6395,8 +6521,9 @@ def main():
         screener_cache = PROJECT_ROOT / ".claude/cache/screener/candidates.json"
         sector_cache   = PROJECT_ROOT / ".claude/cache/sector_rotation/data.json"
 
-        if not args.force and _cache_fresh(screener_cache, 18):
-            print("[discovery] us-screener cache fresh (< 18h); skipping subprocess.", flush=True)
+        _screener_ttl = (_hm.TTL_HOURS.get("screener", 12) if _hm else 12)
+        if not args.force and _cache_fresh(screener_cache, _screener_ttl):
+            print(f"[discovery] us-screener cache fresh (< {_screener_ttl}h); skipping subprocess.", flush=True)
         else:
             screener_cmd = [sys.executable, str(PROJECT_ROOT / ".claude/skills/us-screener/screener.py")]
             if args.force: screener_cmd.append("--refresh")
@@ -6452,9 +6579,10 @@ def main():
             _pm_age_h = None
             if POLYMARKET_CACHE_FILE.exists():
                 _pm_age_h = (_time.time() - POLYMARKET_CACHE_FILE.stat().st_mtime) / 3600
-            if _pm_age_h is None or _pm_age_h > 18:
+            _pm_ttl = (_hm.TTL_HOURS.get("polymarket", 12) if _hm else 12)
+            if _pm_age_h is None or _pm_age_h > _pm_ttl:
                 _pm_auto = True
-                _why = "missing" if _pm_age_h is None else f"{_pm_age_h:.1f}h old (>18h)"
+                _why = "missing" if _pm_age_h is None else f"{_pm_age_h:.1f}h old (>{_pm_ttl}h)"
                 print(f"[polymarket] auto-refresh: cache {_why}", flush=True)
         except Exception as e:
             print(f"[polymarket] auto-refresh age check failed ({e}); skipping", flush=True)

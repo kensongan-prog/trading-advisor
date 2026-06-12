@@ -117,6 +117,39 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.2.0] — 2026-06-12
+
+**Dashboard refresh UX overhaul — stale-driven refresh, per-source buttons, honest chip counts, visible progress.**
+
+Root causes addressed: (1) stale sources with no refresh path in any button, (2) TTL disagreements so refreshing never cleared the stale flag, (3) `taRefresh` silently discarded `{ok:false}` responses when a job was busy, (4) refresh progress invisible outside the collapsed Control widget, (5) no post-refresh outcome report so "still shows stale" read as "button broken."
+
+### Added
+- `health.py` — `REFRESH_VIA` registry: maps every source in `TTL_HOURS` to its refresh method (`flag` / `cli` / `agent`). Covers all 14 sources including KLSE CLIs (klse_announcements, klse_fundamentals) and the agent-only `crypto_unlocks`.
+- `health.py` — `source_refresh_via()`: resolves source names including `sentiment.*` composite sub-sources to their REFRESH_VIA entry.
+- `health.py` — `validate_refresh_source()`: pure function factored out of the server handler; rejects unknown and agent-only sources with a clear message. Used by tests and `/api/refresh-source`.
+- `health.py` `summarize()` — two new output fields: `n_actionable_server` (stale/transient/missing records fixable by a server job) and `n_actionable_agent` (need an agent session). Computed by mapping each record through `REFRESH_VIA`.
+- `dashboard.py` — `--refresh-stale` flag: reads the current Data Health state at build time, maps each stale/transient/missing source to its refresh path, enables the appropriate `--refresh-*` flags, runs CLI tools (klse_announcements.py, klse_refresh.py) via subprocess, then rebuilds. Agent-only sources print a skip notice rather than silently failing. Prints a plan line upfront: `[stale-refresh] N sources → flags: X · CLIs: Y · agent-only (skipped): Z`.
+- `server.py` — `POST /api/refresh-source {source}`: validates the source name via `health.validate_refresh_source`, rejects agent-only sources, starts a `--refresh-stale` job labelled `"refresh <source>"`. Used by the per-source ↻ buttons in the Data Health panel.
+- Data Health panel — per-source ↻ refresh buttons on every server-refreshable row with non-fresh records. Agent-only sources show an "agent" badge instead. "↻ refresh all stale" button in the panel header (calls Quick = `--refresh-stale`).
+- Progress banner (`#ta-banner`): fixed position at top of page, appears within one poll cycle (2s) when any job starts — visible regardless of whether the Control widget is open.
+- Post-refresh outcome toast (`#ta-toast`): `captureHealthState()` stashes health counts in `sessionStorage` before any refresh; after `location.reload()`, diffs pre/post and shows: cleared count, still-stale count, agent-only note, and honest "still flagged — check log" when nothing improved.
+- 23 new tests in `tests/test_health.py`: `TestRefreshVia` (every TTL_HOURS key covered, no orphan extras, flag/cli/agent tuple shapes), `TestValidateRefreshSource`, `TestSummarize.test_server_vs_agent_split`.
+
+### Changed
+- `QUICK_FLAGS` → `["--refresh-stale"]`. Quick now means "refresh exactly what Data Health flags stale, honoring TTLs" — not a hardcoded layer list. Polymarket auto-refresh, screener, KLSE CLIs are all handled by `--refresh-stale` based on current health state.
+- DATA chip text now uses `n_actionable_server` (not `n_transient`) so it counts only what a button click can actually fix. Agent-only stale sources are shown separately as "N agent-only" and not counted in the "refreshable" total.
+- Panel explainer text updated: no longer promises "transient errors will be fixed by a refresh" for all sources; now says "use ↻ per-row or refresh all stale" and notes agent-only sources separately.
+- `taRefresh` reads the POST response: on `ok:false` (job busy), immediately shows "⏳ busy — wait for current job to finish" in `#tactl-msg` instead of silently doing nothing.
+- `taRefresh` and `taRefreshSource` disable both Quick/Full buttons synchronously on click (before the fetch resolves), so there's no lag before visual feedback.
+- Age text in Control header (`data X.Xh old`) now updates live on every 2s poll tick instead of only on page load.
+- Server header comment updated to reflect new Quick semantics.
+
+### Fixed
+- Screener TTL gate mismatch: `--with-discovery` was skipping the screener if cache was `< 18h` old, but `health.py` flags it stale at 12h. Fixed: gate now uses `health.TTL_HOURS['screener']` (12h), so a refresh actually clears the stale flag.
+- Polymarket auto-refresh threshold was 18h but health.py's TTL is 12h. Fixed: now uses `health.TTL_HOURS['polymarket']` (12h).
+
+---
+
 ## [v2.1.1] — 2026-06-11
 
 Three operator-visible PATCH fixes that surfaced from a single fresh dashboard load and cluster around the same theme: the dashboard's freshness contracts (TTLs, auto-refresh, button behavior) need to be consistent and visible, not hidden behind `--force` flags or stale-cache silent renders.

@@ -4,7 +4,7 @@ This file is the **replication guide**. Hand it (along with everything in the pr
 
 **Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
-**Last reconciled with reality: v2.1.0 (2026-06-11).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
+**Last reconciled with reality: v2.2.0 (2026-06-12).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
 
 ---
 
@@ -73,14 +73,14 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 | `rel_strength.py` | 1m return vs SPY + 3m + vs-sector-ETF spreads per US watchlist name. Batched yfinance download (avoids the per-ticker pattern). |
 | `retired_scan.py` | Scans names in "Removed / retired" for forming 🧊 BUY re-entry conditions. Surfaces only when triggered — no row clutter. |
 | `snap.py` | Playwright screenshot harness (desktop/tablet/mobile + per-component closeups). Uses project-local `.venv-playwright/`. |
-| `health.py` | Pure-logic health classifier (fresh / stale / error_transient / error_permanent / no_coverage / missing) — backs the v2.1.0 Data Health surface. |
+| `health.py` | Pure-logic health classifier (fresh / stale / error_transient / error_permanent / no_coverage / missing). `TTL_HOURS` registry + `REFRESH_VIA` registry (maps every source to its refresh method: flag / cli / agent). `validate_refresh_source()` used by `/api/refresh-source`. Backs the v2.1.0+ Data Health surface. |
 | `audit_glyph.py` (under `us-news/`) | Joins every LLM-scored news item to its source headline and flags FALSE-NONE / FALSE-PRIMARY / ROUNDUP / NON-ASCII / DIR-MISMATCH. |
 
 ### Dashboard features (rendered in `dashboard.html`)
 
 **Action-first layout (v2.0.0 reorder — first screen answers "what's my R:R floor / can I trade right now / what setups are live?"):**
 
-- **Action Rail (sticky top band)** — 4 slots: R:R floor (regime-derived), next macro halt window (red-pulsing 🛑 inside window), live setup chip counts (🟢 P1_READY, 🔥 FADE, 🧊 BUY, 🩸 BTFD, 🚀 STR), and a **DATA chip** (v2.1.0) — `✓ N% healthy` / `⚠ N sources need refresh` / `🛑 N permanent errors`.
+- **Action Rail (sticky top band)** — 4 slots: R:R floor (regime-derived), next macro halt window (red-pulsing 🛑 inside window), live setup chip counts (🟢 P1_READY, 🔥 FADE, 🧊 BUY, 🩸 BTFD, 🚀 STR), and a **DATA chip** (v2.1.0+) — `✓ N% healthy` / `⚠ N refreshable · M agent-only` / `🛑 N permanent errors`. Chip count (v2.2.0) shows only server-refreshable sources as "refreshable" — agent-only sources are listed separately so the chip never implies a button click can fix something it can't.
 - **Halt-window spotlight** — 2-event spotlight panel with countdown + 🛑 HALT WINDOW ACTIVE pill; full calendar collapses behind expander.
 - **Action Zone** (green-bordered region — see→size is one eye movement):
   - **⚠ Contrarian Setups** — surfaces only names where retail FADE/BUY flags *align* with technical state (RSI/vs-SMA50 thresholds). The §4 operational rule: sentiment modifies conviction on existing setups; it doesn't generate them.
@@ -94,6 +94,8 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **🪙 Event Probabilities (Polymarket)** — money-weighted speculator consensus on Fed cuts, recession, inflation, BTC/ETH ranges, geopolitics. Color-coded by extremity; Δ7d arrows when historical snapshot is available.
 - **Regime Read** — collapsed headline (`US Macro: ... · Crypto: ...`); full factor breakdown one click away.
 - **📊 Data Health panel** (v2.1.0) — per-source rows with chip counts (✓/⏰/⚠/🛑/—/?); expandable per-ticker detail with exact error or staleness reason. The thing that makes degraded data visible instead of silently identical to good data.
+- **↻ Per-source refresh buttons** (v2.2.0) — each server-refreshable row in the Data Health panel shows a "↻ refresh" button; clicking POSTs to `/api/refresh-source` which runs `--refresh-stale`. Agent-only sources (crypto_unlocks) show an "agent" badge. "↻ refresh all stale" button in panel header.
+- **Progress banner + outcome toast** (v2.2.0) — a slim fixed banner at the top of the page appears while any job runs (not just when Control widget is open). After reload, a toast diffs pre/post health counts: "5 cleared, 2 still stale, 1 agent-only."
 - **🔭 Discovery panel** — sector-rotation heat strip + Q+V tagged candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE — ⚡ TECH retired in v1.9.1) with one-click "+ Add to watchlist". Tightened qualification (RSI 38-48, SMA50 slope ≥ 1%/5d).
 - **Portfolio & Calibration panel** — auto-derived heat, sector-correlation warning, expectancy line, MAE/MFE per open position.
 - **Watchlist Manager** — inline forms generating `wl.py add/remove/update` commands with live preview. 🗑️ remove buttons on every row.
@@ -126,7 +128,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
 - **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
 
-### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 — currently 153 tests, ~3s)
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 — currently 176 tests, ~3s)
 
 Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
 
@@ -211,7 +213,7 @@ Take the entire `Trading Advisor/` directory and place it under whatever project
 - `notes/learned.md`, `notes/decisions.md`, `notes/ideas.md` (gotcha log + decision rationale + deferred-features log)
 - `.gitignore`
 - `.claude/skills/` (all 27 skill folders)
-- `tests/` (153 pytest cases — the session-bootstrap test gate runs these)
+- `tests/` (176 pytest cases — the session-bootstrap test gate runs these)
 - `rules/` (playbooks + risk doctrine)
 - `journal/README.md` (keep the template; rest can be empty)
 - `watchlist.md` (keep as a template — see Step 5)
@@ -474,7 +476,7 @@ The mobile CSS gives the watchlist table `tbody { min-width: 1100px }` so column
 The Watchlist Manager's add-form auto-focused its ticker input on initial render → Chrome scroll-jacked past the entire action-first layout. Auto-focus now only fires on user-driven tab click. Invisible to code review; caught only by `snap.py`'s fresh-load fold screenshot. **Lesson: visual regression suite earns its keep on UI changes that don't break tests but do break the user experience.** v2.0.0.
 
 ### Degraded data renders identically to good data
-v2.0.x found four bugs where the dashboard rendered cleanly but inputs were silently wrong (crypto-zip × 2, KLSE Chinese-headline silent score=none, HN comment-filter dropping coverage, sentiment 429s hiding behind `present:false`). The v2.1.0 Data Health surface explicitly distinguishes fresh / stale / transient-error / permanent-error / no-coverage / missing per source — degraded data now triggers an operator-visible warning instead of silently identical rendering. **When adding a new data source: register it with `health.py`'s TTL table** so the panel can classify it.
+v2.0.x found four bugs where the dashboard rendered cleanly but inputs were silently wrong (crypto-zip × 2, KLSE Chinese-headline silent score=none, HN comment-filter dropping coverage, sentiment 429s hiding behind `present:false`). The v2.1.0 Data Health surface explicitly distinguishes fresh / stale / transient-error / permanent-error / no-coverage / missing per source — degraded data now triggers an operator-visible warning instead of silently identical rendering. **When adding a new data source: register it in `health.py`'s `TTL_HOURS` AND `REFRESH_VIA`** so the panel can classify it and the ↻ buttons know how to fix it. Agent-only sources (no server subprocess can refresh them) should map to `("agent",)` in `REFRESH_VIA`.
 
 ---
 
@@ -672,7 +674,7 @@ Trading Advisor/
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
-├── tests/                         # 153 pytest cases (~3s); session bootstrap runs these
+├── tests/                         # 176 pytest cases (~3s); session bootstrap runs these
 │   ├── conftest.py
 │   ├── README.md                  # What's covered, what's not, contract for adding regression tests
 │   ├── test_r_math.py

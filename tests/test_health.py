@@ -173,6 +173,8 @@ class TestSummarize:
         assert s["total"] == 0
         assert s["healthy_pct"] == 100.0
         assert s["n_actionable"] == 0
+        assert s["n_actionable_server"] == 0
+        assert s["n_actionable_agent"] == 0
 
     def test_mixed_states(self):
         records = [
@@ -191,11 +193,109 @@ class TestSummarize:
         assert s["n_transient"] == 1
         assert s["n_permanent"] == 1
         assert s["n_stale"] == 1
+        # Records have no source → REFRESH_VIA unknown → neither bucket
+        assert s["n_actionable_server"] == 0
+        assert s["n_actionable_agent"] == 0
 
     def test_all_fresh_is_100(self):
         s = health.summarize([{"state": health.STATE_FRESH}] * 5)
         assert s["healthy_pct"] == 100.0
         assert s["n_actionable"] == 0
+
+    def test_server_vs_agent_split(self):
+        records = [
+            {"state": health.STATE_STALE,         "source": "us_news"},           # server (--refresh-news)
+            {"state": health.STATE_ERR_TRANSIENT,  "source": "polymarket"},        # server
+            {"state": health.STATE_MISSING,        "source": "screener"},          # server
+            {"state": health.STATE_STALE,          "source": "crypto_unlocks"},    # agent-only
+            {"state": health.STATE_ERR_PERMANENT,  "source": "us_news"},           # permanent: excluded from split
+            {"state": health.STATE_NO_COVERAGE,    "source": "us_news"},           # no-coverage: excluded
+            {"state": health.STATE_STALE,          "source": "sentiment.reddit"},  # server (via sentiment parent)
+        ]
+        s = health.summarize(records)
+        assert s["n_actionable_server"] == 4   # us_news stale + polymarket + screener + sentiment.reddit
+        assert s["n_actionable_agent"] == 1    # crypto_unlocks
+
+
+class TestRefreshVia:
+    def test_every_ttl_source_has_refresh_via_entry(self):
+        """REFRESH_VIA must cover every key in TTL_HOURS so --refresh-stale
+        can route all flagged sources."""
+        missing = set(health.TTL_HOURS) - set(health.REFRESH_VIA)
+        assert missing == set(), f"TTL_HOURS keys missing from REFRESH_VIA: {missing}"
+
+    def test_no_extra_refresh_via_keys(self):
+        """REFRESH_VIA must not reference sources that don't exist in TTL_HOURS
+        (orphaned entries cause silent mis-routing)."""
+        extras = set(health.REFRESH_VIA) - set(health.TTL_HOURS)
+        assert extras == set(), f"REFRESH_VIA keys not in TTL_HOURS: {extras}"
+
+    @pytest.mark.parametrize("source", [
+        "us_news", "finnhub_news", "klse_news", "crypto_news",
+        "reddit_sentiment", "stocktwits_sentiment", "hn_sentiment", "sentiment",
+        "polymarket", "sector_rotation", "screener",
+    ])
+    def test_flag_sources_return_flag_tuple(self, source):
+        via = health.source_refresh_via(source)
+        assert via is not None
+        assert via[0] == "flag"
+        assert via[1].startswith("--")
+
+    @pytest.mark.parametrize("source", ["klse_announcements", "klse_fundamentals"])
+    def test_cli_sources_return_cli_tuple(self, source):
+        via = health.source_refresh_via(source)
+        assert via is not None
+        assert via[0] == "cli"
+        assert via[1].endswith(".py")
+
+    def test_crypto_unlocks_is_agent_only(self):
+        via = health.source_refresh_via("crypto_unlocks")
+        assert via == ("agent",)
+
+    def test_sentiment_sub_sources_resolve_to_flag(self):
+        for sub in ("sentiment.stocktwits", "sentiment.reddit", "sentiment.hackernews"):
+            via = health.source_refresh_via(sub)
+            assert via == ("flag", "--refresh-sentiment"), f"wrong via for {sub}: {via}"
+
+    def test_unknown_source_returns_none(self):
+        assert health.source_refresh_via("nonexistent_source") is None
+        assert health.source_refresh_via("") is None
+
+    def test_every_flag_is_a_real_dashboard_argparse_flag(self):
+        """dashboard.py --refresh-stale derives the argparse attribute from each
+        REFRESH_VIA flag name (no second mapping table). If a flag in REFRESH_VIA
+        doesn't exist as a dashboard.py argument, --refresh-stale would silently
+        fail to refresh that source. Pin the flag↔argparse contract statically."""
+        from pathlib import Path
+        import re
+        dash = (Path(__file__).resolve().parent.parent
+                / ".claude" / "skills" / "dashboard" / "dashboard.py").read_text()
+        declared = set(re.findall(r'ap\.add_argument\("(--[a-z-]+)"', dash))
+        flags = {via[1] for via in health.REFRESH_VIA.values() if via[0] == "flag"}
+        missing = flags - declared
+        assert missing == set(), f"REFRESH_VIA flags not declared in dashboard.py argparse: {missing}"
+
+
+class TestValidateRefreshSource:
+    def test_valid_flag_source_accepted(self):
+        ok, via = health.validate_refresh_source("us_news")
+        assert ok is True
+        assert via == ("flag", "--refresh-news")
+
+    def test_valid_cli_source_accepted(self):
+        ok, via = health.validate_refresh_source("klse_announcements")
+        assert ok is True
+        assert via[0] == "cli"
+
+    def test_agent_only_rejected(self):
+        ok, msg = health.validate_refresh_source("crypto_unlocks")
+        assert ok is False
+        assert "agent" in msg.lower()
+
+    def test_unknown_source_rejected(self):
+        ok, msg = health.validate_refresh_source("totally_made_up")
+        assert ok is False
+        assert "unknown" in msg.lower()
 
 
 class TestStatePriority:

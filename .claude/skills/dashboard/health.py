@@ -80,6 +80,54 @@ TTL_HOURS = {
 }
 
 
+# ── Refresh routing per source ────────────────────────────────────────────
+# Maps every TTL_HOURS key to its refresh method:
+#   ("flag", "--flag")       — pass this flag to dashboard.py (server can run it)
+#   ("cli",  "relative/path") — run this standalone Python CLI, then rebuild
+#   ("agent",)               — agent/WebFetch skill; a server process cannot do it
+#
+# Note on klse-refresh / klse-announcements: their SKILL.md says "manual by
+# design." A human clicking a refresh button IS manual initiation — one-click
+# does not violate that doctrine; it just saves the operator needing the CLI path.
+REFRESH_VIA = {
+    "us_news":              ("flag", "--refresh-news"),
+    "finnhub_news":         ("flag", "--refresh-news-glyph"),
+    "klse_news":            ("flag", "--refresh-news-glyph"),
+    "crypto_news":          ("flag", "--refresh-news-glyph"),
+    "reddit_sentiment":     ("flag", "--refresh-sentiment"),
+    "stocktwits_sentiment": ("flag", "--refresh-sentiment"),
+    "hn_sentiment":         ("flag", "--refresh-sentiment"),
+    "sentiment":            ("flag", "--refresh-sentiment"),
+    "polymarket":           ("flag", "--refresh-polymarket"),
+    "sector_rotation":      ("flag", "--with-discovery"),
+    "screener":             ("flag", "--with-discovery"),
+    "klse_announcements":   ("cli",  ".claude/skills/klse-announcements/klse_announcements.py"),
+    "klse_fundamentals":    ("cli",  ".claude/skills/klse-refresh/klse_refresh.py"),
+    "crypto_unlocks":       ("agent",),
+}
+
+
+def source_refresh_via(source_name):
+    """Return the REFRESH_VIA entry for source_name, or None if unknown.
+    Handles sentiment.* composite sub-sources (e.g. 'sentiment.stocktwits')."""
+    if source_name in REFRESH_VIA:
+        return REFRESH_VIA[source_name]
+    if source_name and source_name.startswith("sentiment."):
+        return REFRESH_VIA.get("sentiment")
+    return None
+
+
+def validate_refresh_source(source_name):
+    """Validate a source name for the /api/refresh-source endpoint.
+    Returns (True, via_tuple) on success, (False, error_string) on failure."""
+    via = source_refresh_via(source_name)
+    if via is None:
+        return False, f"unknown source {source_name!r} — valid: {sorted(TTL_HOURS)}"
+    if via[0] == "agent":
+        return False, f"{source_name} is agent-refresh only — run a session to refresh it"
+    return True, via
+
+
 # ── Error classification ──────────────────────────────────────────────────
 # Mirror the sentiment_cache._is_transient_error logic so health and the
 # scorer stay in sync on what "transient" means. Tests pin this.
@@ -196,12 +244,26 @@ def classify_sentiment_sources(sentiment_payload, now=None):
 # ── Pure: aggregate state records into a summary ──────────────────────────
 def summarize(state_records):
     """state_records: iterable of dicts with at least {'state': ...}.
-    Returns counts + a few derived signals."""
+    Records that also carry 'source' get split into server-refreshable vs
+    agent-only counts so the UI can show honest actionability."""
     counts = {STATE_FRESH: 0, STATE_STALE: 0, STATE_ERR_TRANSIENT: 0,
               STATE_ERR_PERMANENT: 0, STATE_NO_COVERAGE: 0, STATE_MISSING: 0}
+    # Single pass: tally state counts and split refreshable records by whether
+    # a server job can fix them (vs agent-only). source_refresh_via returns None
+    # for unknown sources (e.g. test records with no 'source'), which fall into
+    # neither bucket.
+    _refreshable = frozenset([STATE_STALE, STATE_ERR_TRANSIENT, STATE_MISSING])
+    n_server = n_agent = 0
     for r in state_records:
         s = r.get("state")
         counts[s] = counts.get(s, 0) + 1
+        if s in _refreshable:
+            via = source_refresh_via(r.get("source") or "")
+            if via is not None:
+                if via[0] == "agent":
+                    n_agent += 1
+                else:
+                    n_server += 1
     total = sum(counts.values())
     healthy = counts[STATE_FRESH] + counts[STATE_NO_COVERAGE]  # both are OK states
     health_pct = (healthy / total * 100) if total else 100.0
@@ -213,6 +275,8 @@ def summarize(state_records):
         "n_transient": counts[STATE_ERR_TRANSIENT],
         "n_permanent": counts[STATE_ERR_PERMANENT],
         "n_stale": counts[STATE_STALE],
+        "n_actionable_server": n_server,   # fixable by Quick/Full button
+        "n_actionable_agent": n_agent,     # need an agent session to fix
     }
 
 

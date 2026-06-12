@@ -7,11 +7,12 @@ Serves dashboard.html at http://localhost:8787 with an injected control bar
 management needs no terminal. All actions shell out to the existing CLIs
 (dashboard.py, wl.py, j.py) — no logic is duplicated here.
 
-Refresh policy (hybrid, per operator decision 2026-06-10):
-  - QUICK refresh (prices/macro/Polymarket) may auto-fire on page load when
-    dashboard.html is older than 12h.
-  - FULL refresh (LLM-scored sentiment + news glyph + discovery) is always a
-    manual button press — free-tier LLM scoring can 429 and should be watched.
+Refresh policy:
+  - QUICK refresh runs --refresh-stale: checks the Data Health panel state and
+    refreshes exactly what is stale/transient/missing, honoring TTLs. Fires
+    automatically on page load when dashboard.html is older than 12h.
+  - FULL refresh (LLM-scored sentiment + news + discovery) is always a manual
+    button press — free-tier LLM scoring can 429 and should be watched.
 
 Usage:
   python3 server.py [--port 8787] [--open]
@@ -37,14 +38,21 @@ J_PY = SKILLS_DIR / "journal" / "j.py"
 
 AUTO_REFRESH_AGE_H = 12  # quick-refresh auto-fires when dashboard.html is older
 
-# Quick honors existing TTLs — fresh caches are skipped, stale/missing ones refetch.
-# Matches the v2.0.0 doc'd behavior ("Rebuilds from caches; only fetches what's expired").
-# Polymarket stays explicit because the operator clicking Quick is signaling "I want
-# fresh now"; it'd also auto-refresh at >18h via dashboard.py's age check.
-# Full keeps --force because the operator is explicitly asking to nuke and rebuild.
-QUICK_FLAGS = ["--refresh-polymarket"]
+# Quick = stale-driven: inspects the Data Health panel state at build time and
+# refreshes exactly what is flagged (stale/transient/missing), skipping fresh
+# sources. Polymarket, screener, KLSE CLIs, sentiment — all handled automatically
+# based on what is actually stale. No hardcoded layer list needed.
+QUICK_FLAGS = ["--refresh-stale"]
 FULL_FLAGS = ["--force", "--refresh-polymarket", "--refresh-sentiment",
               "--refresh-news", "--refresh-news-glyph", "--with-discovery"]
+
+# Import health module for /api/refresh-source validation.
+try:
+    import sys as _sys
+    _sys.path.insert(0, str(SCRIPT_DIR))
+    import health as _health_mod
+except Exception:
+    _health_mod = None
 
 
 # ----------------------------------------------------------------- job runner
@@ -185,17 +193,21 @@ CONTROL_BAR = """
 #tactl pre{background:#0b0d10;border:1px solid #2a2d34;border-radius:6px;padding:6px;max-height:160px;overflow:auto;font-size:10.5px;white-space:pre-wrap;margin:6px 0 0}
 #tactl .stat{font-size:11px;color:#8a8f98;margin-top:4px}
 #tactl .err{color:#ff7b7b}#tactl .ok{color:#7bd88f}
+#ta-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#2b3140;color:#ddd;font:12px/1.4 -apple-system,system-ui,sans-serif;padding:6px 14px;border-bottom:1px solid #444;text-align:center}
+#ta-toast{position:fixed;bottom:80px;right:14px;z-index:99997;background:#1d2027;border:1px solid #444;border-radius:8px;padding:10px 14px;color:#ddd;font:12px/1.5 -apple-system,system-ui,sans-serif;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.5);display:none}
 </style>
+<div id="ta-banner"></div>
+<div id="ta-toast"></div>
 <div id="tactl"><div class="panel">
 <header onclick="document.getElementById('tactl').classList.toggle('open')">
 ⚙️ <b>Control</b> <span id="tactl-state"></span><span class="age" id="tactl-age"></span>
 </header>
 <div class="body">
 <div class="row">
-<button id="btn-quick" onclick="taRefresh('quick')">⚡ Quick refresh</button>
-<button id="btn-full" onclick="taRefresh('full')" title="Sentiment LLM scoring + news + discovery — slow, watched manually by design">🔄 Full refresh</button>
+<button id="btn-quick" onclick="taRefresh('quick')" title="Refresh only stale/transient sources — leaves fresh caches untouched">⚡ Quick refresh</button>
+<button id="btn-full" onclick="taRefresh('full')" title="Force-rebuild everything: LLM sentiment, news, discovery — slow, watch manually">🔄 Full refresh</button>
 </div>
-<div class="stat">Quick = prices/macro/Polymarket. Full = + LLM sentiment, news, discovery (minutes).</div>
+<div class="stat">Quick = refresh exactly what Data Health flags stale. Full = force-rebuild all layers (minutes).</div>
 <details><summary>🔔 Watcher (level alerts)</summary>
 <div class="row"><button id="w-start" onclick="taWatcher('start')">▶ Start</button><button id="w-stop" onclick="taWatcher('stop')">■ Stop</button><button onclick="taWatcher('scan')">Scan now</button></div>
 <div class="stat" id="w-state">checking…</div>
@@ -224,11 +236,13 @@ CONTROL_BAR = """
 const $=id=>document.getElementById(id);
 const builtAt = __BUILT_AT__; // epoch seconds of dashboard.html mtime
 function fmtAge(){const h=(Date.now()/1000-builtAt)/3600;return h<1?Math.round(h*60)+'m old':h.toFixed(1)+'h old';}
-$('tactl-age').textContent='data '+fmtAge();
+$('tactl-age').textContent='data '+fmtAge(); // first paint; poll() keeps it live every 2s
 let wasRunning=false;
 async function poll(){
   try{
     const s=await (await fetch('/api/status')).json();
+    // Live age update every poll cycle
+    $('tactl-age').textContent='data '+fmtAge();
     if(s.watcher){
       const w=$('w-state');
       if(w) w.innerHTML = s.watcher.running
@@ -236,6 +250,7 @@ async function poll(){
         : '<span class="dim">○ stopped</span>';
     }
     const j=s.job;
+    const banner=$('ta-banner');
     if(j.state==='running'){
       wasRunning=true;
       $('tactl-state').textContent='⏳ '+j.label;
@@ -243,10 +258,15 @@ async function poll(){
       $('tactl-log').textContent=j.log_tail.join('\\n');
       $('tactl-log').scrollTop=1e9;
       $('btn-quick').disabled=$('btn-full').disabled=true;
+      if(banner){banner.style.display='block';banner.textContent='⏳ '+j.label+' running — see Control ↘';}
     } else {
       $('btn-quick').disabled=$('btn-full').disabled=false;
-      if(wasRunning){ // job just finished → reload to show fresh dashboard
-        if(j.state==='done'){location.reload();return;}
+      if(banner) banner.style.display='none';
+      if(wasRunning){
+        if(j.state==='done'){
+          // Stash pre-reload state already captured; now reload to show fresh page
+          location.reload();return;
+        }
         $('tactl-state').innerHTML='<span class="err">✗ '+j.label+' failed</span>';
         $('tactl-log').textContent=j.log_tail.join('\\n');
         wasRunning=false;
@@ -256,9 +276,36 @@ async function poll(){
   setTimeout(poll,2000);
 }
 poll();
+// Capture pre-refresh health state so the post-reload toast can diff it
+function captureHealthState(){
+  const hd=$('ta-health-data');
+  if(!hd) return;
+  sessionStorage.setItem('ta_pre_refresh',JSON.stringify({
+    stale:+hd.dataset.stale, transient:+hd.dataset.transient,
+    permanent:+hd.dataset.permanent, server:+hd.dataset.server, agent:+hd.dataset.agent
+  }));
+}
 window.taRefresh=async function(mode){
+  captureHealthState();
   document.getElementById('tactl').classList.add('open');
-  await fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
+  $('btn-quick').disabled=$('btn-full').disabled=true; // disable immediately; re-enabled by poll
+  const r=await (await fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})})).json();
+  if(!r.ok){
+    $('tactl-msg').innerHTML='<span class="err">⏳ busy — wait for current job to finish</span>';
+    $('tactl-log').style.display='block';
+    // buttons re-enabled by next poll since no job started
+  }
+};
+// Per-source refresh button handler (injected by dashboard.py render_health_panel)
+window.taRefreshSource=async function(source){
+  captureHealthState();
+  document.getElementById('tactl').classList.add('open');
+  $('btn-quick').disabled=$('btn-full').disabled=true;
+  const r=await (await fetch('/api/refresh-source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source})})).json();
+  if(!r.ok){
+    $('tactl-msg').innerHTML='<span class="err">'+r.output+'</span>';
+    $('btn-quick').disabled=$('btn-full').disabled=false;
+  }
 };
 window.taWatcher=async function(action){
   const r=await (await fetch('/api/watcher',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})})).json();
@@ -304,10 +351,46 @@ function showResult(r){
   $('tactl-log').style.display='block';$('tactl-log').textContent=r.output;
   $('tactl-msg').innerHTML=r.ok?'<span class="ok">✓ done — quick rebuild queued</span>':'<span class="err">✗ failed (rc='+r.rc+')</span>';
 }
+// Post-refresh outcome toast: diff pre vs post health counts
+function showRefreshToast(before, after){
+  const tot_b=before.server+before.agent, tot_a=after.server+after.agent;
+  let msg, cls='ok';
+  if(tot_b===0){
+    msg='✓ Everything was already fresh — nothing to refresh.';
+  } else if(tot_a < tot_b){
+    const fixed=tot_b-tot_a;
+    msg='✓ Refresh done — '+fixed+' source(s) cleared';
+    if(after.agent>0) msg+=' · '+after.agent+' still need agent refresh';
+    if(after.server>0) msg+=' · '+after.server+' still stale (TTL or rate-limited)';
+  } else {
+    cls='err';
+    msg='⚠ Refresh finished but '+tot_a+' source(s) still flagged — see Control log for details';
+    if(after.agent>0) msg+='. '+after.agent+' are agent-only.';
+  }
+  const toast=$('ta-toast');
+  if(!toast) return;
+  toast.innerHTML='<span class="'+cls+'">'+msg+'</span> <span style="color:#555;cursor:pointer;float:right" onclick="this.parentElement.style.display=\'none\'">✕</span>';
+  toast.style.display='block';
+  setTimeout(function(){toast.style.display='none';}, 9000);
+}
+// On page load: check if we just reloaded after a refresh and show toast
+(function checkPostRefreshToast(){
+  const pre=sessionStorage.getItem('ta_pre_refresh');
+  const hd=$('ta-health-data');
+  if(!pre || !hd) return;
+  sessionStorage.removeItem('ta_pre_refresh');
+  try{
+    const before=JSON.parse(pre);
+    const after={stale:+hd.dataset.stale, transient:+hd.dataset.transient,
+                 permanent:+hd.dataset.permanent, server:+hd.dataset.server, agent:+hd.dataset.agent};
+    showRefreshToast(before, after);
+  }catch(e){}
+})();
 // hybrid auto-refresh: quick-only, once per browser session, when stale
 const ageH=(Date.now()/1000-builtAt)/3600;
 if(ageH>__AUTO_AGE__ && !sessionStorage.getItem('ta_auto_refreshed')){
   sessionStorage.setItem('ta_auto_refreshed','1');
+  captureHealthState();
   document.getElementById('tactl').classList.add('open');
   $('tactl-msg').textContent='data >'+__AUTO_AGE__+'h old — auto quick refresh started';
   taRefresh('quick');
@@ -385,6 +468,23 @@ class Handler(BaseHTTPRequestHandler):
             flags = FULL_FLAGS if body.get("mode") == "full" else QUICK_FLAGS
             label = "full refresh" if body.get("mode") == "full" else "quick refresh"
             started = JOB.start(label, [sys.executable, str(DASHBOARD_PY)] + flags)
+            self._json({"ok": started, "output": "" if started else "a job is already running"})
+        elif self.path == "/api/refresh-source":
+            source = body.get("source", "").strip()
+            if not source:
+                self._json({"ok": False, "output": "source required"})
+                return
+            if _health_mod is None:
+                self._json({"ok": False, "output": "health module unavailable"})
+                return
+            ok, result = _health_mod.validate_refresh_source(source)
+            if not ok:
+                self._json({"ok": False, "output": result})
+                return
+            # Use --refresh-stale so the build targets exactly what's stale.
+            # Label includes the source name so the banner/log is informative.
+            label = f"refresh {source}"
+            started = JOB.start(label, [sys.executable, str(DASHBOARD_PY), "--refresh-stale"])
             self._json({"ok": started, "output": "" if started else "a job is already running"})
         elif self.path == "/api/watchlist":
             self._json(self._watchlist(body))

@@ -44,25 +44,21 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
-### 2026-06-11 — One-click refresh from the Data Health rail chip
+### 2026-06-11 — One-click refresh from the Data Health rail chip — SHIPPED in v2.2.0
 
 **Motivation:** Right now the see→fix loop for data degradation is: glance the DATA chip → click it (jumps to panel) → scroll to find the Control widget → click ⚡ Quick or 🔄 Full → wait. That's 3 clicks + scroll. The chip already knows *what's wrong* (transient vs permanent vs stale); it could trigger the right refresh kind directly.
 
-**Sketch:**
-- Make the DATA rail chip click POST to the server's `/api/refresh` endpoint (already exists in `server.py`).
-- Smart dispatch based on what's broken:
-  - Pure stale → ⚡ Quick (prices/macro/Polymarket)
-  - Sentiment transient errors → 🔄 Full (re-runs LLM scoring)
-  - Mix → 🔄 Full
-- Show a small spinner overlay on the chip while the job runs; page auto-reloads on completion (same as the Control widget already does).
-- The panel itself stays clickable to see *what's wrong* before triggering.
-
-**Why deferred:** v2.1.0 was meant to make degradation visible. Making it one-click fixable is the natural next step but worth thinking about carefully:
-- Should the chip refresh on every load if data is unhealthy? (probably no — could trap you in a refresh loop if there's a permanent issue)
-- Should permanent errors disable the chip click? (probably yes — refresh won't fix HTTP 401)
-- Mobile UX — chip is small for a thumb target; might need a different interaction
-
-Small build, ~1-2h. Pairs naturally with the next paper-trade-execution work since both close UX loops.
+**Outcome (v2.2.0):**
+- `--refresh-stale` mode added to dashboard.py: reads the Data Health state, maps each stale/transient source to its REFRESH_VIA entry (flag / CLI / agent), enables the right flags, runs CLI tools first, then rebuilds.
+- Per-source ↻ buttons in the Data Health panel for server-refreshable sources. Agent-only sources (crypto_unlocks) show an "agent" badge instead.
+- "↻ refresh all stale" button in the panel header (calls Quick = --refresh-stale).
+- Quick button now = --refresh-stale. DATA chip now counts only server-refreshable sources in "N refreshable" so it doesn't lie about things only an agent can fix.
+- Fixed silent no-op: taRefresh now reads the response; when a job is busy, shows a message immediately instead of doing nothing.
+- Progress banner at top of page while any job runs (not just when Control widget is open).
+- Age text updates live every 2s poll cycle.
+- Post-refresh toast: after reload, compares pre/post health counts and shows a diff ("5 cleared, 2 still stale").
+- /api/refresh-source endpoint added (validates via health.validate_refresh_source, routes to --refresh-stale job).
+- REFRESH_VIA registry in health.py maps every TTL_HOURS source to its refresh method. TTL gate mismatches fixed (screener: 18h→12h, polymarket: 18h→12h).
 
 ---
 

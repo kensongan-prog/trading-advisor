@@ -4,6 +4,27 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-12 — Dashboard "refresh does nothing" cluster: three structural root causes
+
+**Symptom:** Operator clicks ⚡ Quick or 🔄 Full — stale warnings persist, or nothing visible happens.
+
+**Root cause #1: sources with no refresh path in any button.** `klse_announcements` and `klse_fundamentals` appear in the Data Health panel as stale but are refreshed only by standalone CLIs (`.claude/skills/klse-announcements/klse_announcements.py`, `.claude/skills/klse-refresh/klse_refresh.py`) — no dashboard button ever ran those. `crypto_unlocks` is agent/WebFetch only; no subprocess can refresh it. The Data Health chip was counting all of these in "N sources need refresh," implying a button click would fix them.
+
+**Root cause #2: TTL disagreements so a refresh never cleared the stale flag.** `health.py` marks screener stale after 12h, but `dashboard.py --with-discovery` had a gate that skipped the screener unless the cache was `> 18h`. Between 12h and 18h: chip says stale, button runs, gate says "cache still fresh (< 18h)" → screener NOT re-run → rebuild uses old data → chip still says stale. Same for polymarket (health TTL=12h, auto-refresh threshold=18h).
+
+**Root cause #3: taRefresh silently discarded ok:false.** `server.py`'s `taRefresh` did `await fetch(...)` and threw away the response. When a job was already running (e.g. the auto-quick that fires on page load), the server replied `{ok:false, output:"a job is already running"}` — and the UI showed nothing. Operator clicks into void repeatedly.
+
+**Fix (v2.2.0):**
+- `health.py` `REFRESH_VIA` maps every source to `("flag", "--flag")` / `("cli", "path.py")` / `("agent",)`.
+- `health.py` `summarize()` splits stale counts into `n_actionable_server` / `n_actionable_agent`. DATA chip uses `n_actionable_server` — no longer lies about what a button can fix.
+- `dashboard.py --refresh-stale`: reads health state, enables exactly the needed flags, runs CLIs.
+- TTL gates fixed: screener gate → `health.TTL_HOURS['screener']` (12h), polymarket → `health.TTL_HOURS['polymarket']` (12h).
+- `taRefresh` reads response; on `ok:false`, shows "⏳ busy" immediately. Per-source ↻ buttons added. Progress banner at page top. Post-reload outcome toast diffs pre/post counts.
+
+**Implication for new data sources:** Register in both `TTL_HOURS` AND `REFRESH_VIA`. A source in TTL_HOURS but not REFRESH_VIA would appear stale with no refresh path — invisible to `--refresh-stale`.
+
+---
+
 ### 2026-06-11 — Polymarket crypto events expire daily; macro/geo don't — cache needed an age-based auto-refresh
 
 **Symptom:** Dashboard's Event Probabilities panel rendered "no events" under the Crypto · Price column. Macro, Econ, and Geopolitics columns all populated normally. Data Health panel showed `polymarket ✓ 1` (fresh) — the cache wasn't broken, just empty for that category.
