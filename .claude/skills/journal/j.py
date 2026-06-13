@@ -813,7 +813,7 @@ def main():
     pn.add_argument("--regime", help="Current macro regime label (e.g. CAUTIOUS)")
     pn.add_argument("--rr-floor", help="Active R:R floor (e.g. 2.0R)")
     pn.add_argument("--rsi", help="RSI(14) for snapshot table")
-    pn.add_argument("--atr-pct", help="ATR% for snapshot table")
+    pn.add_argument("--atr-pct", help="ATR%% for snapshot table")
     pn.add_argument("--overwrite", action="store_true", help="Replace if file already exists today")
     pn.set_defaults(func=cmd_new)
 

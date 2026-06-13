@@ -109,6 +109,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Changed
 
 ### Fixed
+- `j.py new --help` no longer crashes with `TypeError: must be real number, not dict`. The `--atr-pct` help string had a literal `%` ("ATR% …") that argparse tried to %-format; escaped to `%%`. The command itself was unaffected — only `--help` output. Found during the v2.3.0 end-to-end sweep; regression test (`tests/test_journal_cli.py`) now asserts every j.py subcommand's `--help` exits cleanly.
 
 ### Removed
 
