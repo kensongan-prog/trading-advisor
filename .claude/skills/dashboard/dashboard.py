@@ -1553,6 +1553,16 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
   text-transform: uppercase; letter-spacing: 0.06em; }
 .panel .stale { color: var(--dim); font-size: 11px; float: right; font-weight: normal;
   text-transform: none; letter-spacing: normal; }
+/* Collapsible sections — click a panel's H2 to fold it (state persists in
+   localStorage). Marker only on top-level div panels; the Regime <details>
+   panel keeps its own native ▸/▾ (its h2 sits inside <summary>, not a direct
+   child, so this selector skips it). */
+.panel > h2 { cursor: pointer; user-select: none; }
+.panel > h2::before { content: "▾"; color: var(--dim); font-size: 10px;
+  margin-right: 7px; display: inline-block; vertical-align: middle; }
+.panel.collapsed > h2::before { content: "▸"; }
+.panel.collapsed > h2 { margin-bottom: 0; }
+.panel.collapsed > *:not(h2) { display: none; }
 .regime-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .regime-box { background: var(--panel-2); padding: 12px; border-radius: 6px; border: 1px solid var(--bord); }
 .regime-box .title { color: var(--dim); font-size: 11px; text-transform: uppercase; }
@@ -3412,6 +3422,36 @@ document.querySelectorAll('table').forEach(t => {
     });
   });
   renderForm('add');  // default tab — no autofocus, no scroll-jack
+})();
+
+// ── Collapsible sections ───────────────────────────────────────────────────
+// Click any top-level panel's H2 to fold/unfold it. State persists in
+// localStorage keyed by the panel's title text (the leading text node, which is
+// stable across rebuilds — unlike the live ".stale" subtitle). Works in static
+// file:// mode (no server needed). The Regime <details> panel is untouched: its
+// h2 is inside <summary>, so ".panel > h2" doesn't select it.
+(function(){
+  function panelTitle(h2){
+    for (const n of h2.childNodes){
+      if (n.nodeType === 3 && n.textContent.trim()) return n.textContent.trim();
+    }
+    return (h2.textContent || '').trim().slice(0, 30);
+  }
+  document.querySelectorAll('.panel > h2').forEach(function(h2){
+    const panel = h2.parentElement;
+    const key = 'ta_collapse:' + panelTitle(h2);
+    try { if (localStorage.getItem(key) === '1') panel.classList.add('collapsed'); } catch(_){}
+    h2.addEventListener('click', function(e){
+      // Don't toggle when an interactive control inside the header was clicked
+      // (e.g. Data Health's "refresh all stale" button).
+      if (e.target.closest('button, a, input, select, textarea, label')) return;
+      const nowCollapsed = panel.classList.toggle('collapsed');
+      try {
+        if (nowCollapsed) localStorage.setItem(key, '1');
+        else localStorage.removeItem(key);
+      } catch(_){}
+    });
+  });
 })();
 """
 

@@ -104,6 +104,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
+- **Collapsible dashboard sections.** Click any panel's heading to fold/unfold that section; the chevron (▾/▸) shows state. Fold state persists per-panel in `localStorage` (keyed by panel title, stable across rebuilds) and works in static `file://` mode. Clicking a control inside a header (e.g. Data Health's "refresh all stale" button) doesn't toggle the fold. The Regime panel keeps its existing native `<details>` collapse.
 
 ### Changed
 
