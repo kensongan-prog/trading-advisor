@@ -481,10 +481,10 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 self._json({"ok": False, "output": result})
                 return
-            # Use --refresh-stale so the build targets exactly what's stale.
-            # Label includes the source name so the banner/log is informative.
+            # Refresh ONLY this source (true per-source granularity) via its
+            # REFRESH_VIA path, not the whole stale batch.
             label = f"refresh {source}"
-            started = JOB.start(label, [sys.executable, str(DASHBOARD_PY), "--refresh-stale"])
+            started = JOB.start(label, [sys.executable, str(DASHBOARD_PY), "--refresh-source", source])
             self._json({"ok": started, "output": "" if started else "a job is already running"})
         elif self.path == "/api/watchlist":
             self._json(self._watchlist(body))

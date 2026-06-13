@@ -6491,6 +6491,47 @@ def validate_embedded_js(html_text):
             pass
 
 
+def _route_refresh(source_names, args, hm, label="refresh"):
+    """Enable the dashboard flags + run the CLIs needed to refresh exactly
+    `source_names`, via health.REFRESH_VIA. Shared by --refresh-stale (all stale
+    sources) and --refresh-source (one source). Agent-only / unknown sources are
+    skipped with a note. Mutates `args` (sets the relevant --refresh-* flags)."""
+    flags_needed, clis_needed, agent_sources, unknown = set(), [], [], []
+    for src in source_names:
+        via = hm.source_refresh_via(src)
+        if via is None:
+            unknown.append(src)
+        elif via[0] == "agent":
+            agent_sources.append(src)
+        elif via[0] == "flag":
+            flags_needed.add(via[1])
+        elif via[0] == "cli":
+            cp = PROJECT_ROOT / via[1]
+            if cp not in clis_needed:
+                clis_needed.append(cp)
+    # Flag → argparse attribute is argparse's own dest convention
+    # ("--refresh-news" → "refresh_news"); derive it rather than keep a second
+    # mapping that can drift from REFRESH_VIA (guarded by a test).
+    for f in flags_needed:
+        attr = f.lstrip("-").replace("-", "_")
+        if hasattr(args, attr):
+            setattr(args, attr, True)
+    flag_str = " ".join(sorted(flags_needed)) or "(none)"
+    cli_str = " ".join(p.name for p in clis_needed) or "(none)"
+    extra = ""
+    if agent_sources:
+        extra += f" · agent-only (skipped): {' '.join(agent_sources)}"
+    if unknown:
+        extra += f" · unknown (skipped): {' '.join(unknown)}"
+    print(f"[{label}] {len(source_names)} source(s) → flags: {flag_str} · CLIs: {cli_str}{extra}", flush=True)
+    for cp in clis_needed:
+        print(f"[{label}] running {cp.name}…", flush=True)
+        res = subprocess.run([sys.executable, str(cp)], check=False, capture_output=True, text=True)
+        print(f"[{label}] {cp.name}: {'ok' if res.returncode == 0 else f'exit {res.returncode}'}", flush=True)
+    for s in agent_sources:
+        print(f"[{label}] {s}: agent-refresh only — skipped", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true", help="Bypass cache; refetch all non-news sources.")
@@ -6503,10 +6544,11 @@ def main():
     ap.add_argument("--no-news-glyph", action="store_true", help="Skip news-glyph entirely (per-row glyph column shows nothing).")
     ap.add_argument("--with-discovery", action="store_true", help="Also run us-screener + sector-rotation before rendering (TTL-cached, no-op if fresh).")
     ap.add_argument("--refresh-stale", action="store_true", help="Inspect the Data Health panel, then refresh exactly what is stale/transient/missing using the appropriate flags or CLIs. Agent-only sources are skipped with a note. Sets the appropriate --refresh-* flags automatically.")
+    ap.add_argument("--refresh-source", metavar="NAME", help="Refresh ONE named health source (e.g. polymarket, us_news, klse_fundamentals) via its REFRESH_VIA path, then rebuild. Unknown/agent-only names are rejected. Used by the Data Health panel's per-source ↻ buttons.")
     ap.add_argument("--open", action="store_true", help="Open dashboard.html in default browser when done.")
     args = ap.parse_args()
 
-    # Import health module once — used for --refresh-stale and TTL gate alignment.
+    # Import health module once — used for --refresh-stale/-source and TTL gates.
     _hm = None
     try:
         sys.path.insert(0, str(SCRIPT_DIR))
@@ -6514,7 +6556,16 @@ def main():
     except Exception as _hm_err:
         print(f"[warning] cannot import health module: {_hm_err}", flush=True)
 
-    if args.refresh_stale:
+    if args.refresh_source:
+        if _hm is None:
+            print("[refresh-source] health module unavailable; running plain rebuild", flush=True)
+        else:
+            _ok, _res = _hm.validate_refresh_source(args.refresh_source)
+            if not _ok:
+                print(f"[refresh-source] {_res}", flush=True)
+            else:
+                _route_refresh([args.refresh_source], args, _hm, label="refresh-source")
+    elif args.refresh_stale:
         if _hm is None:
             print("[stale-refresh] health module unavailable; running plain rebuild", flush=True)
         else:
@@ -6524,53 +6575,12 @@ def main():
             except Exception as _he:
                 print(f"[stale-refresh] health check failed: {_he}; running plain rebuild", flush=True)
                 records = []
-            _refreshable_states = {_hm.STATE_STALE, _hm.STATE_ERR_TRANSIENT, _hm.STATE_MISSING}
-            stale_sources = {}
-            for _r in records:
-                if _r["state"] in _refreshable_states:
-                    stale_sources.setdefault(_r["source"], 0)
-                    stale_sources[_r["source"]] += 1
+            _refreshable = {_hm.STATE_STALE, _hm.STATE_ERR_TRANSIENT, _hm.STATE_MISSING}
+            stale_sources = {_r["source"] for _r in records if _r["state"] in _refreshable}
             if not stale_sources:
                 print("[stale-refresh] all sources fresh — nothing to do", flush=True)
             else:
-                flags_needed = set()
-                clis_needed = []
-                agent_sources = []
-                for _src in stale_sources:
-                    _via = _hm.source_refresh_via(_src)
-                    if _via is None:
-                        continue
-                    if _via[0] == "agent":
-                        agent_sources.append(_src)
-                    elif _via[0] == "flag":
-                        flags_needed.add(_via[1])
-                    elif _via[0] == "cli":
-                        _cp = PROJECT_ROOT / _via[1]
-                        if _cp not in clis_needed:
-                            clis_needed.append(_cp)
-                # Flag → argparse attribute is argparse's own dest convention
-                # ("--refresh-news" → "refresh_news"), so derive it rather than
-                # maintaining a second copy of the mapping that can drift from
-                # health.REFRESH_VIA. (Guarded by a test that every REFRESH_VIA
-                # flag resolves to a real argparse dest.)
-                for _f in flags_needed:
-                    _attr = _f.lstrip("-").replace("-", "_")
-                    if hasattr(args, _attr):
-                        setattr(args, _attr, True)
-                n_src = len(stale_sources)
-                flag_str = " ".join(sorted(flags_needed)) or "(none)"
-                cli_str  = " ".join(p.name for p in clis_needed) or "(none)"
-                agent_str = " ".join(agent_sources) or "(none)"
-                print(f"[stale-refresh] {n_src} stale/transient source(s) → "
-                      f"flags: {flag_str} · CLIs: {cli_str} · agent-only (skipped): {agent_str}", flush=True)
-                for _cp in clis_needed:
-                    print(f"[stale-refresh] running {_cp.name}…", flush=True)
-                    _res = subprocess.run([sys.executable, str(_cp)], check=False,
-                                          capture_output=True, text=True)
-                    _status = "ok" if _res.returncode == 0 else f"exit {_res.returncode}"
-                    print(f"[stale-refresh] {_cp.name}: {_status}", flush=True)
-                for _s in agent_sources:
-                    print(f"[stale-refresh] {_s}: agent-refresh only — skipped", flush=True)
+                _route_refresh(stale_sources, args, _hm, label="stale-refresh")
 
     if args.with_discovery:
         # Skip subprocess spawn if caches are still fresh — save ~3-5s per refresh.
