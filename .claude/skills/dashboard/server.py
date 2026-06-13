@@ -298,6 +298,10 @@ async function poll(){
         }
         $('tactl-state').innerHTML='<span class="err">✗ '+j.label+' failed</span>';
         $('tactl-log').textContent=j.log_tail.join('\\n');
+        $('tactl-log').style.display='block';
+        showToast('<span class="err">✗ '+(j.label||'Refresh')+' failed — open the Control log for details</span>', 13000);
+        taNotify('✗ Dashboard refresh failed', (j.label||'refresh')+' — open the Control log');
+        sessionStorage.removeItem('ta_pre_refresh');  // no reload on failure; don't leave stale pre-state
         wasRunning=false;
       }
     }
@@ -314,7 +318,11 @@ function captureHealthState(){
     permanent:+hd.dataset.permanent, server:+hd.dataset.server, agent:+hd.dataset.agent
   }));
 }
+// Ask for OS-notification permission on the user's click (browsers require a
+// gesture). Best-effort; declined/unsupported just falls back to the in-page toast.
+function taAskNotify(){ try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
 window.taRefresh=async function(mode){
+  taAskNotify();
   captureHealthState();
   taBannerStart(mode==='full'?'Full refresh — rebuilding everything…':'Refreshing stale data…');
   document.getElementById('tactl').classList.add('open');
@@ -331,6 +339,7 @@ window.taRefresh=async function(mode){
 };
 // Per-source refresh button handler (injected by dashboard.py render_health_panel)
 window.taRefreshSource=async function(source){
+  taAskNotify();
   captureHealthState();
   taBannerStart('Refreshing '+source+'…');
   document.getElementById('tactl').classList.add('open');
@@ -389,27 +398,40 @@ function showResult(r){
   $('tactl-log').style.display='block';$('tactl-log').textContent=r.output;
   $('tactl-msg').innerHTML=r.ok?'<span class="ok">✓ done — quick rebuild queued</span>':'<span class="err">✗ failed (rc='+r.rc+')</span>';
 }
-// Post-refresh outcome toast: diff pre vs post health counts
+// Best-effort OS notification (so a multi-minute refresh can ping you even when
+// the tab is in the background). Silently no-ops if unsupported/denied, or in a
+// non-secure context (e.g. http over Tailscale) — the in-page toast still shows.
+function taNotify(title, body){
+  try{
+    if(!('Notification' in window) || Notification.permission!=='granted') return;
+    const n=new Notification(title,{body:body||'', tag:'ta-refresh', renotify:true});
+    setTimeout(function(){ try{n.close();}catch(_){} }, 8000);
+  }catch(e){}
+}
+function showToast(html, ms){
+  const toast=$('ta-toast'); if(!toast) return;
+  toast.innerHTML=html+' <span style="color:#555;cursor:pointer;float:right" onclick="this.parentElement.remove()">✕</span>';
+  toast.style.display='block';
+  setTimeout(function(){toast.style.display='none';}, ms||9000);
+}
+// Post-refresh outcome toast + OS notification: diff pre vs post health counts.
 function showRefreshToast(before, after){
   const tot_b=before.server+before.agent, tot_a=after.server+after.agent;
-  let msg, cls='ok';
+  let msg, cls='ok', note;
   if(tot_b===0){
-    msg='✓ Everything was already fresh — nothing to refresh.';
+    msg='✓ Everything was already fresh — nothing to refresh.'; note='Nothing was stale.';
   } else if(tot_a < tot_b){
     const fixed=tot_b-tot_a;
-    msg='✓ Refresh done — '+fixed+' source(s) cleared';
-    if(after.agent>0) msg+=' · '+after.agent+' still need agent refresh';
-    if(after.server>0) msg+=' · '+after.server+' still stale (TTL or rate-limited)';
+    msg='✓ Refresh done — '+fixed+' source(s) cleared'; note=fixed+' source(s) cleared';
+    if(after.agent>0){ msg+=' · '+after.agent+' still need agent refresh'; note+='; '+after.agent+' need an agent session'; }
+    if(after.server>0){ msg+=' · '+after.server+' still stale (TTL or rate-limited)'; note+='; '+after.server+' still stale'; }
   } else {
     cls='err';
     msg='⚠ Refresh finished but '+tot_a+' source(s) still flagged — see Control log for details';
-    if(after.agent>0) msg+='. '+after.agent+' are agent-only.';
+    note=tot_a+' source(s) still flagged'+(after.agent>0?' ('+after.agent+' agent-only)':'');
   }
-  const toast=$('ta-toast');
-  if(!toast) return;
-  toast.innerHTML='<span class="'+cls+'">'+msg+'</span> <span style="color:#555;cursor:pointer;float:right" onclick="this.parentElement.remove()">✕</span>';
-  toast.style.display='block';
-  setTimeout(function(){toast.style.display='none';}, 9000);
+  showToast('<span class="'+cls+'">'+msg+'</span>');
+  taNotify(cls==='ok'?'✓ Dashboard refresh complete':'⚠ Refresh finished with issues', note);
 }
 // On page load: check if we just reloaded after a refresh and show toast
 (function checkPostRefreshToast(){
