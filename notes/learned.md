@@ -4,6 +4,33 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-13 — Skill dirs are deliberately self-contained; don't DRY across them
+
+During the v2.3.0 optimization pass the instinct was to dedup the `.env` loader
+that's copy-pasted (with different names: `load_dotenv_if_present`, `_load_env`,
+`load_env_file`, `load_env`) across 9 skill dirs, plus the 3 HTTP-helper variants.
+**Decision: don't.** Each `.claude/skills/<x>/` dir runs standalone with *zero
+cross-skill imports* — that self-containment is a feature (PROJECT_LOG documents
+skills as independently copyable for replication). Sharing trivial, stable code
+would force a `sys.path` bootstrap + a `_shared/` dependency into every skill and
+break copy-one-folder portability, for ~10 lines of code that's never been a bug
+source.
+
+**What IS worth deduping:** same-directory helpers with real logic and a history
+of drift. The operator-loop CLIs in `.claude/skills/dashboard/` (`rel_strength`,
+`retired_scan`, `setup_queue`) had copy-pasted `watchlist_us` / `batch_closes` /
+`load_json_cache` whose divergence caused v2.0.x bugs — those went into
+`_cli_lib.py` (same dir, trivial `import`, no bootstrap). Rule of thumb:
+**dedup within a dir, stay self-contained across dirs.**
+
+Also measured and skipped in the same pass: a shared cache class (dashboard's
+`cache_get`/`cache_set` are already single-source in one file), and lazy-loading
+the Risk Simulator payload (it's 16.6KB of a 454KB page — 3.7%, not worth an
+endpoint + `file://` fallback). Most of the dashboard's ~1091 rendered `style=`
+attrs are dynamically generated per-row, not static-class candidates.
+
+---
+
 ### 2026-06-12 — Dashboard "refresh does nothing" cluster: three structural root causes
 
 **Symptom:** Operator clicks ⚡ Quick or 🔄 Full — stale warnings persist, or nothing visible happens.

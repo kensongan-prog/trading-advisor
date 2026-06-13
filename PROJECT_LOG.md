@@ -4,7 +4,7 @@ This file is the **replication guide**. Hand it (along with everything in the pr
 
 **Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
-**Last reconciled with reality: v2.2.0 (2026-06-12).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
+**Last reconciled with reality: v2.3.0 (2026-06-13).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
 
 ---
 
@@ -75,6 +75,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 | `snap.py` | Playwright screenshot harness (desktop/tablet/mobile + per-component closeups). Uses project-local `.venv-playwright/`. |
 | `health.py` | Pure-logic health classifier (fresh / stale / error_transient / error_permanent / no_coverage / missing). `TTL_HOURS` registry + `REFRESH_VIA` registry (maps every source to its refresh method: flag / cli / agent). `validate_refresh_source()` used by `/api/refresh-source`. Backs the v2.1.0+ Data Health surface. |
 | `audit_glyph.py` (under `us-news/`) | Joins every LLM-scored news item to its source headline and flags FALSE-NONE / FALSE-PRIMARY / ROUNDUP / NON-ASCII / DIR-MISMATCH. |
+| `_cli_lib.py` (v2.3.0) | Shared helpers for the operator-loop CLIs in this dir: `watchlist_us(path)`, `batch_closes(tickers, period)`, `load_json_cache(path)`. `rel_strength`/`retired_scan`/`setup_queue` import these instead of copy-pasting (the drift was a v2.0.x bug source). Same-dir module — no package bootstrap. NOTE: this convention is for the dashboard dir only; the data-fetch skill dirs stay deliberately self-contained (zero cross-skill imports) so each is independently copyable. |
 
 ### Dashboard features (rendered in `dashboard.html`)
 
@@ -119,7 +120,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **LLM fallback chains** — both the news-glyph scorer AND `sentiment-cache.classify_messages` retry with `gpt-oss-120b:free` on transient errors from Gemma (v2.0.6 closed the parity gap; the fallback constant was defined but never referenced before that release). `_is_transient_error` explicitly enumerates 429/5xx/URLError/timeout so future tweaks can't accidentally widen the trigger.
 - **Live quote endpoints** are browser-side (JS fetches Finnhub/Binance directly), separate from cached daily-close pipeline
 - **Bulk resolution cache** — single directory scan instead of per-ticker file reads (T3-S2)
-- **Parallel I/O** — yfinance per-ticker calls use `ThreadPoolExecutor` (T3-S3)
+- **Parallel I/O** — yfinance per-ticker calls use `ThreadPoolExecutor` (T3-S3); v2.3.0 extended this to the macro+crypto regime fetches (run concurrently) and the per-coin Binance funding loop
 - **Watchlist auto-inclusion** in screener universe (T3-E3)
 - **Per-item LLM-score immutability** — news headlines and forum messages are immutable once published, so per-item LLM scores key on `hash(text)` and bank forever. Re-fetches only re-score the truly new items, keeping OpenRouter spend near zero after warmup.
 - **Relevance gate on every LLM scorer** — `relevance: primary|mention|none` with weights 1.0/0.5/0.0 in the aggregate. Off-topic items drop out instead of polluting bull/bear% (solves the SOL ↔ "Microsoft Project Solara" type collision). Same trichotomy in both `news_glyph` and `sentiment_cache.classify_messages`, single `COMPANY_LABELS` source-of-truth.
@@ -128,7 +129,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
 - **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
 
-### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 — currently 176 tests, ~3s)
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 — currently 228 tests, ~4s)
 
 Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
 
@@ -141,7 +142,12 @@ Pure-logic regression net under the dashboard's silent-failure surfaces. Every b
 | `test_company_label.py` | TICKER→company-name resolution across asset classes. Parametrized over every watchlist ticker so no future watchlist add can land without a label. |
 | `test_data_join.py` | Symbol-keyed join regression test. Documents both correct pattern AND the zip-bug pattern; fails the moment anyone re-introduces it. |
 | `test_classifier_fallback.py` | `_is_transient_error` parametrized across 7 transient codes (429, 5xx, URLError, timeout) + 6 permanent ones. `classify_messages` retries fallback exactly once on 429, doesn't retry on 401, no infinite loop when caller already specifies fallback. |
-| `test_health.py` | State classifier across every state + TTL boundaries + all 5 timestamp-key variants different caches use + sentiment-composite classifier (including exact RGLD failure mode) + summarizer counts + state priority. |
+| `test_health.py` | State classifier across every state + TTL boundaries + all 5 timestamp-key variants different caches use + sentiment-composite classifier (including exact RGLD failure mode) + summarizer counts + state priority + REFRESH_VIA routing (v2.2.0). |
+| `test_portfolio.py` | (v2.3.0) `heat()` sum + 6%/$1,200 ceiling + headroom + correlation grouping; expectancy win/loss aggregation; journal markdown parsing helpers. The §5 heat safety rail. |
+| `test_mae_mfe.py` | (v2.3.0) `excursion_r()` MAE/MFE → R conversion, full-stop = −1R, invalid-risk guard. |
+| `test_setup_queue.py` | (v2.3.0) `passes_p1_gate()` (RSI 35-50 ∧ price>SMA50>SMA200) + `_compute_levels()` 1.5×ATR stop / 2R TP1 / risk-%'d sizing. |
+| `test_watcher_parse.py` | (v2.3.0) `parse_levels()` currency-only level extraction (ignores 20-EMA/2R/account size), market-hours gate, once-per-day dedupe. Alert accuracy. |
+| `test_server_routes.py` | (v2.3.0) server `Job` one-at-a-time busy semantics (the v2.2.0 no-op fix), status shape, Quick/Full flag contract, refresh-source validation wiring. |
 
 Run: `.venv-playwright/bin/python3 -m pytest --tb=line -q` (the project-local venv since pytest isn't installed system-wide). Auto-runs at session start per `CLAUDE.md`.
 
@@ -213,7 +219,7 @@ Take the entire `Trading Advisor/` directory and place it under whatever project
 - `notes/learned.md`, `notes/decisions.md`, `notes/ideas.md` (gotcha log + decision rationale + deferred-features log)
 - `.gitignore`
 - `.claude/skills/` (all 27 skill folders)
-- `tests/` (176 pytest cases — the session-bootstrap test gate runs these)
+- `tests/` (228 pytest cases — the session-bootstrap test gate runs these)
 - `rules/` (playbooks + risk doctrine)
 - `journal/README.md` (keep the template; rest can be empty)
 - `watchlist.md` (keep as a template — see Step 5)
@@ -674,7 +680,7 @@ Trading Advisor/
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
-├── tests/                         # 176 pytest cases (~3s); session bootstrap runs these
+├── tests/                         # 228 pytest cases (~4s); session bootstrap runs these
 │   ├── conftest.py
 │   ├── README.md                  # What's covered, what's not, contract for adding regression tests
 │   ├── test_r_math.py

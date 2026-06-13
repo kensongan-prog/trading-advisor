@@ -117,6 +117,27 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.3.0] — 2026-06-13
+
+**Optimization pass: regression coverage for the safety rails, faster builds, less duplication.** Internal-quality release — no user-facing behavior change. Scoped down from a larger plan after measurement (see notes below).
+
+### Added
+- **51 regression tests** over logic that enforces AGENTS.md §5 guardrails but had zero coverage: `portfolio.heat()` (the 6%/$1,200 heat ceiling) + expectancy aggregation; MAE/MFE R-math; the Phase-1 entry gate + level sizing; watcher journal-level parsing (currency-only) + market-hours gate + dedupe; and the server Job "one-at-a-time" busy semantics (the v2.2.0 silent-no-op fix). Suite: 177 → 228 tests.
+- `_cli_lib.py` (dashboard skill dir) — shared operator-CLI helpers (`watchlist_us`, `batch_closes`, `load_json_cache`), replacing copy-pasted versions in `rel_strength.py`, `retired_scan.py`, `setup_queue.py`.
+- `--green-rgb` / `--yellow-rgb` / `--red-rgb` `:root` CSS variables — single source for the brand colors used as rgba() tints at many alphas across the dashboard.
+
+### Changed
+- Dashboard build parallelizes the FRED macro-regime and crypto-regime fetches (independent network calls, run concurrently) and the per-coin Binance funding loop (same `ThreadPoolExecutor` fan-out already used for yfinance). Faster cold builds; identical output.
+- Two pure helpers extracted for testability with no behavior change: `mae_mfe.excursion_r()` and `setup_queue.passes_p1_gate()`.
+- 37 hardcoded brand-color RGB triples in the CSS now reference the new `:root` vars.
+
+### Notes (deliberate scope reductions, measurement-backed)
+- **Shared `.env`/HTTP modules across skills — not done.** Each skill dir is intentionally self-contained (zero cross-skill imports; documented as a replication feature). Sharing trivial, stable env-loader code would couple every skill to a `_shared/` package and break copy-one-folder portability. Only the same-dir operator-CLI helpers (a real bug-source) were consolidated.
+- **Shared cache class — not done.** dashboard.py's `cache_get`/`cache_set`/`_read_cache` are already centralized in one file; other cache variants live in the self-contained skill dirs above. A shared class would abstract already-single-source code.
+- **Sim-data lazy-load + inline-style/media-query sweep — not done.** The sim blob is 16.6KB of a 454KB page (3.7%); the lazy-load endpoint + `file://` fallback wasn't worth the complexity. Most of the 1091 rendered `style=` attributes are dynamically generated per-row, not static.
+
+---
+
 ## [v2.2.0] — 2026-06-12
 
 **Dashboard refresh UX overhaul — stale-driven refresh, per-source buttons, honest chip counts, visible progress.**
