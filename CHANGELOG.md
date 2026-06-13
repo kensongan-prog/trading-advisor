@@ -104,18 +104,28 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
-- **Collapsible dashboard sections.** Click any panel's heading to fold/unfold that section; the chevron (▾/▸) shows state. Fold state persists per-panel in `localStorage` (keyed by panel title, stable across rebuilds) and works in static `file://` mode. Clicking a control inside a header (e.g. Data Health's "refresh all stale" button) doesn't toggle the fold. The Regime panel keeps its existing native `<details>` collapse.
 
 ### Changed
 
 ### Fixed
-- `j.py new --help` no longer crashes with `TypeError: must be real number, not dict`. The `--atr-pct` help string had a literal `%` ("ATR% …") that argparse tried to %-format; escaped to `%%`. The command itself was unaffected — only `--help` output. Found during the v2.3.0 end-to-end sweep; regression test (`tests/test_journal_cli.py`) now asserts every j.py subcommand's `--help` exits cleanly.
 
 ### Removed
 
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.4.0] — 2026-06-14
+
+**Collapsible dashboard sections + a CLI help-crash fix.**
+
+### Added
+- **Collapsible dashboard sections.** Click any panel's heading to fold/unfold that section; the chevron (▾/▸) shows state. Fold state persists per-panel in `localStorage` (keyed by panel title, stable across rebuilds) and works in static `file://` mode. Clicking a control inside a header (e.g. Data Health's "refresh all stale" button) doesn't toggle the fold. The Regime panel keeps its existing native `<details>` collapse.
+
+### Fixed
+- `j.py new --help` no longer crashes with `TypeError: must be real number, not dict`. The `--atr-pct` help string had a literal `%` ("ATR% …") that argparse tried to %-format; escaped to `%%`. The command itself was unaffected — only `--help` output. Found during the v2.3.0 end-to-end sweep; regression test (`tests/test_journal_cli.py`) now asserts every j.py subcommand's `--help` exits cleanly.
 
 ---
 
