@@ -5936,13 +5936,27 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 </div>
 <script>{JS}</script>
 <script>
-// Fallback for file:// mode (server not running): taRefreshSource defined in
-// CONTROL_BAR when served; here we provide a static-mode stub that shows the CLI.
-if(!window.taRefreshSource){{
-  window.taRefreshSource=function(src){{
-    alert('To refresh '+src+', run:\\npython3 .claude/skills/dashboard/dashboard.py --refresh-stale');
-  }};
-}}
+// Static (file://) mode. When the dashboard is opened as a file instead of being
+// served by server.py, the refresh control bar and its taRefresh/taRefreshSource
+// handlers are never injected — so the in-page refresh buttons would silently do
+// nothing. Define loud fallbacks + a sticky banner so it's obvious the page is a
+// static snapshot and how to get the live, button-driven version.
+(function(){{
+  if (location.protocol === 'http:' || location.protocol === 'https:') return;  // served → server.py handles it
+  var MSG = 'This is a static snapshot (file://), so refresh buttons are inactive.\\n\\n'
+          + 'Open the live dashboard instead:\\n'
+          + '  1. start the server — double-click "Trading Dashboard.command"\\n'
+          + '     (or run: python3 .claude/skills/dashboard/server.py --lan)\\n'
+          + '  2. open  http://localhost:8787';
+  if(!window.taRefresh)       window.taRefresh       = function(){{ alert(MSG); }};
+  if(!window.taRefreshSource) window.taRefreshSource = function(){{ alert(MSG); }};
+  var bar = document.createElement('div');
+  bar.textContent = '⚠ Static snapshot — open http://localhost:8787 for live data + working refresh buttons';
+  bar.style.cssText = 'position:sticky;top:0;z-index:99999;background:#3a2e12;color:#f5d98a;'
+    + 'border-bottom:1px solid #5a4a1f;padding:6px 14px;text-align:center;'
+    + 'font:12px/1.4 -apple-system,system-ui,sans-serif;';
+  document.body.insertBefore(bar, document.body.firstChild);
+}})();
 </script>
 </body></html>
 """

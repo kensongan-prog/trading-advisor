@@ -108,6 +108,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Changed
 
 ### Fixed
+- Static-snapshot (`file://`) dashboards no longer have silently-dead refresh buttons. When the page is opened as a file rather than served by `server.py`, the refresh control bar isn't injected, so the in-page "↻ refresh" / "refresh all stale" buttons had no handler and clicks did nothing. Now a sticky banner ("⚠ Static snapshot — open http://localhost:8787 …") appears and the buttons show clear guidance on starting the server, instead of failing silently. Served mode is unchanged. (Note: editing the journal/watchlist via the terminal CLIs does not rebuild the static `dashboard.html` — use the server, or re-run `dashboard.py`.)
 
 ### Removed
 
