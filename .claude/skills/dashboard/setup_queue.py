@@ -27,6 +27,10 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = SKILLS_DIR.parent.parent
+
+sys.path.insert(0, str(SCRIPT_DIR))
+import _cli_lib  # noqa: E402  (shared operator-CLI helpers, same dir)
+
 DASH_CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard"
 WATCHLIST_MD = PROJECT_ROOT / "watchlist.md"
 J_PY = SKILLS_DIR / "journal" / "j.py"
@@ -39,30 +43,11 @@ CONTEXT_TICKERS = {"SPY", "QQQ", "DIA", "IWM"}
 
 
 def _watchlist_us():
-    import re
-    if not WATCHLIST_MD.is_file():
-        return []
-    out, in_us = [], False
-    for line in WATCHLIST_MD.read_text().splitlines():
-        if line.startswith("## "):
-            h = line[3:].lower()
-            in_us = ("equities" in h or "etf" in h)
-            continue
-        if in_us:
-            m = re.match(r"\s*-\s*`([^`]+)`", line)
-            if m and m.group(1).strip().lower() != "ticker":
-                out.append(m.group(1).strip().upper())
-    return out
+    return _cli_lib.watchlist_us(WATCHLIST_MD)
 
 
 def _cache(ticker):
-    p = DASH_CACHE / f"yfin_{ticker.replace('.', '_')}.json"
-    if p.is_file():
-        try:
-            return json.loads(p.read_text())
-        except json.JSONDecodeError:
-            return None
-    return None
+    return _cli_lib.load_json_cache(DASH_CACHE / f"yfin_{ticker.replace('.', '_')}.json")
 
 
 def _has_open_prospectus(ticker):

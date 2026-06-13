@@ -32,6 +32,10 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = SKILLS_DIR.parent.parent
+
+sys.path.insert(0, str(SCRIPT_DIR))
+import _cli_lib  # noqa: E402  (shared operator-CLI helpers, same dir)
+
 CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard" / "retired_scan.json"
 SENTIMENT_DIR = PROJECT_ROOT / ".claude" / "cache" / "sentiment"
 WATCHLIST_MD = PROJECT_ROOT / "watchlist.md"
@@ -77,22 +81,7 @@ def _sma(closes, n):
 
 
 def _batch_closes(tickers):
-    import warnings
-    warnings.filterwarnings("ignore")
-    import yfinance as yf
-    df = yf.download(tickers, period="10mo", interval="1d",
-                     auto_adjust=True, progress=False, threads=True)
-    out = {}
-    close = df["Close"] if "Close" in df.columns.get_level_values(0) else df
-    for t in tickers:
-        try:
-            series = close[t] if hasattr(close, "columns") and t in close.columns else close
-            vals = [float(x) for x in series.dropna().tolist()]
-            if vals:
-                out[t] = vals
-        except Exception:
-            continue
-    return out
+    return _cli_lib.batch_closes(tickers, period="10mo")
 
 
 def _sentiment_extreme(ticker):
@@ -155,12 +144,7 @@ def refresh():
 
 
 def load_cached():
-    if CACHE.is_file():
-        try:
-            return json.loads(CACHE.read_text())
-        except json.JSONDecodeError:
-            return None
-    return None
+    return _cli_lib.load_json_cache(CACHE)
 
 
 if __name__ == "__main__":

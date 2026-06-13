@@ -20,7 +20,6 @@ CLI:
 """
 
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +27,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = SKILLS_DIR.parent.parent
+
+sys.path.insert(0, str(SCRIPT_DIR))
+import _cli_lib  # noqa: E402  (shared operator-CLI helpers, same dir)
 CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard" / "rel_strength.json"
 SECTOR_CACHE = PROJECT_ROOT / ".claude" / "cache" / "sector_rotation" / "data.json"
 DASH_CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard"
@@ -45,19 +47,7 @@ CONTEXT_TICKERS = {"SPY", "QQQ", "DIA", "IWM"}
 
 
 def _watchlist_us():
-    if not WATCHLIST_MD.is_file():
-        return []
-    out, in_us = [], False
-    for line in WATCHLIST_MD.read_text().splitlines():
-        if line.startswith("## "):
-            h = line[3:].lower()
-            in_us = ("equities" in h or "etf" in h)
-            continue
-        if in_us:
-            m = re.match(r"\s*-\s*`([^`]+)`", line)
-            if m and m.group(1).strip().lower() != "ticker":
-                out.append(m.group(1).strip().upper())
-    return out
+    return _cli_lib.watchlist_us(WATCHLIST_MD)
 
 
 def _sector_of(ticker):
@@ -93,26 +83,7 @@ def _sector_vs_spy():
 
 
 def _batch_closes(tickers):
-    """One batched yfinance download → {ticker: [closes oldest→newest]}.
-    Batched (not per-ticker .info) to avoid the sequential-call pattern flagged
-    in notes/learned.md."""
-    import warnings
-    warnings.filterwarnings("ignore")
-    import yfinance as yf
-    df = yf.download(tickers, period="4mo", interval="1d",
-                     auto_adjust=True, progress=False, threads=True)
-    out = {}
-    # Multi-ticker → columns are a MultiIndex ('Close', TICKER); single → flat
-    close = df["Close"] if "Close" in df.columns.get_level_values(0) else df
-    for t in tickers:
-        try:
-            series = close[t] if hasattr(close, "columns") and t in close.columns else close
-            vals = [float(x) for x in series.dropna().tolist()]
-            if vals:
-                out[t] = vals
-        except Exception:
-            continue
-    return out
+    return _cli_lib.batch_closes(tickers, period="4mo")
 
 
 def refresh():
@@ -157,12 +128,7 @@ def refresh():
 
 
 def load_cached():
-    if not CACHE.is_file():
-        return None
-    try:
-        return json.loads(CACHE.read_text())
-    except json.JSONDecodeError:
-        return None
+    return _cli_lib.load_json_cache(CACHE)
 
 
 def cache_age_hours():
