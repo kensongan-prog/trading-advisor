@@ -6198,21 +6198,24 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
             if missing:
                 _refresh_sentiment_for(missing, f"auto-fill {len(missing)} ticker(s) missing from cache")
 
-    print("[2/8] Fetching US macro regime (FRED)...")
-    macro, macro_age = fetch_macro_regime(force)
-    print(f"      → regime: {macro.get('regime')} ({macro_age})")
-
-    print("[3/8] Fetching crypto regime (F&G + CG /global)...")
-    crypto_r, crypto_age = fetch_crypto_regime(force)
-    print(f"      → regime: {crypto_r.get('regime')} ({crypto_age})")
+    # Steps 2+3 are independent network fetches → run them concurrently.
+    from concurrent.futures import ThreadPoolExecutor as _Pool, as_completed as _ac
+    print("[2-3/8] Fetching US macro (FRED) + crypto regime (F&G + CG /global) in parallel...")
+    with _Pool(max_workers=2) as _rpool:
+        _macro_fut = _rpool.submit(fetch_macro_regime, force)
+        _crypto_fut = _rpool.submit(fetch_crypto_regime, force)
+        macro, macro_age = _macro_fut.result()
+        crypto_r, crypto_age = _crypto_fut.result()
+    print(f"      → US macro regime: {macro.get('regime')} ({macro_age})")
+    print(f"      → crypto regime: {crypto_r.get('regime')} ({crypto_age})")
 
     print("[4/8] Building halt-window timeline...")
     cal, cal_age = fetch_macro_calendar(force)
     print(f"      → {len(cal.get('events',[]))} upcoming events")
 
-    # S3 optimization: parallel per-ticker yfinance fetches via ThreadPoolExecutor.
-    # Cache hits are instant; only true cache misses parallelize. ~5x speedup on cold cache.
-    from concurrent.futures import ThreadPoolExecutor as _Pool, as_completed as _ac
+    # S3 optimization: parallel per-ticker yfinance fetches via ThreadPoolExecutor
+    # (_Pool/_ac imported above at step 2-3). Cache hits are instant; only true
+    # cache misses parallelize. ~5x speedup on cold cache.
     print("[5/8] Fetching US ticker data via yfinance (parallel)...")
     us_data = {}
     us_tickers = [e["ticker"] for e in watchlist["us"]]
@@ -6301,11 +6304,17 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
     crypto_coins = [e["ticker"] for e in watchlist["crypto"]]
     mkt, _ = fetch_crypto_markets(crypto_coins, force) if crypto_coins else ({"rows": []}, "")
     crypto_rows = mkt.get("rows", [])
+    # Per-coin funding fetches are independent network calls → parallelize them
+    # (same ThreadPoolExecutor pattern as the yfinance fan-out above).
     crypto_funding = {}
-    for r in crypto_rows:
-        sym = (r.get("symbol") or "").upper() + "USDT"
-        f, _ = fetch_binance_funding(sym, force)
-        crypto_funding[sym] = f
+    _fund_syms = [(r.get("symbol") or "").upper() + "USDT" for r in crypto_rows]
+    if _fund_syms:
+        with _Pool(max_workers=min(8, len(_fund_syms))) as _fpool:
+            _ff = {_fpool.submit(fetch_binance_funding, s, force): s for s in _fund_syms}
+            for fut in _ac(_ff):
+                s = _ff[fut]
+                f, _ = fut.result()
+                crypto_funding[s] = f
 
     # Per-coin daily klines + indicators for risk simulator (BTC, ETH, SOL, BNB, XRP, HBAR…)
     crypto_indicators = {}
