@@ -193,10 +193,15 @@ CONTROL_BAR = """
 #tactl pre{background:#0b0d10;border:1px solid #2a2d34;border-radius:6px;padding:6px;max-height:160px;overflow:auto;font-size:10.5px;white-space:pre-wrap;margin:6px 0 0}
 #tactl .stat{font-size:11px;color:#8a8f98;margin-top:4px}
 #tactl .err{color:#ff7b7b}#tactl .ok{color:#7bd88f}
-#ta-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#2b3140;color:#ddd;font:12px/1.4 -apple-system,system-ui,sans-serif;padding:6px 14px;border-bottom:1px solid #444;text-align:center}
+#ta-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:linear-gradient(90deg,#1e3a5f,#2b3140);color:#fff;font:13px/1.5 -apple-system,system-ui,sans-serif;padding:10px 16px;border-bottom:2px solid #4a90e2;box-shadow:0 3px 12px rgba(0,0,0,.45);align-items:center;gap:12px;justify-content:center}
+#ta-banner.show{display:flex}
+#ta-banner .ta-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.25);border-top-color:#7ab8f5;border-radius:50%;animation:taspin .8s linear infinite;flex:0 0 auto}
+@keyframes taspin{to{transform:rotate(360deg)}}
+#ta-banner .ta-elapsed{font-variant-numeric:tabular-nums;color:#9ecbff;font-weight:700}
+#ta-banner .ta-phase{color:#cfe0f5;opacity:.85}
 #ta-toast{position:fixed;bottom:80px;right:14px;z-index:99997;background:#1d2027;border:1px solid #444;border-radius:8px;padding:10px 14px;color:#ddd;font:12px/1.5 -apple-system,system-ui,sans-serif;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.5);display:none}
 </style>
-<div id="ta-banner"></div>
+<div id="ta-banner"><span class="ta-spin"></span><span><b id="ta-banner-title">Refreshing…</b> <span class="ta-phase" id="ta-phase">starting</span></span><span class="ta-elapsed" id="ta-elapsed">0:00</span></div>
 <div id="ta-toast"></div>
 <div id="tactl"><div class="panel">
 <header onclick="document.getElementById('tactl').classList.toggle('open')">
@@ -238,6 +243,25 @@ const builtAt = __BUILT_AT__; // epoch seconds of dashboard.html mtime
 function fmtAge(){const h=(Date.now()/1000-builtAt)/3600;return h<1?Math.round(h*60)+'m old':h.toFixed(1)+'h old';}
 $('tactl-age').textContent='data '+fmtAge(); // first paint; poll() keeps it live every 2s
 let wasRunning=false;
+// ── Progress banner: shown the instant a refresh is clicked, with a live
+// elapsed timer (the unmistakable "working, not frozen" signal) + the current
+// build phase pulled from the job log. ───────────────────────────────────────
+let taTimer=null, taStartMs=0;
+function taFmtElapsed(s){const m=Math.floor(s/60),ss=s%60;return m+':'+(ss<10?'0':'')+ss;}
+function taBannerStart(title){
+  const b=$('ta-banner'); if(!b) return;
+  taStartMs=Date.now();
+  $('ta-banner-title').textContent=title||'Refreshing…';
+  $('ta-phase').textContent='starting — this can take a minute or two';
+  $('ta-elapsed').textContent='0:00';
+  b.classList.add('show');
+  if(taTimer) clearInterval(taTimer);
+  taTimer=setInterval(function(){ $('ta-elapsed').textContent=taFmtElapsed(Math.floor((Date.now()-taStartMs)/1000)); },1000);
+}
+function taBannerStop(){
+  const b=$('ta-banner'); if(b) b.classList.remove('show');
+  if(taTimer){ clearInterval(taTimer); taTimer=null; }
+}
 async function poll(){
   try{
     const s=await (await fetch('/api/status')).json();
@@ -250,7 +274,6 @@ async function poll(){
         : '<span class="dim">○ stopped</span>';
     }
     const j=s.job;
-    const banner=$('ta-banner');
     if(j.state==='running'){
       wasRunning=true;
       $('tactl-state').textContent='⏳ '+j.label;
@@ -258,10 +281,16 @@ async function poll(){
       $('tactl-log').textContent=j.log_tail.join('\\n');
       $('tactl-log').scrollTop=1e9;
       $('btn-quick').disabled=$('btn-full').disabled=true;
-      if(banner){banner.style.display='block';banner.textContent='⏳ '+j.label+' running — see Control ↘';}
+      // Ensure the banner is up even when a job was started by another path
+      // (auto-quick on load, a watchlist/journal-edit rebuild).
+      if(!$('ta-banner').classList.contains('show')) taBannerStart(j.label||'Refreshing…');
+      // Surface the latest progress line (e.g. "[5/8] Fetching US ticker data…").
+      const lines=(j.log_tail||[]).filter(function(l){return l && l.trim();});
+      const last=lines.length?lines[lines.length-1].replace(/^\\$\\s.*/,'working…').trim():'';
+      if(last) $('ta-phase').textContent=last.slice(0,90);
     } else {
       $('btn-quick').disabled=$('btn-full').disabled=false;
-      if(banner) banner.style.display='none';
+      taBannerStop();
       if(wasRunning){
         if(j.state==='done'){
           // Stash pre-reload state already captured; now reload to show fresh page
@@ -287,25 +316,34 @@ function captureHealthState(){
 }
 window.taRefresh=async function(mode){
   captureHealthState();
+  taBannerStart(mode==='full'?'Full refresh — rebuilding everything…':'Refreshing stale data…');
   document.getElementById('tactl').classList.add('open');
   $('btn-quick').disabled=$('btn-full').disabled=true; // disable immediately; re-enabled by poll
-  const r=await (await fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})})).json();
-  if(!r.ok){
-    $('tactl-msg').innerHTML='<span class="err">⏳ busy — wait for current job to finish</span>';
-    $('tactl-log').style.display='block';
-    // buttons re-enabled by next poll since no job started
-  }
+  try{
+    const r=await (await fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})})).json();
+    if(!r.ok){
+      // A job is already running — keep the banner (work IS in progress) but say so.
+      $('tactl-msg').innerHTML='<span class="err">⏳ a refresh is already running — this one was skipped</span>';
+      $('tactl-log').style.display='block';
+    }
+  }catch(e){ taBannerStop(); $('btn-quick').disabled=$('btn-full').disabled=false;
+    $('tactl-msg').innerHTML='<span class="err">✗ could not reach server — is it still running?</span>'; }
 };
 // Per-source refresh button handler (injected by dashboard.py render_health_panel)
 window.taRefreshSource=async function(source){
   captureHealthState();
+  taBannerStart('Refreshing '+source+'…');
   document.getElementById('tactl').classList.add('open');
   $('btn-quick').disabled=$('btn-full').disabled=true;
-  const r=await (await fetch('/api/refresh-source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source})})).json();
-  if(!r.ok){
-    $('tactl-msg').innerHTML='<span class="err">'+r.output+'</span>';
-    $('btn-quick').disabled=$('btn-full').disabled=false;
-  }
+  try{
+    const r=await (await fetch('/api/refresh-source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source})})).json();
+    if(!r.ok){
+      taBannerStop();
+      $('tactl-msg').innerHTML='<span class="err">'+r.output+'</span>';
+      $('btn-quick').disabled=$('btn-full').disabled=false;
+    }
+  }catch(e){ taBannerStop(); $('btn-quick').disabled=$('btn-full').disabled=false;
+    $('tactl-msg').innerHTML='<span class="err">✗ could not reach server — is it still running?</span>'; }
 };
 window.taWatcher=async function(action){
   const r=await (await fetch('/api/watcher',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})})).json();
@@ -369,7 +407,7 @@ function showRefreshToast(before, after){
   }
   const toast=$('ta-toast');
   if(!toast) return;
-  toast.innerHTML='<span class="'+cls+'">'+msg+'</span> <span style="color:#555;cursor:pointer;float:right" onclick="this.parentElement.style.display=\'none\'">✕</span>';
+  toast.innerHTML='<span class="'+cls+'">'+msg+'</span> <span style="color:#555;cursor:pointer;float:right" onclick="this.parentElement.remove()">✕</span>';
   toast.style.display='block';
   setTimeout(function(){toast.style.display='none';}, 9000);
 }

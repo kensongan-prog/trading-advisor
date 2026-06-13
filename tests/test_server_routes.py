@@ -62,6 +62,31 @@ class TestJobSemantics:
         assert j.start("next", SHORT_JOB) is True
 
 
+class TestControlBarJS:
+    """The control bar's JS is injected by server.py at serve time, so the
+    dashboard build's own `node --check` never sees it. A quote-nesting bug in
+    the toast (onclick="…='none'") once broke the ENTIRE control-bar IIFE — every
+    refresh button silently dead when served. Syntax-check it here so that class
+    of bug can't ship again."""
+
+    def test_control_bar_js_parses(self):
+        import re, shutil, subprocess, tempfile, os
+        scripts = re.findall(r"<script>(.*?)</script>", server.CONTROL_BAR, re.DOTALL)
+        assert scripts, "no <script> block found in CONTROL_BAR"
+        js = "\n".join(scripts)
+        if not shutil.which("node"):
+            pytest.skip("node not on PATH — cannot syntax-check JS")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+            f.write(js)
+            path = f.name
+        try:
+            r = subprocess.run(["node", "--check", path],
+                               capture_output=True, text=True, timeout=15)
+            assert r.returncode == 0, f"CONTROL_BAR JS syntax error:\n{r.stderr or r.stdout}"
+        finally:
+            os.unlink(path)
+
+
 class TestRefreshSourceWiring:
     def test_health_module_loaded(self):
         # /api/refresh-source depends on the health module being importable

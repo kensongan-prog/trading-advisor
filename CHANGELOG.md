@@ -106,8 +106,10 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Added
 
 ### Changed
+- **Refresh progress is now obvious.** Clicking any refresh button (Quick / Full / ↻ refresh-all-stale / per-source ↻) instantly shows a prominent top banner with a spinner, the current build phase (pulled live from the job log, e.g. "[5/8] Fetching US ticker data…"), and a **live elapsed-time counter**. The ticking timer makes it unmistakable that the system is working rather than frozen — previously the only feedback was a thin delayed line pointing at the bottom-right widget. Network failures now surface a clear "couldn't reach server" message instead of leaving a stuck spinner.
 
 ### Fixed
+- **Critical: server-side refresh buttons were completely broken since v2.2.0.** A quote-nesting syntax error in the post-refresh toast (`onclick="…style.display='none'"` inside a single-quoted JS string) was a parse error that killed the *entire* injected control-bar script — so `taRefresh` and every refresh button silently did nothing whenever the dashboard was served (the dashboard build's own `node --check` never saw it because the control bar is injected by `server.py` at serve time). Fixed the handler and added a regression test (`test_server_routes.py::TestControlBarJS`) that `node --check`s the control-bar JS so this class of bug can't ship again.
 
 ### Removed
 
