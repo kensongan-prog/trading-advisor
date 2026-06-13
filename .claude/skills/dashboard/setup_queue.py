@@ -79,6 +79,14 @@ def _has_open_prospectus(ticker):
     return False
 
 
+def passes_p1_gate(rsi, price, sma50, sma200):
+    """Phase-1 entry band: trend intact (price > SMA50 > SMA200) AND RSI 35-50.
+    Any missing input fails the gate."""
+    if None in (rsi, price, sma50, sma200):
+        return False
+    return price > sma50 > sma200 and 35 <= rsi <= 50
+
+
 def _compute_levels(c):
     price = c.get("price")
     atr = c.get("atr14")
@@ -110,9 +118,7 @@ def candidates():
         if not c:
             continue
         rsi, price, s50, s200 = c.get("rsi14"), c.get("price"), c.get("sma50"), c.get("sma200")
-        if None in (rsi, price, s50, s200):
-            continue
-        if not (price > s50 > s200 and 35 <= rsi <= 50):
+        if not passes_p1_gate(rsi, price, s50, s200):
             continue
         lv = _compute_levels(c)
         if not lv:

@@ -35,6 +35,19 @@ import finnhub_client as fc  # noqa: E402
 import portfolio  # same dir  # noqa: E402
 
 
+def excursion_r(entry, stop, low, high):
+    """MAE/MFE in R for a long position. risk = entry − stop.
+
+    Returns (mae_r, mfe_r) — MAE is the worst drawdown from entry (≤0 when price
+    dipped below entry), MFE the best run-up. Returns None when risk is invalid
+    (entry ≤ stop), which the caller treats as "skip this position".
+    """
+    risk = entry - stop
+    if risk <= 0:
+        return None
+    return round((low - entry) / risk, 3), round((high - entry) / risk, 3)
+
+
 def _load():
     if CACHE.is_file():
         try:
@@ -65,7 +78,6 @@ def snapshot():
         entry, stop = p.get("entry"), p.get("stop")
         if t.endswith(".KL") or not entry or not stop or entry <= stop:
             continue  # US-only; need a valid entry/stop to express R
-        risk = entry - stop
         q, err = fc.quote(t)
         if err or not q:
             continue
@@ -80,8 +92,7 @@ def snapshot():
         rec["entry"] = entry
         rec["stop"] = stop
         # MAE = worst drawdown from entry (negative R); MFE = best run-up (positive R)
-        rec["mae_r"] = round((rec["low"] - entry) / risk, 3)
-        rec["mfe_r"] = round((rec["high"] - entry) / risk, 3)
+        rec["mae_r"], rec["mfe_r"] = excursion_r(entry, stop, rec["low"], rec["high"])
         rec["last_snapshot"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         data["positions"][t] = rec
         updated.append((t, rec["mae_r"], rec["mfe_r"]))
