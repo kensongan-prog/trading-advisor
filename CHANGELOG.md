@@ -105,20 +105,30 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### Added
 
-### Added
-- `dashboard.py --refresh-source NAME` — refresh a single health source via its `REFRESH_VIA` path, then rebuild. Rejects unknown / agent-only names.
-
 ### Changed
-- **Per-source ↻ refresh buttons now actually refresh just that source.** Previously the Data Health panel's per-row ↻ (and the `/api/refresh-source` endpoint) ran the full `--refresh-stale` batch regardless of which source you clicked — so the per-source granularity was an illusion (flagged in the v2.2.0 review). Now clicking ↻ on, say, `polymarket` enables only `--refresh-polymarket`; the Control panel's ⚡ Quick (and "↻ refresh all stale") remain the all-stale batch. Routing is shared via a single `_route_refresh()` helper used by both `--refresh-stale` and `--refresh-source`.
 
 ### Fixed
-- Static-snapshot (`file://`) dashboards no longer have silently-dead refresh buttons. When the page is opened as a file rather than served by `server.py`, the refresh control bar isn't injected, so the in-page "↻ refresh" / "refresh all stale" buttons had no handler and clicks did nothing. Now a sticky banner ("⚠ Static snapshot — open http://localhost:8787 …") appears and the buttons show clear guidance on starting the server, instead of failing silently. Served mode is unchanged. (Note: editing the journal/watchlist via the terminal CLIs does not rebuild the static `dashboard.html` — use the server, or re-run `dashboard.py`.)
 
 ### Removed
 
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.4.1] — 2026-06-14
+
+**Refresh-button cleanup: real per-source refresh + no more silently-dead buttons on static pages.**
+
+### Added
+- `dashboard.py --refresh-source NAME` — refresh a single health source via its `REFRESH_VIA` path, then rebuild. Rejects unknown / agent-only names.
+
+### Changed
+- **Per-source ↻ refresh buttons now actually refresh just that source.** Previously the Data Health panel's per-row ↻ (and the `/api/refresh-source` endpoint) ran the full `--refresh-stale` batch regardless of which source you clicked — so the per-source granularity was an illusion (flagged in the v2.2.0 review). Now clicking ↻ on, say, `polymarket` enables only `--refresh-polymarket`; the Control panel's ⚡ Quick (and "↻ refresh all stale") remain the all-stale batch. Routing is shared via a single `_route_refresh()` helper used by both `--refresh-stale` and `--refresh-source`. Net effect: the four refresh affordances no longer overlap — ⚡ Quick / ↻ refresh-all-stale = batch, ↻ per-source = one source, 🔄 Full = force-rebuild everything.
+
+### Fixed
+- Static-snapshot (`file://`) dashboards no longer have silently-dead refresh buttons. When the page is opened as a file rather than served by `server.py`, the refresh control bar isn't injected, so the in-page "↻ refresh" / "refresh all stale" buttons had no handler and clicks did nothing. Now a sticky banner ("⚠ Static snapshot — open http://localhost:8787 …") appears and the buttons show clear guidance on starting the server, instead of failing silently. Served mode is unchanged. (Note: editing the journal/watchlist via the terminal CLIs does not rebuild the static `dashboard.html` — use the server, or re-run `dashboard.py`.)
 
 ---
 
