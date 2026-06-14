@@ -6238,6 +6238,7 @@ def _load_news_glyphs(watchlist, refresh=False, skip=False):
 
 def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_sentiment=False, skip_sentiment=False,
                     refresh_news_glyph=False, skip_news_glyph=False):
+    _degraded = []  # enrichment layers that failed transiently — reported at the end
     print("[1/8] Parsing watchlist + journal...")
     watchlist = parse_watchlist()
     journal = parse_journal()
@@ -6246,14 +6247,21 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
     # Sentiment refresh — auto-fill missing watchlist tickers (e.g. after a `wl.py add`).
     # Pass --refresh-sentiment to force-refresh all watchlist tickers.
     # Pass --no-sentiment to skip the auto-fill entirely.
+    # Sentiment is an optional enrichment layer — a transient failure (OpenRouter
+    # 429, network drop) must NOT crash the whole refresh. Degrade to cached data
+    # and record it so the build still completes and the operator sees what broke.
     if not skip_sentiment:
-        if refresh_sentiment:
-            all_t = [e["ticker"].upper() for section in ("us","klse","crypto") for e in watchlist.get(section, [])]
-            _refresh_sentiment_for(all_t, "full refresh (--refresh-sentiment)")
-        else:
-            missing = _detect_missing_sentiment(watchlist)
-            if missing:
-                _refresh_sentiment_for(missing, f"auto-fill {len(missing)} ticker(s) missing from cache")
+        try:
+            if refresh_sentiment:
+                all_t = [e["ticker"].upper() for section in ("us","klse","crypto") for e in watchlist.get(section, [])]
+                _refresh_sentiment_for(all_t, "full refresh (--refresh-sentiment)")
+            else:
+                missing = _detect_missing_sentiment(watchlist)
+                if missing:
+                    _refresh_sentiment_for(missing, f"auto-fill {len(missing)} ticker(s) missing from cache")
+        except Exception as e:
+            _degraded.append(f"sentiment ({type(e).__name__})")
+            print(f"[sentiment] ⚠ refresh failed ({type(e).__name__}: {e}) — using cached sentiment", flush=True)
 
     # Steps 2+3 are independent network fetches → run them concurrently.
     from concurrent.futures import ThreadPoolExecutor as _Pool, as_completed as _ac
@@ -6327,8 +6335,14 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
     print(f"      → {len(klse_announcements)} klse-announcements cached")
 
     # ── News refresh + cache load (Phase B) ──
+    # Optional enrichment — degrade to cached news on transient failure.
     print("[6.5/8] Evaluating AV news cache + priority queue...")
-    news_stats = refresh_news_for_us_tickers(watchlist["us"], us_data, journal, refresh_news=refresh_news and not skip_news)
+    try:
+        news_stats = refresh_news_for_us_tickers(watchlist["us"], us_data, journal, refresh_news=refresh_news and not skip_news)
+    except Exception as e:
+        _degraded.append(f"news ({type(e).__name__})")
+        print(f"[news] ⚠ refresh failed ({type(e).__name__}: {e}) — using cached news", flush=True)
+        news_stats = {"calls_made": 0, "tickers_skipped": [], "queued": [], "errors": [str(e)]}
     if refresh_news and not skip_news:
         bs = news_stats.get("budget_state") or {}
         print(f"      → refreshed {news_stats['calls_made']} ticker(s); skipped {len(news_stats['tickers_skipped'])} (budget exhausted); "
@@ -6380,7 +6394,13 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
         crypto_indicators[coin.upper()] = ind
 
     # News-glyph payloads (per-ticker 🟢/🔴/⚪ + ❗ analyst modifier — see news_glyph.py)
-    news_glyphs = _load_news_glyphs(watchlist, refresh=refresh_news_glyph, skip=skip_news_glyph)
+    # Optional enrichment — degrade to no glyphs on transient failure (e.g. Finnhub blip).
+    try:
+        news_glyphs = _load_news_glyphs(watchlist, refresh=refresh_news_glyph, skip=skip_news_glyph)
+    except Exception as e:
+        _degraded.append(f"news-glyph ({type(e).__name__})")
+        print(f"[news-glyph] ⚠ refresh failed ({type(e).__name__}: {e}) — rendering without fresh glyphs", flush=True)
+        news_glyphs = {}
     news_glyphs_skipped = bool(skip_news_glyph)
 
     # Token-unlock cache (populated by crypto-unlocks-cache skill; consumed by sim §5 gate)
@@ -6455,6 +6475,11 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
         print(js_check)
         print("\nThe dashboard will load but the Risk Simulator and table sorting may not work.")
         print("Fix the JS in dashboard.py and re-run.")
+    if _degraded:
+        # Transient enrichment failures don't fail the build (core dashboard still
+        # rendered from cache) — but make them loud so they're not mistaken for fresh.
+        print(f"\n⚠ Completed with {len(_degraded)} degraded layer(s): {', '.join(_degraded)}")
+        print("  Those used cached data; the Data Health panel shows them still stale. Re-run when the upstream API recovers.")
     print(f"  Open with: open '{OUTPUT_HTML}'")
 
 

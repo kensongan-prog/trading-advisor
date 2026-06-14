@@ -35,6 +35,7 @@ DASHBOARD_HTML = PROJECT_ROOT / "dashboard.html"
 DASHBOARD_PY = SCRIPT_DIR / "dashboard.py"
 WL_PY = SKILLS_DIR / "watchlist" / "wl.py"
 J_PY = SKILLS_DIR / "journal" / "j.py"
+LAST_JOB_LOG = PROJECT_ROOT / ".claude" / "cache" / "dashboard" / "last_job.log"  # persisted job output for post-mortem
 
 AUTO_REFRESH_AGE_H = 12  # quick-refresh auto-fires when dashboard.html is older
 
@@ -95,11 +96,24 @@ class Job:
                 self.state = "done" if rc == 0 else "error"
                 self.log.append(f"[exit {rc}]")
                 self.finished_at = time.time()
+                self._persist_log()
         except Exception as e:
             with self.lock:
                 self.state = "error"
                 self.log.append(f"[server error] {e}")
                 self.finished_at = time.time()
+                self._persist_log()
+
+    def _persist_log(self):
+        """Write the full job output to a known file so failures stay
+        diagnosable after a restart (the in-memory log is otherwise lost).
+        Caller holds self.lock."""
+        try:
+            LAST_JOB_LOG.parent.mkdir(parents=True, exist_ok=True)
+            LAST_JOB_LOG.write_text(
+                f"# {self.label} — state={self.state}\n" + "\n".join(self.log))
+        except Exception:
+            pass
 
     def status(self):
         with self.lock:
@@ -299,8 +313,8 @@ async function poll(){
         $('tactl-state').innerHTML='<span class="err">✗ '+j.label+' failed</span>';
         $('tactl-log').textContent=j.log_tail.join('\\n');
         $('tactl-log').style.display='block';
-        showToast('<span class="err">✗ '+(j.label||'Refresh')+' failed — open the Control log for details</span>', 13000);
-        taNotify('✗ Dashboard refresh failed', (j.label||'refresh')+' — open the Control log');
+        showToast('<span class="err">✗ '+(j.label||'Refresh')+' failed — see the log below, or .claude/cache/dashboard/last_job.log</span>', 15000);
+        taNotify('✗ Dashboard refresh failed', (j.label||'refresh')+' — see .claude/cache/dashboard/last_job.log');
         sessionStorage.removeItem('ta_pre_refresh');  // no reload on failure; don't leave stale pre-state
         wasRunning=false;
       }
