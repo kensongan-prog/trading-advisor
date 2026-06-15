@@ -109,6 +109,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
+- **`sentiment-inline` skill** — re-score retail sentiment using the *current Claude Code session* as the classifier instead of OpenRouter's free models: no metered API, no spend, and a stronger model than the free Gemma/GPT-OSS pair. A manual, session-driven alternative to the slow `sentiment-cache` LLM leg (free-tier 429 backoffs). `score_inline.py dump --stale` captures the body batches the real scorer would send; the session fills a `scores` array; `score_inline.py ingest` replays `score_ticker` with those classifications — monkeypatching *only* `classify_messages` so all real aggregation, engagement weighting, the v2.6.0 coverage haircut, composite math, and cache format are reused (zero format drift). Re-scores existing raw social caches in place; not headless (automated builds still use `sentiment-cache`). Regression test `tests/test_sentiment_inline.py` pins the content key, the dump→ingest round-trip, and no global-state leak. First run cleared 13 stale watchlist names (KTOS 91% bull but no FADE — coverage haircut held conviction at 43%).
 
 ### Changed
 

@@ -293,3 +293,15 @@ This is the *same bug pattern* as the crypto grid (which was already fixed with 
 **Symptom:** Some `yf.Ticker(t).history()` results have a final-row Close=NaN, especially for thinly-traded names or right after a session boundary.
 
 **Fix:** Always `.dropna(subset=["Close"])` before reading the last row. Fall back to Twelve Data if the dropna leaves an empty DataFrame. Pattern used in `dashboard.py` and `screener.py`.
+
+---
+
+### 2026-06-15 — Free, no-spend sentiment re-scoring: the `sentiment-inline` skill
+
+**Context:** the `sentiment-cache` LLM leg (OpenRouter free models) is the slow part of a build — free-tier 429s → backoff → fallback double-calls, serial per ticker. The only paid speedup (Haiku on OpenRouter, or the Anthropic API) breaks the project's "free LLM, zero metered spend" sentiment design.
+
+**Insight:** during a session you ARE a capable classifier. The only thing that differs from `score_ticker` is the `classify_messages` LLM call — so `sentiment-inline` monkeypatches *only that one function* (capture bodies in `dump`, return session-scored classifications in `ingest`) and reuses 100% of the real pipeline (llm_pcts, engagement weighting, coverage haircut, compute_composite, cache format). No format drift.
+
+**Use:** `score_inline.py dump --stale` → fill each batch's `scores` array (one `{sentiment,conviction,relevance}` per body) → `score_inline.py ingest`. Manual, session-only (NOT headless — automated builds still use `sentiment-cache`). Re-scores existing raw social caches; run the raw fetchers first if those are stale too.
+
+**Landmines mapped while scoring real feeds:** StockTwits/HN feeds are heavily polluted — `$RUM` promo spam tagging RDDT, `$UPDOG.X` memecoin spam tagging SOL, "Microsoft Project Solara" matching SOL (the exact Solana-vs-Solara case in the prompt), "Sqlit" matching ENA, the word "hype" matching HYPE, generic HN (Lean Startup AMA, H1B visa, DVD ripping) matching BNB/HBAR. The `relevance: none` discount is doing real work — score look-alikes/tag-spam as `none` so they don't dilute the on-topic read.
