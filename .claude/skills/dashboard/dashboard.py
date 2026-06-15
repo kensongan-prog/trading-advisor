@@ -44,6 +44,35 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_HTML = PROJECT_ROOT / "dashboard.html"
 WATCHLIST_MD = PROJECT_ROOT / "watchlist.md"
 JOURNAL_DIR = PROJECT_ROOT / "journal"
+FONTS_DIR = SCRIPT_DIR / "fonts"
+
+
+def _embed_fonts_css():
+    """Build a <style> block embedding the self-hosted woff2 fonts as base64 data
+    URIs so the dashboard is fully self-contained — works offline / file:// / over
+    Tailscale with no external font requests. Files live in fonts/<Family>-<wght>.woff2.
+    Returns '' if the fonts dir is absent (CSS falls back to system stacks)."""
+    import base64
+    specs = [
+        ("Archivo", 600, "Archivo-600.woff2"),
+        ("Archivo", 700, "Archivo-700.woff2"),
+        ("IBM Plex Mono", 400, "IBMPlexMono-400.woff2"),
+        ("IBM Plex Mono", 500, "IBMPlexMono-500.woff2"),
+        ("IBM Plex Mono", 600, "IBMPlexMono-600.woff2"),
+    ]
+    faces = []
+    for family, weight, fname in specs:
+        fp = FONTS_DIR / fname
+        if not fp.is_file():
+            continue
+        b64 = base64.b64encode(fp.read_bytes()).decode("ascii")
+        faces.append(
+            f"@font-face{{font-family:'{family}';font-style:normal;font-weight:{weight};"
+            f"font-display:swap;src:url(data:font/woff2;base64,{b64}) format('woff2');}}")
+    return f"<style>{''.join(faces)}</style>" if faces else ""
+
+
+FONT_FACE_STYLE = _embed_fonts_css()
 
 # ── .env loading (per-skill) ───────────────────────────────────────────────
 def load_skill_env(skill_name):
@@ -1507,23 +1536,34 @@ def fetched_at_of(data):
 
 CSS = """
 :root {
-  --bg: #0f1115; --panel: #161a22; --panel-2: #1c2030;
-  --text: #e8ebf2; --dim: #8a93a6; --bord: #2a2f3d;
+  /* Restyle v2 — "trading terminal, editorial dark": deeper layered surfaces,
+     hairline borders, IBM Plex Mono for data + Archivo for labels/headers. */
+  --bg: #0a0c11; --panel: #12151c; --panel-2: #181c25; --panel-3: #1e232e;
+  --text: #e9edf5; --dim: #818b9e; --bord: #232834; --bord-soft: #1b2027;
   --green: #4ade80; --yellow: #fbbf24; --red: #f87171; --blue: #60a5fa;
   --accent: #a78bfa;
   /* RGB triples for rgba() tints — single source for the brand colors used at
      many alphas across panels (sentiment, badges, sector heat, BTFD/STR bars). */
   --green-rgb: 74,222,128; --yellow-rgb: 251,191,36; --red-rgb: 248,113,113;
+  --accent-rgb: 167,139,250;
+  /* Typography: mono for data (aligned numbers), grotesque for chrome/labels. */
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-ui: "Archivo", -apple-system, system-ui, "Segoe UI", sans-serif;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.22);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.4; }
-.container { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.45;
+  background-image: radial-gradient(1200px 600px at 70% -10%, rgba(var(--accent-rgb),0.06), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased; }
+.container { max-width: 1600px; margin: 0 auto; padding: 18px; }
 .header { display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; background: var(--panel); border-radius: 8px;
-  border: 1px solid var(--bord); margin-bottom: 16px; }
-.header h1 { margin: 0; font-size: 16px; color: var(--accent); }
-.header .meta { color: var(--dim); font-size: 12px; }
+  padding: 14px 18px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border-radius: 10px; border: 1px solid var(--bord); margin-bottom: 16px; box-shadow: var(--shadow); }
+.header h1 { margin: 0; font-family: var(--font-ui); font-weight: 700; font-size: 17px;
+  letter-spacing: -0.01em; color: var(--text); }
+.header .meta { color: var(--dim); font-size: 12px; font-family: var(--font-ui); }
 .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
 .strip.strip-5 { grid-template-columns: repeat(5, 1fr); }
 .strip .cell { background: var(--panel); padding: 12px; border-radius: 8px; border: 1px solid var(--bord); }
@@ -1547,19 +1587,20 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
 .news-row .sent.bear { background: rgba(var(--red-rgb),0.18); color: var(--red); }
 .news-row .sent.neu { background: var(--panel-2); color: var(--dim); }
 .news-row .title { display: block; margin-top: 2px; color: var(--text); }
-.panel { background: var(--panel); border: 1px solid var(--bord); border-radius: 8px;
-  padding: 14px; margin-bottom: 16px; }
-.panel h2 { margin: 0 0 10px 0; font-size: 13px; color: var(--accent);
-  text-transform: uppercase; letter-spacing: 0.06em; }
-.panel .stale { color: var(--dim); font-size: 11px; float: right; font-weight: normal;
-  text-transform: none; letter-spacing: normal; }
+.panel { background: var(--panel); border: 1px solid var(--bord); border-radius: 10px;
+  padding: 15px 16px; margin-bottom: 14px; box-shadow: var(--shadow);
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.018), transparent 80px); }
+.panel h2 { margin: 0 0 11px 0; font-family: var(--font-ui); font-size: 12px; font-weight: 700;
+  color: var(--text); text-transform: uppercase; letter-spacing: 0.09em; line-height: 1.3; }
+.panel .stale { color: var(--dim); font-size: 11px; float: right; font-weight: 500;
+  font-family: var(--font-mono); text-transform: none; letter-spacing: normal; }
 /* Collapsible sections — click a panel's H2 to fold it (state persists in
    localStorage). Marker only on top-level div panels; the Regime <details>
    panel keeps its own native ▸/▾ (its h2 sits inside <summary>, not a direct
    child, so this selector skips it). */
 .panel > h2 { cursor: pointer; user-select: none; }
-.panel > h2::before { content: "▾"; color: var(--dim); font-size: 10px;
-  margin-right: 7px; display: inline-block; vertical-align: middle; }
+.panel > h2::before { content: "▾"; color: var(--accent); font-size: 10px;
+  margin-right: 8px; display: inline-block; vertical-align: middle; }
 .panel.collapsed > h2::before { content: "▸"; }
 .panel.collapsed > h2 { margin-bottom: 0; }
 .panel.collapsed > *:not(h2) { display: none; }
@@ -1579,15 +1620,15 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
 .event .type { font-weight: bold; color: var(--blue); }
 .event .when { color: var(--dim); font-size: 11px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; color: var(--dim); font-weight: normal;
+th { text-align: left; color: var(--dim); font-weight: 600; font-family: var(--font-ui);
   padding: 8px 6px; border-bottom: 1px solid var(--bord);
-  text-transform: uppercase; letter-spacing: 0.03em; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.05em; font-size: 9.5px;
   cursor: pointer; user-select: none; }
 th:hover { color: var(--text); }
 th.sort-asc::after { content: " ▲"; color: var(--accent); }
 th.sort-desc::after { content: " ▼"; color: var(--accent); }
-td { padding: 6px; border-bottom: 1px solid var(--bord); }
-tr:hover { background: var(--panel-2); }
+td { padding: 7px 6px; border-bottom: 1px solid var(--bord-soft); }
+tr:hover { background: rgba(var(--accent-rgb),0.05); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.green { color: var(--green); }
 td.red { color: var(--red); }
@@ -1780,14 +1821,16 @@ td.dim { color: var(--dim); }
 /* ── Action Rail (persistent top band — regime · halt · live setups) ────── */
 .action-rail {
   display: grid; grid-template-columns: 180px 1fr 1fr 1fr; gap: 10px;
-  margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
-  background: linear-gradient(180deg, #1a1d24, #14171c); border: 1px solid var(--bord);
-  position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  margin: 0 0 16px; padding: 11px 14px; border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel-3), var(--panel)); border: 1px solid var(--bord);
+  position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow);
 }
-.ar-slot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 8px; border-radius: 6px; }
-.ar-key { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+.ar-slot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 11px; border-radius: 8px;
+  background: rgba(0,0,0,0.18); border: 1px solid var(--bord-soft); }
+.ar-key { font-family: var(--font-ui); font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--dim); }
 .ar-val { font-size: 14px; color: var(--text); }
-.ar-val b { font-size: 17px; }
+.ar-val b { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .ar-sub { font-size: 11px; color: var(--dim); }
 .ar-regime.ar-rr-tight   { background: rgba(var(--red-rgb),0.10); }
 .ar-regime.ar-rr-loose   { background: rgba(var(--green-rgb),0.10); }
@@ -2119,8 +2162,9 @@ td.dim { color: var(--dim); }
 .sim-form input, .sim-form select { background: var(--panel-2); color: var(--text); border: 1px solid var(--bord);
   padding: 6px 8px; border-radius: 4px; font-family: inherit; font-size: 13px; width: 100%; }
 .sim-form input:focus, .sim-form select:focus { outline: none; border-color: var(--accent); }
-.sim-form button { background: var(--accent); color: white; border: none; padding: 7px 14px; border-radius: 4px;
-  font-weight: bold; font-size: 12px; cursor: pointer; }
+.sim-form button { background: var(--accent); color: #0a0c11; border: none; padding: 7px 14px; border-radius: 6px;
+  font-family: var(--font-ui); font-weight: 700; font-size: 12px; cursor: pointer; transition: filter .15s; }
+.sim-form button:hover { filter: brightness(1.1); }
 .sim-result { background: var(--panel-2); padding: 14px; border-radius: 6px; border: 1px solid var(--bord); }
 .sim-verdict { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
 .sim-verdict.go { color: var(--green); }
@@ -5894,8 +5938,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#0a0c11">
 <title>Trading Dashboard</title>
+{FONT_FACE_STYLE}
 <style>{CSS}</style>
 </head><body>
 <div class="container">
