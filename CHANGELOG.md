@@ -113,13 +113,19 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Changed
 
 ### Fixed
-- **US news now actually refreshes the names the Data Health panel flags stale.** TTL mismatch: health flagged `us_news` stale at 48h, but the news refresh's `P3_context` priority (plain watchlist names) only refreshed after 168h — so `--refresh-stale` silently skipped them while the panel showed them "stale & refreshable" (only journal names, on 6/12h TTLs, ever refreshed). Reconciled `news_cache.PRIORITY_TTL_HOURS["P3_context"]` 168h → 48h to match `health.TTL_HOURS["us_news"]`; AV's daily-budget reserve still protects the 25/day cap. Verified: a refresh took US news 2 → 12 of 13 fresh (SPY correctly skipped). Regression test (`tests/test_news_ttl_reconciliation.py`) pins the invariant: the loosest news priority TTL must stay ≤ health's us_news TTL.
 
 ### Removed
 
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.6.1] — 2026-06-15
+
+### Fixed
+- **US news now actually refreshes the names the Data Health panel flags stale.** TTL mismatch: health flagged `us_news` stale at 48h, but the news refresh's `P3_context` priority (plain watchlist names) only refreshed after 168h — so `--refresh-stale` silently skipped them while the panel showed them "stale & refreshable" (only journal names, on 6/12h TTLs, ever refreshed). Reconciled `news_cache.PRIORITY_TTL_HOURS["P3_context"]` 168h → 48h to match `health.TTL_HOURS["us_news"]`; AV's daily-budget reserve still protects the 25/day cap. Verified: a refresh took US news 2 → 12 of 13 fresh (SPY correctly skipped). Regression test (`tests/test_news_ttl_reconciliation.py`) pins the invariant: the loosest news priority TTL must stay ≤ health's us_news TTL.
 
 ---
 
