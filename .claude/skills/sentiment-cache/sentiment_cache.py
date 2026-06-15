@@ -567,7 +567,25 @@ def compute_composite(st_summary, rd_summary, hn_summary=None):
     bull_score = round(sum(b * w for b, w in zip(bulls, weights)) / total_w, 3)
     bear_score = round(sum(b * w for b, w in zip(bears, weights)) / total_w, 3)
     neut_score = round(sum(n * w for n, w in zip(neuts, weights)) / total_w, 3)
-    conviction = round(sum(convictions) / len(convictions), 3) if convictions else 0.0
+    conviction_raw = round(sum(convictions) / len(convictions), 3) if convictions else 0.0
+
+    # Volume/coverage haircut (gap #3): a read off 2 messages must not carry the
+    # same conviction as one off 50. Dampen conviction by how much on-topic sample
+    # actually backs it — log-scaled, reaching ~full confidence at TARGET_N items.
+    # This flows through to the contrarian-flag thresholds AND every downstream
+    # consumer (the Risk Simulator's §4 factor, the Contrarian Setups panel), so a
+    # thin sample can no longer fire a high-conviction flag.
+    import math as _math
+    def _sample_n(s):
+        if not s or not s.get("present"):
+            return 0
+        if s.get("n_scored_bodies") is not None:
+            return s["n_scored_bodies"]
+        return (s.get("n_messages") or 0) + (s.get("n_posts") or 0) + (s.get("n_comments") or 0)
+    n_total = _sample_n(st_summary) + _sample_n(rd_summary) + _sample_n(hn_summary)
+    TARGET_N = 25  # on-topic items for ~full-confidence; below this, conviction is dampened
+    coverage = round(min(1.0, _math.log1p(n_total) / _math.log1p(TARGET_N)), 3) if n_total > 0 else 0.0
+    conviction = round(conviction_raw * coverage, 3)
 
     # Label + contrarian flag
     if bull_score >= 0.80 and conviction >= 0.70:
@@ -586,6 +604,9 @@ def compute_composite(st_summary, rd_summary, hn_summary=None):
         "bear_score": bear_score,
         "neutral_score": neut_score,
         "conviction": conviction,
+        "conviction_raw": conviction_raw,   # pre-coverage (text-only) conviction
+        "coverage": coverage,               # 0-1 sample-size confidence multiplier
+        "n_total": n_total,                 # on-topic items backing this read
         "label": label,
         "badge": badge,
         "contrarian_flag": flag,
