@@ -665,6 +665,33 @@ def load_sentiment(ticker_upper):
     return _SENTIMENT_CACHE_LOADED.get(ticker_upper)
 
 
+def sentiment_sim_fields(ticker_upper):
+    """Per-ticker fields the Risk Simulator's §4 contrarian factor consumes:
+    the composite's contrarian flag (FADE/BUY) + conviction, and whether the
+    read is stale (>24h, the sentiment TTL) or missing. Stale/missing → the sim
+    degrades to 'not assessed' rather than asserting on old data."""
+    sent = load_sentiment(ticker_upper)
+    comp = (sent.get("composite") or {}) if sent else {}
+    stale = True
+    if sent:
+        ts = sent.get("scored_at") or sent.get("_fetched_at")
+        if not ts:
+            stale = False  # present but undated — treat as usable
+        else:
+            try:
+                dt = datetime.fromisoformat(str(ts).rstrip("Z"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                stale = (datetime.now(timezone.utc) - dt).total_seconds() / 3600 > 24
+            except Exception:
+                stale = False
+    return {
+        "sentiment_flag": comp.get("contrarian_flag"),
+        "sentiment_conviction": comp.get("conviction"),
+        "sentiment_stale": stale,
+    }
+
+
 POLYMARKET_CACHE_FILE = PROJECT_ROOT / ".claude" / "cache" / "polymarket" / "events.json"
 
 def load_polymarket():
@@ -2196,6 +2223,7 @@ td.dim { color: var(--dim); }
 .sim-gate .mark.ok { color: var(--green); }
 .sim-gate .mark.bad { color: var(--red); }
 .sim-gate .mark.warn { color: var(--yellow); }
+.sim-gate .mark.info { color: var(--dim); }
 .sim-gate .label { color: var(--text); font-weight: bold; }
 .sim-gate .why { color: var(--dim); font-size: 11px; margin-left: 4px; }
 @media print { .refresh-btn { display: none; } body { background: white; color: black; } }
@@ -3040,6 +3068,24 @@ document.querySelectorAll('table').forEach(t => {
       }
     }
 
+    // 8.5 §4 contrarian retail-sentiment confluence (all markets; Phase 1 = long only).
+    // Reuses the composite's FADE/BUY flag, gated on conviction so thin reads stay
+    // quiet, and degrades to an informational "not assessed" when the read is
+    // stale/missing — so it can never false-confirm a long on euphoric retail.
+    {
+      const SCONV_FLOOR = 0.6;          // below this, the flag is treated as noise
+      const sf = t.sentiment_flag, sc = (+t.sentiment_conviction) || 0;
+      if (t.sentiment_stale) {
+        g('info', 'Retail sentiment (§4)', 'contrarian leg not assessed — sentiment cache stale/missing; refresh to evaluate');
+      } else if (sf === 'FADE' && sc >= SCONV_FLOOR) {
+        g('warn', 'Retail sentiment (§4)', `🔥 FADE (conv ${sc.toFixed(2)}) — retail euphoric; a long here chases a crowded name. Confirm you're not the late money.`);
+      } else if (sf === 'BUY' && sc >= SCONV_FLOOR) {
+        g('ok', 'Retail sentiment (§4)', `🧊 BUY (conv ${sc.toFixed(2)}) — retail capitulation; a long aligns with the contrarian read.`);
+      } else {
+        g('ok', 'Retail sentiment (§4)', 'no high-conviction contrarian extreme — neutral');
+      }
+    }
+
     // 9. R:R floor (regime-adjusted)
     // Tolerance on the R:R compare — float precision can produce 1.9999999987 from cleanly
     // doctrine-passing inputs (e.g. entry 15.55, stop 14.77, TP1 17.11 → 2.0R exactly).
@@ -3162,7 +3208,7 @@ document.querySelectorAll('table').forEach(t => {
         <div class="sim-stat"><div class="l">Risk per ${unit === 'units' ? 'unit' : 'share'}</div><div class="v">${sym}${riskPerShareLocal.toFixed(dp)}</div></div>
       </div>
       <div class="sim-gates">
-        ${gates.map(g => `<div class="sim-gate"><span class="mark ${g.ok}">${g.ok === 'ok' ? '✓' : g.ok === 'warn' ? '⚠' : '✗'}</span><div><span class="label">${g.label}</span><div class="why">${g.why}</div></div></div>`).join('')}
+        ${gates.map(g => `<div class="sim-gate"><span class="mark ${g.ok}">${g.ok === 'ok' ? '✓' : g.ok === 'warn' ? '⚠' : g.ok === 'info' ? 'ℹ' : '✗'}</span><div><span class="label">${g.label}</span><div class="why">${g.why}</div></div></div>`).join('')}
       </div>
       ${prospBlock}`;
     // Wire the copy button (rebound on every render)
@@ -3795,6 +3841,7 @@ def render_html(ctx):
             "next_earnings": t.get("next_earnings"),
             "status_label": status_label,
         }
+        sim_tickers[tk].update(sentiment_sim_fields(tk))
 
     # KLSE: same shape, plus market='klse', currency='MYR', lot_size=100, fundamentals if cached
     klse_fund_local = ctx.get("klse_fundamentals", {}) or {}
@@ -3840,6 +3887,7 @@ def render_html(ctx):
             "fr_next_expected_filing_by": fr_info.get("next_expected_filing_by"),
             "upcoming_events": ann.get("upcoming_events") or [],
         }
+        sim_tickers[tk].update(sentiment_sim_fields(tk))
 
     # Crypto: spot-only, USD-native, fractional units. Indicators from Binance daily klines.
     crypto_ind_local    = ctx.get("crypto_indicators", {}) or {}
@@ -3878,6 +3926,7 @@ def render_html(ctx):
             "unlock_entry": crypto_unlocks_local.get(tk),
             "data_source": ind.get("data_source", "binance"),
         }
+        sim_tickers[tk].update(sentiment_sim_fields(tk))
 
     sim_payload = {
         "config": {
@@ -3931,7 +3980,7 @@ def render_html(ctx):
   </div>
   <div class="sim-result" id="sim-result">
     <div class="sim-verdict pending">PENDING — pick a ticker and fill in entry, stop, TP1</div>
-    <div class="sim-blurb">You pick entry / stop / TP / size; the sim verifies the trade is doctrine-compliant (per-trade risk cap §5, portfolio heat, regime R:R floor, technical confluence, event-window halts). The Size field is auto-prefilled to the doctrine maximum — edit it down for partial conviction, correlation tax, or partial-fill plans. Sim uses the dashboard's cached technicals; refresh the dashboard for the freshest numbers.</div>
+    <div class="sim-blurb">You pick entry / stop / TP / size; the sim verifies the trade is doctrine-compliant (per-trade risk cap §5, portfolio heat, regime R:R floor, technical confluence, §4 retail-sentiment contrarian check, event-window halts). The Size field is auto-prefilled to the doctrine maximum — edit it down for partial conviction, correlation tax, or partial-fill plans. Sim uses the dashboard's cached technicals; refresh the dashboard for the freshest numbers.</div>
   </div>
 </div>
 <script>
