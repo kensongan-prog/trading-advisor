@@ -843,6 +843,26 @@ def fetch_binance_funding(symbol_usdt, force=False):
             out["annualized_pct"] = rate * 3 * 365 * 100
         except Exception:
             out["annualized_pct"] = None
+        # Gap #2: enrich the single positioning read with OI trend + top-trader
+        # long/short skew (same /futures/data endpoints crypto-derivatives uses).
+        # Each is best-effort — a failure here must not drop funding.
+        try:
+            oih, e2 = http_json(f"https://fapi.binance.com/futures/data/openInterestHist"
+                                f"?symbol={symbol_usdt}&period=1d&limit=8")
+            if not e2 and isinstance(oih, list) and len(oih) >= 2:
+                oi_now = float(oih[-1].get("sumOpenInterestValue") or 0)
+                oi_then = float(oih[0].get("sumOpenInterestValue") or 0)
+                out["oi_usd"] = oi_now
+                out["oi_trend_7d_pct"] = ((oi_now / oi_then - 1) * 100) if oi_then else None
+        except Exception:
+            pass
+        try:
+            ls, e3 = http_json(f"https://fapi.binance.com/futures/data/topLongShortAccountRatio"
+                               f"?symbol={symbol_usdt}&period=1d&limit=1")
+            if not e3 and isinstance(ls, list) and ls:
+                out["top_ls_ratio"] = float(ls[-1].get("longShortRatio") or 0) or None
+        except Exception:
+            pass
     cache_set(key, out)
     return out, "fresh"
 
@@ -3041,18 +3061,27 @@ document.querySelectorAll('table').forEach(t => {
         g('warn', 'Stop vs ATR', 'ATR unavailable — cannot validate stop distance against typical noise');
       }
 
-      // Crypto-specific: Funding rate extreme (Binance perp proxy for spot crowding).
+      // Crypto perp positioning (§4 flow / §5 flush): ONE synthesized read from
+      // funding + OI trend + top-trader long/short. These all measure crowding and
+      // are correlated, so they share a single gate rather than triple-counting.
       if (t.funding_annualized_pct != null) {
-        const f = t.funding_annualized_pct;
+        const f = t.funding_annualized_pct, oi = t.oi_trend_7d_pct, ls = t.top_ls_ratio;
+        const ctx = [];
+        if (oi != null) ctx.push(`OI ${oi >= 0 ? '+' : ''}${oi.toFixed(0)}%/7d`);
+        if (ls != null) ctx.push(`top-trader L/S ${ls.toFixed(2)}`);
+        const ctxStr = ctx.length ? ` · ${ctx.join(' · ')}` : '';
         if (f > 50) {
-          g('warn', 'Perp funding', `${f.toFixed(1)}% APR — perps crowded long; spot longs face elevated flush risk on a funding-driven liquidation cascade`);
+          // Crowded long; rising OI + one-sided top traders amplify the flush risk.
+          const amp = ((oi || 0) > 10 && (ls || 0) > 1.5)
+            ? ' — rising OI + one-sided longs amplify flush risk' : '';
+          g('warn', 'Perp positioning', `funding ${f.toFixed(1)}% APR — perps crowded long${amp}${ctxStr}`);
         } else if (f < -30) {
-          g('ok', 'Perp funding', `${f.toFixed(1)}% APR — perps crowded short; squeeze fuel favors a long`);
+          g('ok', 'Perp positioning', `funding ${f.toFixed(1)}% APR — perps crowded short; squeeze fuel favors a long${ctxStr}`);
         } else {
-          g('ok', 'Perp funding', `${f.toFixed(1)}% APR — neutral positioning`);
+          g('ok', 'Perp positioning', `funding ${f.toFixed(1)}% APR — neutral${ctxStr}`);
         }
       } else {
-        g('warn', 'Perp funding', 'Binance funding unavailable — cannot assess perp crowding');
+        g('warn', 'Perp positioning', 'Binance funding unavailable — cannot assess perp crowding');
       }
 
       // Crypto-specific: regime tilt nudges R:R expectations (informational, not a hard gate).
@@ -3918,9 +3947,11 @@ def render_html(ctx):
             "vol_ratio": ind.get("vol_ratio"),
             "change_pct": ind.get("change_pct"),
             "status_label": None,
-            # Derivatives positioning (Binance perp funding)
+            # Derivatives positioning (Binance perp funding + OI trend + L/S skew)
             "funding_annualized_pct": fnd.get("annualized_pct"),
             "funding_last": fnd.get("last_funding"),
+            "oi_trend_7d_pct": fnd.get("oi_trend_7d_pct"),
+            "top_ls_ratio": fnd.get("top_ls_ratio"),
             "binance_pair": sym_pair,
             # Token unlock cache (consumed by §5 48h-halt gate)
             "unlock_entry": crypto_unlocks_local.get(tk),
