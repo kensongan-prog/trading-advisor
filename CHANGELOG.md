@@ -96,6 +96,11 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
+### In flight (2026-06-15 EOD)
+- **Operational state left running:** the level watcher is up (safety net for the **live real CLSK** position — entry $15.20, stop $13.98, $183 risk; alerts on stop/TP during US hours) and the local server serves the v2.6.0 dashboard on :8787. A `--refresh-stale` run was kicked off to clear ~59 stale sources and populate the new sentiment-coverage + perp-positioning factors — let it finish, then sanity-check those factors on fresh data.
+- **Next-session options** (from the data-utilization audit): remaining enrichment gaps are polymarket (still rung-1, displayed-only → make it a signal) and a unified news ⊕ retail ⊕ polymarket sentiment view. Or pivot to operating: review setups on the now-fresh data.
+- **Minor cleanup noted:** `tests/test_server_routes.py::TestJobSemantics` runs real `Job` instances whose `_persist_log()` writes to the live `.claude/cache/dashboard/last_job.log` — harmless (gitignored debug artifact) but the test should point at a temp path for isolation.
+
 **Carry-over watch-threads (still in flight after v2.0.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified.
 - **Reddit-comment scoring calibration watch.** Sub-point (c) the LLM relevance filter on comment off-topicness — addressed in v2.0.4 by adding a relevance gate to the classifier (works for HN, Reddit comments, and StockTwits). Sub-points (a) and (b) still require trade-outcome data to calibrate — deferred.
