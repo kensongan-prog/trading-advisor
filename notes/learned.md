@@ -4,6 +4,34 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-14 — HTTPS over Tailscale (for OS notifications) needs the admin HTTPS toggle, then `tailscale serve`
+
+OS/browser notifications (the dashboard's refresh-complete pings) require a **secure
+context** — `https://` or `localhost`. Over Tailscale you hit the dashboard at
+`http://100.x.x.x:8787`, which is neither, so notifications silently don't fire
+there (the in-page toast + banner still work).
+
+Fix path (chosen 2026-06-14): use Tailscale's own TLS, no code/cert files, auto-renewing.
+1. **Enable HTTPS certs in the admin console** — https://login.tailscale.com/admin/dns
+   → "HTTPS Certificates" → Enable. (MagicDNS must be on too.) Without this,
+   `tailscale cert` / `tailscale serve` fail with **"your Tailscale account does not
+   support getting TLS certs"** (this is the toggle being off, not a plan limit on
+   Personal/free).
+2. **Then** run once: `tailscale serve --bg 8787` — terminates TLS and reverse-proxies
+   `https://macbooks-macbook-pro.tail0e0dd8.ts.net` → `127.0.0.1:8787`. Persistent
+   tailnet config (survives reboots); undo with `tailscale serve reset`.
+3. Access the dashboard at that https URL (no `:8787`). server.py stays plain http on
+   localhost — relative `/api/...` fetches + the static-page protocol checks all work
+   behind the proxy unchanged. Notifications then work over Tailscale.
+
+Gotcha: `tailscale serve --bg` **hangs** (no error) when HTTPS certs aren't enabled —
+it blocks trying to provision a cert. Diagnose with `tailscale cert <fqdn>`, which
+fails fast with the explicit 500 message above. Self-signed + a server.py `--https`
+flag is the fallback if the admin toggle is unavailable (works, but one-time
+"not private" cert warning per device).
+
+---
+
 ### 2026-06-13 — Skill dirs are deliberately self-contained; don't DRY across them
 
 During the v2.3.0 optimization pass the instinct was to dedup the `.env` loader

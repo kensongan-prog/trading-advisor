@@ -4,7 +4,7 @@ This file is the **replication guide**. Hand it (along with everything in the pr
 
 **Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
-**Last reconciled with reality: v2.4.0 (2026-06-14).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
+**Last reconciled with reality: v2.5.0 (2026-06-15).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
 
 ---
 
@@ -108,6 +108,8 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Mobile layout (≤780px / ≤420px)** — Action Rail stacks, halt spotlight reflows, BTFD/Contrarian rows wrap, Risk Simulator becomes single-column, big grids horizontally scroll inside their panels. `theme-color` meta for iOS Safari. Validated via Playwright at 1440×900 / 768×1024 / 390×844.
 - **Viewer-timezone reformat** — every absolute UTC timestamp (Built at, halt event times, fmt_fetched chips) gets rewritten to the viewer's browser timezone via `Intl.DateTimeFormat`. Static HTML stays portable across build host / viewing device.
 - **Collapsible sections (v2.4.0)** — click any panel's `<h2>` to fold/unfold it; fold state persists per-panel in `localStorage` (keyed by the heading's leading text) and works in static `file://` mode. Pure CSS (`.panel.collapsed > *:not(h2){display:none}`) + a small JS IIFE; header controls are excluded from the toggle. The Regime panel keeps its older native `<details>` collapse.
+- **Editorial-dark theme (v2.5.0)** — Archivo (headers/labels) + IBM Plex Mono (data) self-hosted and base64-embedded at build time via `_embed_fonts_css()` (`.claude/skills/dashboard/fonts/*.woff2`); fully offline/self-contained. Layered surfaces, hairline borders, Action Rail inset cards, accent chevrons. Restyle is CSS + a `<head>` font-embed only — no structural/JS change.
+- **Refresh feedback (v2.5.0, server mode)** — clicking any refresh button shows an instant top progress banner (spinner + live build-phase from the job log + ticking elapsed timer); completion fires a toast **and** an OS notification (success/failure) when permission is granted. Build degrades gracefully — a transient failure in one enrichment layer (news/sentiment/glyph) renders from cache + reports the degraded layer instead of crashing. Job output persists to `.claude/cache/dashboard/last_job.log` for post-mortem.
 
 ### Architectural patterns established
 
@@ -130,7 +132,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
 - **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
 
-### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 — currently 234 tests, ~5s)
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 + v2.5.0 — currently 241 tests, ~5s)
 
 Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
 
@@ -150,6 +152,7 @@ Pure-logic regression net under the dashboard's silent-failure surfaces. Every b
 | `test_watcher_parse.py` | (v2.3.0) `parse_levels()` currency-only level extraction (ignores 20-EMA/2R/account size), market-hours gate, once-per-day dedupe. Alert accuracy. |
 | `test_server_routes.py` | (v2.3.0) server `Job` one-at-a-time busy semantics (the v2.2.0 no-op fix), status shape, Quick/Full flag contract, refresh-source validation wiring. |
 | `test_journal_cli.py` | (v2.4.0) every `j.py` subcommand's `--help` exits 0 with usage text — guards against unescaped `%` in argparse help strings (the bug that crashed `j.py new --help`). |
+| `test_refresh_routing.py` | (v2.4.1) `_route_refresh` maps a source → only its REFRESH_VIA flag/CLI (true per-source refresh), and the stale batch → union of flags. `test_server_routes.py` also node-checks the injected control-bar JS (v2.5.0). |
 
 Run: `.venv-playwright/bin/python3 -m pytest --tb=line -q` (the project-local venv since pytest isn't installed system-wide). Auto-runs at session start per `CLAUDE.md`.
 
@@ -221,7 +224,7 @@ Take the entire `Trading Advisor/` directory and place it under whatever project
 - `notes/learned.md`, `notes/decisions.md`, `notes/ideas.md` (gotcha log + decision rationale + deferred-features log)
 - `.gitignore`
 - `.claude/skills/` (all 27 skill folders)
-- `tests/` (234 pytest cases — the session-bootstrap test gate runs these)
+- `tests/` (241 pytest cases — the session-bootstrap test gate runs these)
 - `rules/` (playbooks + risk doctrine)
 - `journal/README.md` (keep the template; rest can be empty)
 - `watchlist.md` (keep as a template — see Step 5)
@@ -682,7 +685,7 @@ Trading Advisor/
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
-├── tests/                         # 234 pytest cases (~5s); session bootstrap runs these
+├── tests/                         # 241 pytest cases (~5s); session bootstrap runs these
 │   ├── conftest.py
 │   ├── README.md                  # What's covered, what's not, contract for adding regression tests
 │   ├── test_r_math.py

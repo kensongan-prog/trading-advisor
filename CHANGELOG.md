@@ -104,6 +104,25 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v2.5.0] — 2026-06-15
+
+**Editorial-dark restyle + a refresh-UX overhaul (live progress banner, completion notifications, graceful degradation) + a critical control-bar fix.**
+
+### Added
+- **Dashboard restyle — "editorial dark".** New typographic hierarchy (Archivo grotesque for headers/labels, IBM Plex Mono for all data so numbers stay aligned), deeper layered surfaces with hairline borders + subtle depth, the Action Rail as four distinct inset cards, and refined tables / panel headers with accent chevrons. Same dense, functional layout — just intentionally designed rather than generic-dark. Fonts are **self-hosted and embedded** as base64 `@font-face` at build time (`.claude/skills/dashboard/fonts/*.woff2`, ~95 KB), so the dashboard is fully self-contained: fonts render offline / over `file://` / over Tailscale with zero external requests.
 - **Completion notifications for refresh.** When a refresh finishes, you get a prominent toast *and* — if you've granted permission — a browser/OS notification, on both success ("✓ Dashboard refresh complete — N source(s) cleared") and failure ("✗ Dashboard refresh failed — open the Control log"). The OS notification pings you even if you've switched to another tab during the (often multi-minute) refresh. Permission is requested on your first refresh click; if denied or unsupported (e.g. http over Tailscale, which isn't a secure context), the in-page toast still shows. Failures previously surfaced only as a small line in the Control widget — now they get an explicit toast + notification.
 
 ### Changed
@@ -113,12 +132,6 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **A transient API failure in one enrichment layer no longer fails the whole refresh.** The per-ticker price fetches were already isolated, but the news, sentiment, and news-glyph refresh steps in `build_dashboard` were not — so a single OpenRouter 429, Finnhub blip, or network drop mid-refresh would crash the entire build (exit 1) and surface as an opaque "refresh failed." Each enrichment step is now wrapped: on failure it logs which layer broke, renders the dashboard from cached data for that layer, and the build still completes. A "⚠ Completed with N degraded layer(s): …" summary is printed, and the Data Health panel honestly shows those sources still stale. (This was the likely cause of intermittent "refresh failed" reports.)
 - Job output is now persisted to `.claude/cache/dashboard/last_job.log` (server-run refreshes), so a failure stays diagnosable after a server restart — previously the job log was in-memory only and lost. The failure toast/notification now point at this file.
 - **Critical: server-side refresh buttons were completely broken since v2.2.0.** A quote-nesting syntax error in the post-refresh toast (`onclick="…style.display='none'"` inside a single-quoted JS string) was a parse error that killed the *entire* injected control-bar script — so `taRefresh` and every refresh button silently did nothing whenever the dashboard was served (the dashboard build's own `node --check` never saw it because the control bar is injected by `server.py` at serve time). Fixed the handler and added a regression test (`test_server_routes.py::TestControlBarJS`) that `node --check`s the control-bar JS so this class of bug can't ship again.
-
-### Removed
-
-### Deprecated
-
-### Security
 
 ---
 
