@@ -154,7 +154,11 @@ PRIORITY_TTL_HOURS = {
     "P0_active":    6,    # LIVE — paper / real
     "P1_armed":     12,   # PROSPECTUS — pending trigger
     "P2_ready":     24,   # 🟢 P1_READY badge on dashboard
-    "P3_context":   168,  # other watchlist tickers (7 days)
+    "P3_context":   48,   # other watchlist tickers — matches health.TTL_HOURS["us_news"]
+    # NOTE: P3 must stay <= health.TTL_HOURS["us_news"] (48h). If health flags a
+    # name stale but this gate is looser, --refresh-stale silently skips it (the
+    # Data Health panel then promises a refresh the news queue won't deliver).
+    # AV budget is protected separately by remaining_for_dashboard()'s reserve.
 }
 
 
