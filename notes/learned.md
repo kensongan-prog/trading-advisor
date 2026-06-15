@@ -4,6 +4,32 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-15 — Data-utilization audit: "is each stream on the rung it deserves?"
+
+When asked "does our analysis use all the data we ingest?", the useful reframe is a
+**utilization ladder** per stream: rung 0 = not ingested by the build at all; rung 1
+= displayed only; rung 2 = computed into a signal; rung 3 = gates a decision. The
+gaps are almost never "missing data" — they're streams stuck a rung too low. Method:
+for each source, trace whether it's consumed only to render, or actually feeds a
+derived signal / a §5 gate / the sizing math. **Verify in code, don't trust the
+mental map** — a v2.6.0 audit "discovered" funding was unused, but tracing showed it
+already drove a sim factor (it was the *audit's* assumption that was stale).
+
+Three gaps that audit found + closed in v2.6.0: (1) risk ⊥ sentiment were siloed —
+the sim verdict never consulted the §4 contrarian flag; (2) sentiment was
+sample-size blind (2 messages ≈ 50); (3) only funding was ingested from
+crypto-derivatives, not OI / long-short. Key design rule that recurred: **don't
+double-count correlated crowding signals** — funding + OI + L/S all measure the same
+thing, so they share ONE "Perp positioning" gate, not three.
+
+**Not everything belongs in the dashboard.** `hyperliquid-flow` whale-position
+tracking needs a *target address* you supply → it's an interactive agent tool ("what
+is address X holding"), not a per-coin auto-build signal. Correctly rung-0 for the
+dashboard; don't try to wire address-less "whale flow" into the build. The
+auto-buildable HL bit (cross-venue funding) duplicates Binance funding anyway.
+
+---
+
 ### 2026-06-14 — HTTPS over Tailscale (for OS notifications) needs the admin HTTPS toggle, then `tailscale serve`
 
 OS/browser notifications (the dashboard's refresh-complete pings) require a **secure

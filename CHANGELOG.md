@@ -117,6 +117,22 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.6.0] — 2026-06-15
+
+**Risk ⊕ sentiment ⊕ positioning fusion — closing three gaps from a data-utilization audit so the Risk Simulator's verdict actually uses the data we ingest.**
+
+### Added
+- **§4 retail-sentiment confluence in the Risk Simulator.** Every simulated long is now checked against the retail contrarian flag — 🔥 FADE (euphoric) → `warn` ("a long here chases a crowded name"), 🧊 BUY (capitulation) → `ok` ("aligns with the contrarian read"). Gated on conviction so thin reads stay quiet; degrades to a neutral `ℹ` "not assessed" when the sentiment cache is stale/missing (new `info` gate severity — never a false caveat, no verdict weight). Previously sentiment lived only in a separate panel and never touched the GO/CAUTION verdict.
+- **OI trend + top-trader long/short ingested.** `fetch_binance_funding` now also pulls 7-day open-interest trend (USD) and the top-trader long/short ratio, folded with funding into **one** synthesized "Perp positioning" sim factor (they all measure crowding and are correlated — a single read, not three). Rising OI + one-sided top traders amplify the flush-risk wording when crowding aligns.
+
+### Changed
+- **Retail sentiment is now volume-aware.** The composite conviction is multiplied by a log-scaled coverage factor — `min(1, log1p(n_total)/log1p(25))` over the on-topic scored sample — so a read off 2 messages can no longer carry the same weight (or fire the same FADE/BUY flag) as one off 50. Flows through every consumer: the contrarian flag, the Contrarian Setups panel, and the sim's §4 factor. Exposes `conviction_raw` / `coverage` / `n_total`. Takes effect on the next sentiment re-score.
+
+### Notes
+- **hyperliquid-flow whale tracking deliberately not wired into the build.** It needs a target address you supply, so it's an interactive agent tool ("what's address X holding"), not a per-coin auto-build signal — the data-utilization audit confirmed it belongs at rung 0 *for the dashboard*, which is correct, not a gap.
+
+---
+
 ## [v2.5.0] — 2026-06-15
 
 **Editorial-dark restyle + a refresh-UX overhaul (live progress banner, completion notifications, graceful degradation) + a critical control-bar fix.**

@@ -4,7 +4,7 @@ This file is the **replication guide**. Hand it (along with everything in the pr
 
 **Read this together with `AGENTS.md`** (the agent's operating doctrine — 10 sections including the asymmetric strategy mandate, risk doctrine, and the phased ramp). The doctrine is the *what and why*; this file is the *how to build it*.
 
-**Last reconciled with reality: v2.5.0 (2026-06-15).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
+**Last reconciled with reality: v2.6.0 (2026-06-15).** Maintenance rule (see CLAUDE.md): update this file before tagging any MINOR or MAJOR release; PATCH releases don't touch it.
 
 ---
 
@@ -87,7 +87,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
   - **⚠ Contrarian Setups** — surfaces only names where retail FADE/BUY flags *align* with technical state (RSI/vs-SMA50 thresholds). The §4 operational rule: sentiment modifies conviction on existing setups; it doesn't generate them.
   - **🩸 BTFD / 🚀 STR — Price × Volume Setups** — 24h move × volume × RSI tiers (asset-class scaled). Cross-signal boosts/warnings (🧊 BUY on a BTFD-flagged name, halt-window proximity, earnings within 24h) layer inline.
   - **♻️ Retired re-entry forming** — names in "Removed / retired" that re-enter constructive 🧊 BUY conditions.
-  - **Risk Simulator** — interactive form per market (US/KLSE/crypto); 12-gate doctrine check + R:R + heat math + "Create prospectus" command generator.
+  - **Risk Simulator** — interactive form per market (US/KLSE/crypto); 12-gate doctrine check + R:R + heat math + "Create prospectus" command generator. (v2.6.0) the verdict now also folds in two confluence legs the data already carried: the §4 retail-sentiment contrarian flag (FADE→warn / BUY→ok, conviction-gated, `info` "not assessed" when stale) and a synthesized "Perp positioning" read for crypto (funding + 7d OI trend + top-trader long/short, one gate to avoid double-counting correlated crowding). Sentiment conviction is volume-aware (coverage haircut in `sentiment-cache`).
 - **Active Prospectuses cards** + per-prospectus action forms (live / update / close with auto-R / dead).
 - **US grid** — RSI · ATR% · vs SMA50/200 · earnings · **Retail/News** (composite badge + news glyph 🟢🔴⚪ with ❗ analyst-action modifier) · **vs SPY relative-strength** · P1 status. Click-to-expand: thesis + 8-gate breakdown + sentiment block + news 72h list + Polymarket markets. Sorted by tradability (P1_READY floats up). Status-coloured left border per row. One-click `→Sim` per row.
 - **KLSE grid** — same shape with fundamentals + Bursa-filing watch + KLSE-specific news (klsescreener.com Chinese-press headlines correctly LLM-attributed since v2.0.1).
@@ -132,7 +132,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
 - **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
 
-### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 + v2.5.0 — currently 241 tests, ~5s)
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 + v2.5.0 + v2.6.0 — currently 250 tests, ~5s)
 
 Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
 
@@ -153,6 +153,8 @@ Pure-logic regression net under the dashboard's silent-failure surfaces. Every b
 | `test_server_routes.py` | (v2.3.0) server `Job` one-at-a-time busy semantics (the v2.2.0 no-op fix), status shape, Quick/Full flag contract, refresh-source validation wiring. |
 | `test_journal_cli.py` | (v2.4.0) every `j.py` subcommand's `--help` exits 0 with usage text — guards against unescaped `%` in argparse help strings (the bug that crashed `j.py new --help`). |
 | `test_refresh_routing.py` | (v2.4.1) `_route_refresh` maps a source → only its REFRESH_VIA flag/CLI (true per-source refresh), and the stale batch → union of flags. `test_server_routes.py` also node-checks the injected control-bar JS (v2.5.0). |
+| `test_sentiment_coverage.py` | (v2.6.0) compute_composite coverage haircut — thin sample can't fire a contrarian flag; coverage monotonic in sample size. |
+| `test_sim_sentiment_fields.py` | (v2.6.0) sentiment_sim_fields → sim plumbing: flag/conviction passthrough + stale (>24h)/missing detection. |
 
 Run: `.venv-playwright/bin/python3 -m pytest --tb=line -q` (the project-local venv since pytest isn't installed system-wide). Auto-runs at session start per `CLAUDE.md`.
 
@@ -224,7 +226,7 @@ Take the entire `Trading Advisor/` directory and place it under whatever project
 - `notes/learned.md`, `notes/decisions.md`, `notes/ideas.md` (gotcha log + decision rationale + deferred-features log)
 - `.gitignore`
 - `.claude/skills/` (all 27 skill folders)
-- `tests/` (241 pytest cases — the session-bootstrap test gate runs these)
+- `tests/` (250 pytest cases — the session-bootstrap test gate runs these)
 - `rules/` (playbooks + risk doctrine)
 - `journal/README.md` (keep the template; rest can be empty)
 - `watchlist.md` (keep as a template — see Step 5)
@@ -685,7 +687,7 @@ Trading Advisor/
 ├── journal/
 │   ├── README.md                  # Journal entry template
 │   └── YYYY-MM-DD_TICKER.md       # One file per trade
-├── tests/                         # 241 pytest cases (~5s); session bootstrap runs these
+├── tests/                         # 250 pytest cases (~5s); session bootstrap runs these
 │   ├── conftest.py
 │   ├── README.md                  # What's covered, what's not, contract for adding regression tests
 │   ├── test_r_math.py
