@@ -110,10 +110,12 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### Added
 - **`sentiment-inline` skill** — re-score retail sentiment using the *current Claude Code session* as the classifier instead of OpenRouter's free models: no metered API, no spend, and a stronger model than the free Gemma/GPT-OSS pair. A manual, session-driven alternative to the slow `sentiment-cache` LLM leg (free-tier 429 backoffs). `score_inline.py dump --stale` captures the body batches the real scorer would send; the session fills a `scores` array; `score_inline.py ingest` replays `score_ticker` with those classifications — monkeypatching *only* `classify_messages` so all real aggregation, engagement weighting, the v2.6.0 coverage haircut, composite math, and cache format are reused (zero format drift). Re-scores existing raw social caches in place; not headless (automated builds still use `sentiment-cache`). Regression test `tests/test_sentiment_inline.py` pins the content key, the dump→ingest round-trip, and no global-state leak. First run cleared 13 stale watchlist names (KTOS 91% bull but no FADE — coverage haircut held conviction at 43%).
+- **launchd agent for the control server** — `.claude/skills/dashboard/com.trading-advisor.dashboard.plist` (KeepAlive + RunAtLoad) for running the dashboard server as a boot-persistent daemon. NOTE: loading it requires granting Full Disk Access to `/usr/bin/python3` because the project lives under `~/Documents` (macOS TCC blocks launchd file access there → `EX_CONFIG`/78 flapping otherwise). Until that one-time manual grant, run the server detached via `nohup … & disown`.
 
 ### Changed
 
 ### Fixed
+- **Control server now binds dual-stack (IPv6 + IPv4) in `--lan` mode.** It was IPv4-only (`0.0.0.0`), so clients reaching it over IPv6 — `localhost` → `::1` on macOS, or a Tailscale MagicDNS/IPv6 address — got connection-refused and the dashboard looked "down." New `DualStackHTTPServer` binds `::` with `IPV6_V6ONLY=0`, serving `127.0.0.1`, LAN IPv4, Tailscale IPv4, `::1`, IPv6, and MagicDNS from one socket. Local (non-`--lan`) mode stays IPv4 loopback. Regression test `tests/test_server_dualstack.py` binds `::` on an ephemeral port and asserts both `127.0.0.1` and `::1` reach `/api/status`. (Also diagnosed/recovered a wedged long-lived server instance — large HTML responses hung while `/api/status` still answered; a restart clears it.)
 
 ### Removed
 

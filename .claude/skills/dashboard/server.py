@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import threading
@@ -27,6 +28,22 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+
+class DualStackHTTPServer(ThreadingHTTPServer):
+    """IPv6 server that also accepts IPv4 (v4-mapped) on one socket.
+
+    The default ThreadingHTTPServer is IPv4-only, so binding 0.0.0.0 leaves the
+    server unreachable over IPv6 — `localhost` → ::1 on macOS, or a Tailscale
+    MagicDNS / IPv6 address — which gets connection-refused and makes the
+    dashboard look down. Binding `::` with IPV6_V6ONLY=0 serves 127.0.0.1, LAN
+    IPv4, Tailscale IPv4, ::1, IPv6, and MagicDNS from a single socket.
+    """
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_DIR.parent
@@ -653,13 +670,17 @@ def main():
                     help="Bind to 0.0.0.0 so phones/tablets on the same WiFi can view the dashboard. "
                          "Anyone on your network can reach it — only use on trusted networks.")
     args = ap.parse_args()
-    bind = "0.0.0.0" if args.lan else "127.0.0.1"
-    srv = ThreadingHTTPServer((bind, args.port), Handler)
+    if args.lan:
+        # Dual-stack on all interfaces: IPv4 (127.0.0.1 / LAN / Tailscale-v4) AND
+        # IPv6 (::1 / IPv6 / Tailscale MagicDNS) all reach the same socket.
+        srv = DualStackHTTPServer(("::", args.port), Handler)
+    else:
+        # Loopback-only stays IPv4 — local dev hits 127.0.0.1.
+        srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://localhost:{args.port}/"
     print(f"Trading dashboard control server → {url}  (Ctrl-C to stop)")
     if args.lan:
         # Best-effort LAN-IP discovery so the user can type it into their phone browser.
-        import socket
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))

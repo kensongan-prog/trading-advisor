@@ -305,3 +305,15 @@ This is the *same bug pattern* as the crypto grid (which was already fixed with 
 **Use:** `score_inline.py dump --stale` → fill each batch's `scores` array (one `{sentiment,conviction,relevance}` per body) → `score_inline.py ingest`. Manual, session-only (NOT headless — automated builds still use `sentiment-cache`). Re-scores existing raw social caches; run the raw fetchers first if those are stale too.
 
 **Landmines mapped while scoring real feeds:** StockTwits/HN feeds are heavily polluted — `$RUM` promo spam tagging RDDT, `$UPDOG.X` memecoin spam tagging SOL, "Microsoft Project Solara" matching SOL (the exact Solana-vs-Solara case in the prompt), "Sqlit" matching ENA, the word "hype" matching HYPE, generic HN (Lean Startup AMA, H1B visa, DVD ripping) matching BNB/HBAR. The `relevance: none` discount is doing real work — score look-alikes/tag-spam as `none` so they don't dilute the on-topic read.
+
+---
+
+### 2026-06-15 — launchd can't daemonize from ~/Documents (macOS TCC); + server dual-stack
+
+**Two findings while making the dashboard control server robust.**
+
+**1. Dual-stack bind.** `server.py` bound IPv4-only (`0.0.0.0` via `ThreadingHTTPServer`, which is `AF_INET`). On macOS `localhost` resolves to `::1` (IPv6) first, and Tailscale MagicDNS hands out an IPv6 address — both got connection-refused → "dashboard is down." Fix: `DualStackHTTPServer(ThreadingHTTPServer)` with `address_family = AF_INET6` and `setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, 0)` in `server_bind`, binding `::` in `--lan`. One socket serves 127.0.0.1, LAN-v4, Tailscale-v4, ::1, IPv6, MagicDNS. Verify a dual-stack listener with `lsof` showing `IPv6 ... TCP *:PORT (LISTEN)` and curling BOTH `127.0.0.1` and `[::1]`.
+
+**2. launchd LaunchAgent flaps with `EX_CONFIG` (78) when the job lives under ~/Documents.** The exact `ProgramArguments` command runs fine in an interactive shell but the agent exits 78 before Python writes a single line, `runs` climbs every `ThrottleInterval`. Cause: `~/Documents` (also `~/Desktop`, `~/Downloads`) is **TCC-protected**; a launchd agent can't read the script / write StandardOutPath there. The interactive shell only works because it inherited Terminal's TCC grant. There is NO scriptable fix — you must either grant **Full Disk Access to `/usr/bin/python3`** in System Settings → Privacy & Security (one-time, manual, GUI) and then `launchctl kickstart -k gui/$(id -u)/<label>`, OR move the whole project out of `~/Documents`. Until then, run detached with `nohup … & disown` (inherits the session's TCC grant; reparents to PID 1; survives the session but not reboot/logout). The plist is committed at `.claude/skills/dashboard/com.trading-advisor.dashboard.plist` ready to load once FDA is granted.
+
+**Bonus gotcha:** a long-lived `server.py` (≈4 days) wedged — `/api/status` (small) still answered 200 but `/` and `/dashboard.html` (large) returned `ERR_EMPTY_RESPONSE`/HTTP 000. Code was fine (`render_dashboard()` worked standalone). A clean restart cleared it. If the dashboard goes empty while the process is still listening, restart it.
