@@ -317,3 +317,17 @@ This is the *same bug pattern* as the crypto grid (which was already fixed with 
 **2. launchd LaunchAgent flaps with `EX_CONFIG` (78) when the job lives under ~/Documents.** The exact `ProgramArguments` command runs fine in an interactive shell but the agent exits 78 before Python writes a single line, `runs` climbs every `ThrottleInterval`. Cause: `~/Documents` (also `~/Desktop`, `~/Downloads`) is **TCC-protected**; a launchd agent can't read the script / write StandardOutPath there. The interactive shell only works because it inherited Terminal's TCC grant. There is NO scriptable fix — you must either grant **Full Disk Access to `/usr/bin/python3`** in System Settings → Privacy & Security (one-time, manual, GUI) and then `launchctl kickstart -k gui/$(id -u)/<label>`, OR move the whole project out of `~/Documents`. Until then, run detached with `nohup … & disown` (inherits the session's TCC grant; reparents to PID 1; survives the session but not reboot/logout). The plist is committed at `.claude/skills/dashboard/com.trading-advisor.dashboard.plist` ready to load once FDA is granted.
 
 **Bonus gotcha:** a long-lived `server.py` (≈4 days) wedged — `/api/status` (small) still answered 200 but `/` and `/dashboard.html` (large) returned `ERR_EMPTY_RESPONSE`/HTTP 000. Code was fine (`render_dashboard()` worked standalone). A clean restart cleared it. If the dashboard goes empty while the process is still listening, restart it.
+
+---
+
+### 2026-06-15 — "N source(s) refreshable" stuck forever = health LOOKUP mismatch, not a data gap
+
+**Symptom:** Data Health panel persistently shows "9 source(s) refreshable" even right after a Full refresh. `refreshable = stale + transient + MISSING` (health.summarize), and here it was 0 stale / 9 missing — so it's 9 phantom "missing" that no refresh can clear.
+
+**Diagnosis recipe:** import `dashboard` + `health`, run `collect_health(dashboard.parse_watchlist())`, filter `state==MISSING`, print `(source, ticker)`. Don't theorize — list them.
+
+**Two root causes found, both health expecting the WRONG filename:**
+1. `crypto_news` caches are written by `news_glyph.py` keyed by **CoinGecko slug** (`bitcoin.json`, `hedera-hashgraph.json`), but `health._crypto_key` lowercased the ticker (`btc.json`, `hbar.json`) → never matched → all crypto names "missing" permanently. Fix: `_crypto_news_key` slug map (mirror of `dashboard.SYMBOL_MAP`).
+2. SPY is **intentionally** never `us_news`-fetched (`news_cache.priority_for_ticker` returns None for the index gauge), but health expected `SPY.json`. Fix: `US_NEWS_SKIP = {"SPY"}` in `collect_health`.
+
+**General lesson (3rd time this pattern has bitten):** the Data Health panel makes a *promise* — "this is refreshable." Whenever the panel and the actual refresh/fetch behavior disagree (TTL, filename key, intentional skip), the panel lies and the operator loses trust. When health flags something refreshable that a refresh won't fix, suspect a health-vs-reality mismatch, not a fetch failure. Cross-check: does the cache file actually exist under the name `collect_health` computes? `ls` the dir and compare to `key_fn(ticker)`.

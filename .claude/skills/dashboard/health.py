@@ -295,6 +295,25 @@ def _klse_key(t):   return re.sub(r"\.KL$", "", t.upper())
 def _crypto_key(t): return t.lower()  # CoinGecko slugs are lowercase
 def _identity(t):   return t
 
+# crypto_news caches are keyed by CoinGecko *slug* (bitcoin.json), NOT by ticker —
+# news_glyph.py fetches by CoinGecko id. A plain lowercase (`btc`) never matches
+# `bitcoin.json`, so every crypto name showed as "missing & refreshable" forever.
+# Mirror of dashboard.SYMBOL_MAP — keep in sync if the crypto watchlist gains a
+# coin (unknown coins fall back to lowercase → surfaces as missing, which is the
+# honest signal that this map needs an entry).
+CRYPTO_NEWS_SLUG = {
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "BNB": "binancecoin",
+    "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin", "HBAR": "hedera-hashgraph",
+    "ONDO": "ondo-finance", "HYPE": "hyperliquid", "ENA": "ethena",
+}
+def _crypto_news_key(t): return CRYPTO_NEWS_SLUG.get(t.upper(), t.lower())
+
+# SPY is a market-regime/context gauge, not a trade — us_news intentionally never
+# fetches per-name news for it (news_cache.priority_for_ticker returns None for
+# SPY). Without this skip, health forever flags us_news/SPY as missing &
+# refreshable even though no refresh will ever create that file.
+US_NEWS_SKIP = {"SPY"}
+
 PER_TICKER_SOURCES = [
     # (name,              subdir,                  asset_classes,        key_fn,      data_field)
     ("us_news",            "us_news",              ("us",),              _us_key,     "feed"),
@@ -302,7 +321,7 @@ PER_TICKER_SOURCES = [
     ("klse_news",          "klse_news",            ("klse",),            _klse_key,   "items"),
     ("klse_announcements", "klse_announcements",   ("klse",),            _klse_key,   None),
     ("klse_fundamentals",  "klse_fundamentals",    ("klse",),            _klse_key,   None),
-    ("crypto_news",        "crypto_news",          ("crypto",),          _crypto_key, "items"),
+    ("crypto_news",        "crypto_news",          ("crypto",),          _crypto_news_key, "items"),
     ("reddit_sentiment",   "reddit_sentiment",     ("us", "klse", "crypto"), _identity, "posts"),
     ("stocktwits_sentiment", "stocktwits_sentiment", ("us", "klse", "crypto"), _identity, "messages"),
     ("hn_sentiment",       "hn_sentiment",         ("us", "klse", "crypto"), _identity, "stories"),
@@ -330,6 +349,8 @@ def collect_health(watchlist, now=None):
                 ticker = entry.get("ticker") if isinstance(entry, dict) else entry
                 if not ticker:
                     continue
+                if src_name == "us_news" and ticker.upper() in US_NEWS_SKIP:
+                    continue  # SPY etc. — intentionally not per-name news-fetched
                 fname = f"{key_fn(ticker)}.json"
                 fp = cache_dir / fname
                 payload = _load_json_safe(fp) if fp.is_file() else None
