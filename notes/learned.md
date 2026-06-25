@@ -4,6 +4,20 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-25 — Data builds need system `python3`, NOT `.venv-playwright` (pandas/yfinance)
+
+The project venv `.venv-playwright` has **pytest + playwright but NOT pandas/yfinance**. So `dashboard.py --force` (or anything calling `fetch_yfinance_ticker` / `_compute_indicators_from_ohlcv`) only works under **system `python3`** — the venv only succeeds on cache hits (no recompute path triggers the import). `server.py` spawns builds via `sys.executable`, so **run the server with system `python3`** or builds will fail on the first cache miss. Tests that touch pandas use `pytest.importorskip("pandas")` so the suite stays green in the venv (1 skip is expected there). Bootstrap pytest still uses the venv; only *data builds* need system python.
+
+### 2026-06-25 — klsescreener stock URL is `/v2/stocks/view/{code}`, not `/quote/`
+
+The dashboard's KLSE 📊 quote button had drifted to `klsescreener.com/v2/stocks/quote/{code}` → HTTP 404. The real path is `/v2/stocks/view/{code}` — the exact path `klse-quote` + `klse-refresh` already use. Fixed v2.7.0 (`test_klse_quote_link.py` bans `/quote/`). The `/view/` page is a JS-rendered SPA, so a raw urllib fetch returning empty/no-`<title>` is normal flakiness — **trust the 200-vs-404 status, not page-body content**, when validating these URLs.
+
+### 2026-06-25 — Server control-bar JS is scoped; re-query elements after an innerHTML swap
+
+Two DOM gotchas from the v2.7.0 live-dashboard work:
+1. **`server.py`'s CONTROL_BAR `<script>` is NOT global scope** — functions reachable from inline `onclick` are explicitly `window.X = …`; plain `function foo(){}` there is scoped (works in-scope, e.g. `taCaptureUiState` called right before `location.reload()`, but is **not** reachable from `page.evaluate` or the page's own JS). To test such a function, mirror its body in the test rather than calling it.
+2. **An `innerHTML` swap detaches all children** — the in-place Data Health refresh does `panel.innerHTML = new`, so any element reference grabbed before the swap (e.g. the "updated" stamp span) is stale. Re-`getElementById` after swapping. Panel **collapse is event-delegated** (`document` click → `closest('.panel > h2')`) precisely so a swapped panel's new `<h2>` still folds without re-binding.
+
 ### 2026-06-15 — Data-utilization audit: "is each stream on the rung it deserves?"
 
 When asked "does our analysis use all the data we ingest?", the useful reframe is a

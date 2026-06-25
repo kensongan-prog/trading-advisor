@@ -4,6 +4,15 @@ Append-only log of why we did things the way we did. Newest at top. Read this wh
 
 ---
 
+### 2026-06-25 — Live-dashboard upgrade (v2.7.0): incremental, client-driven, no daemon
+
+Reframed `dashboard.html` from a static export into a live, server-backed surface — but as **incremental enrichment of the existing stdlib `server.py`, NOT the deferred 5–6 week FastAPI+SQLite rewrite** (still parked in notes/ideas.md). Four decisions shaped it:
+
+- **Client-driven liveness, no background daemon.** Live quotes stream from the browser while the tab is open; no server-side auto-refresh thread. Consistent with the 2026-06-06 "no rogue background process" stance — the daemon was explicitly offered and the operator declined.
+- **State-preservation over flash-free morph.** Planned Phase 2 was an in-place DOM *morph*; doing it safely required re-initializing the ~480-line Risk Simulator + prospectus forms after every swap (high risk, hard to verify without exhaustive browser testing). Shipped the lower-risk path instead — snapshot scroll/expanded/sort/filter → reload → restore — which solves the real pain ("don't lose my place"). Morph remains future polish; it matters less now that cheap updates patch in place (Phase 5).
+- **Dropped the planned 2s cache-poll (Phase 4).** Polling server caches every 2s only pays off with a daemon mutating them out-of-band; without one they change only on rebuild. Kept the genuine value: atomic `cache_set` (temp + os.replace) and the in-place Data Health refresh (`/api/panel/health`).
+- **One watchlist-add path.** Removed the static copy-paste "Watchlist Manager" (it emitted a `wl.py` command with no rebuild, so a successful add looked broken); the live control-panel form — now a superset with section override + force-add — is canonical.
+
 ### 2026-06-08 — Adopted full semver (MAJOR.MINOR.PATCH) mid-project
 
 After v1.4 shipped, operator pointed out that several recent "minor" releases were actually patches: v1.2 was a README clone-URL typo fix that didn't deserve a MINOR slot. Under our old two-level scheme (`MAJOR.MINOR`), small fixes burned MINOR numbers, making the version signal noisier than it should have been.
