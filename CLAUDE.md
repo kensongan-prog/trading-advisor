@@ -40,6 +40,20 @@ Before the operator clears or closes the session **mid-task**:
 
 1. **Run `.venv-playwright/bin/python3 -m pytest --tb=line -q`** one last time. If tests are red, either fix them or capture that fact in the in-flight note — don't leave the next session walking into broken tests without warning.
 2. **Write an `### In flight` paragraph** to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's auto-bootstrap will pick it up. If the operator forgets, prompt them once: *"Want me to capture an in-flight note before you clear?"*
+3. **Sync the knowledge vault** for any meaningful change shipped this session (see "Keep the knowledge vault in sync" below). If nothing material changed, skip it.
+
+## Keep the knowledge vault in sync
+
+An Obsidian knowledge vault mirrors this project for cross-agent (Claude + Codex) and human navigation: **`~/Projects/Claude Codex Vault/Trading Advisor/`** (entry point `00 — Trading Advisor Home.md`). The **repo is the source of truth; the vault is a synthesized, navigable index** — when they disagree, the repo wins. It lives **outside this git repo**, so vault edits are not part of repo commits.
+
+When you ship a meaningful change, mirror it into the vault — same discipline as the CHANGELOG entry, so it doesn't drift. Map the change to the note that owns it:
+- New/changed skill → `Architecture — Skills Catalog`
+- New regression test or test-count change → `Architecture — Tests`
+- New gotcha/landmine → `Gotchas & Landmines` (the vault twin of `notes/learned.md`)
+- Architecture or rationale change → the relevant `Architecture — *` / `Decisions Log`
+- Version bump or live-state change → `00 — Trading Advisor Home` + the relevant `State — *` note
+
+Follow the vault's own **`Vault Guide — Contributing.md`**: edit the owning note **in place** (don't duplicate), bump its `updated:` frontmatter, keep `source:` honest, and run the wikilink-verification script at the bottom of that guide. Synthesize — don't paste whole source files.
 
 ## Before any release (PATCH / MINOR / MAJOR)
 
