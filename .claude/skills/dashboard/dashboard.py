@@ -113,7 +113,11 @@ def cache_set(key, payload):
     # Stamp in place so callers' returned dict also carries _fetched_at
     payload["_fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     p = CACHE_DIR / f"{key}.json"
-    p.write_text(json.dumps(payload, default=str))
+    # Atomic write: temp file + os.replace, so a concurrent reader (the parallel-fetch
+    # ThreadPool, or a separate process) never observes a half-written JSON file.
+    tmp = p.with_name(f".{key}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(payload, default=str))
+    os.replace(tmp, p)
 
 def _read_cache(key):
     """Read cache without TTL check — used by cooldown fallback paths."""
@@ -473,6 +477,57 @@ def fetch_fx_rate(pair, force=False):
     return out, "fresh"
 
 
+def _spark_series(closes, n=40):
+    """Downsample a close-price series (oldest→newest) to ~n evenly-spaced points
+    for a sparkline. Drops NaN/None and rounds to ~5 sig figs to keep the payload
+    small. Returns [] if too short to draw a line."""
+    vals = []
+    for v in closes:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f != f:  # NaN
+            continue
+        vals.append(f)
+    if len(vals) < 2:
+        return []
+    if len(vals) > n:
+        step = (len(vals) - 1) / (n - 1)
+        vals = [vals[min(len(vals) - 1, round(i * step))] for i in range(n)]
+
+    import math
+    def _r(x):
+        if x == 0:
+            return 0.0
+        digits = 4 - int(math.floor(math.log10(abs(x))))
+        return round(x, digits) if digits > 0 else round(x)
+    return [_r(v) for v in vals]
+
+
+def _sparkline_svg(vals, w=66, h=18):
+    """Inline SVG polyline sparkline from a value list (oldest→newest). Green if the
+    window closes up, red if down. Returns "" when not drawable so callers can append
+    unconditionally (and old caches without a `spark` field degrade to no chart)."""
+    if not vals or len(vals) < 2:
+        return ""
+    lo = min(vals); hi = max(vals); rng = (hi - lo) or 1.0
+    n = len(vals); pad = 2.0
+    span_x = w - 2 * pad; span_y = h - 2 * pad
+    pts = []
+    for i, v in enumerate(vals):
+        x = pad + span_x * (i / (n - 1))
+        y = pad + span_y * (1 - (v - lo) / rng)
+        pts.append(f"{x:.1f},{y:.1f}")
+    cls = "spark-up" if vals[-1] >= vals[0] else "spark-down"
+    lx, ly = pts[-1].split(",")
+    return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
+            f'aria-hidden="true"><polyline points="{" ".join(pts)}" fill="none" '
+            f'stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" '
+            f'stroke-linecap="round"/><circle cx="{lx}" cy="{ly}" r="1.5" '
+            f'fill="currentColor"/></svg>')
+
+
 def fetch_yfinance_ticker(ticker, force=False):
     cache_key = f"yfin_{ticker.replace('.', '_').replace(':', '_')}"
     data, age = cache_get(cache_key, 14400, force)  # 4h TTL — daily bars don't change intraday; user wanting live quote uses the Finnhub quote button
@@ -620,6 +675,7 @@ def fetch_yfinance_ticker(ticker, force=False):
             "market_cap": info.get("marketCap"),
             "currency": info.get("currency", "USD"),
             "trailing_pe": info.get("trailingPE"),
+            "spark": _spark_series(list(h["Close"])),
         })
     except Exception as e:
         out["error"] = f"yfinance error: {type(e).__name__}: {e}"
@@ -931,6 +987,7 @@ def _compute_indicators_from_ohlcv(rows):
         "rsi14": rsi, "sma20": s20, "sma50": s50, "sma200": s200,
         "sma50_slope_pct": slope, "vol_ratio": vol_ratio, "atr14": atr,
         "atr_pct": (atr/last*100) if (atr and last) else None,
+        "spark": _spark_series(list(h["Close"])),
     }
 
 def _fetch_coingecko_ohlc(cg_id):
@@ -1800,12 +1857,6 @@ td.dim { color: var(--dim); }
 .action-form .calc-result .big { font-size: 18px; font-weight: bold; }
 .action-form .calc-result .pos { color: var(--green); }
 .action-form .calc-result .neg { color: var(--red); }
-/* Watchlist Manager tabs */
-.wl-mode-tabs { display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid var(--bord); padding-bottom: 8px; }
-.wl-mode-tabs .wl-tab { padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid var(--bord);
-  border-radius: 4px; font-size: 12px; cursor: pointer; }
-.wl-mode-tabs .wl-tab:hover { background: var(--panel-2); }
-.wl-mode-tabs .wl-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
 /* Discovery panel */
 .sector-strip { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; margin-bottom: 4px; }
 .sector-cell { padding: 6px 4px; border-radius: 4px; text-align: center; cursor: help;
@@ -1848,6 +1899,19 @@ td.dim { color: var(--dim); }
 .exp-row:hover { background: var(--panel-2); }
 .exp-row.expanded { background: var(--panel-2); }
 .exp-chevron { display: inline-block; color: var(--dim); font-size: 11px; user-select: none; width: 12px; }
+.spark { display: inline-block; vertical-align: middle; width: 66px; height: 18px; margin-left: 7px; opacity: 0.85; }
+.spark-up { color: var(--green); }
+.spark-down { color: var(--red); }
+.wl-filter { margin: 4px 0 12px; display: flex; align-items: center; gap: 10px; }
+.wl-filter input { flex: 0 1 360px; background: var(--panel-2); color: var(--text); border: 1px solid var(--bord);
+  border-radius: 6px; padding: 7px 11px; font-size: 13px; }
+.wl-filter input:focus { outline: none; border-color: var(--accent); }
+.wl-filter-count { color: var(--dim); font-size: 11px; white-space: nowrap; }
+.ta-live-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--bord); border-radius: 6px;
+  padding: 6px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.ta-live-btn:hover { border-color: var(--accent); }
+.ta-live-btn.on { background: var(--green); color: #06210f; border-color: var(--green); font-weight: 700; }
+.ta-live-ind { color: var(--green); font-size: 11px; white-space: nowrap; }
 .exp-details { display: none; }
 .exp-details.open { display: table-row; }
 .exp-details-content { padding: 14px 18px; background: var(--panel); border-left: 3px solid var(--accent);
@@ -2146,9 +2210,9 @@ td.dim { color: var(--dim); }
                   -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
   .sector-cell { min-width: 64px; flex: 0 0 auto; }
 
-  /* Watchlist Manager + Journal forms — full-width inputs, bigger touch targets */
+  /* Journal / Action Zone forms — full-width inputs, bigger touch targets */
   .action-form input, .action-form select, .action-form textarea { font-size: 14px; padding: 8px; }
-  .action-form button, .wl-tab, .ta-action-btn { font-size: 12px; padding: 8px 10px; }
+  .action-form button, .ta-action-btn { font-size: 12px; padding: 8px 10px; }
 
   /* Floating control bar (server.py-injected) — narrower so it doesn't hide content */
   #tactl .panel { width: calc(100vw - 28px); max-width: 360px; }
@@ -2607,25 +2671,26 @@ function wlRemove(ticker) {
   });
 })();
 
-// Click column header to sort
-document.querySelectorAll('table').forEach(t => {
+// Click column header to sort. Factored into applySort so a saved sort can be
+// re-applied after an update-driven reload (taRestoreUiState).
+function applySort(t, idx, asc){
+  const tbody = t.querySelector('tbody'); if(!tbody) return;
   const headers = t.querySelectorAll('th');
-  headers.forEach((th, idx) => {
-    th.addEventListener('click', () => {
-      const tbody = t.querySelector('tbody');
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      const asc = !th.classList.contains('sort-asc');
-      headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
-      th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-      rows.sort((a,b) => {
-        const av = a.children[idx]?.dataset.sort ?? a.children[idx]?.textContent.trim() ?? '';
-        const bv = b.children[idx]?.dataset.sort ?? b.children[idx]?.textContent.trim() ?? '';
-        const an = parseFloat(av), bn = parseFloat(bv);
-        if (!isNaN(an) && !isNaN(bn)) return asc ? an-bn : bn-an;
-        return asc ? av.localeCompare(bv) : bv.localeCompare(av);
-      });
-      rows.forEach(r => tbody.appendChild(r));
-    });
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
+  if(headers[idx]) headers[idx].classList.add(asc ? 'sort-asc' : 'sort-desc');
+  rows.sort((a,b) => {
+    const av = a.children[idx]?.dataset.sort ?? a.children[idx]?.textContent.trim() ?? '';
+    const bv = b.children[idx]?.dataset.sort ?? b.children[idx]?.textContent.trim() ?? '';
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an) && !isNaN(bn)) return asc ? an-bn : bn-an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+document.querySelectorAll('table').forEach(t => {
+  t.querySelectorAll('th').forEach((th, idx) => {
+    th.addEventListener('click', () => applySort(t, idx, !th.classList.contains('sort-asc')));
   });
 });
 
@@ -3314,36 +3379,69 @@ document.querySelectorAll('table').forEach(t => {
     target.innerHTML = `<span class="${cls}">${q.currency}${q.price.toFixed(dp)} (${sign}${q.change_pct.toFixed(2)}%)</span><span class="lq-time">${q.ts}</span>`;
   }
 
+  function quoteForBtn(btn){
+    const cryptoSrc = btn.dataset.cryptoSource, cryptoSym = btn.dataset.cryptoSymbol, usSym = btn.dataset.symbol;
+    if (cryptoSym && cryptoSrc === 'binance')   return fetchBinanceQuote(cryptoSym);
+    if (cryptoSym && cryptoSrc === 'coingecko') return fetchCoinGeckoQuote(cryptoSym);
+    if (usSym)                                   return fetchUSQuote(usSym);
+    return Promise.resolve({err: 'unsupported ticker type'});
+  }
+  async function runBtn(btn){
+    const target = btn.nextElementSibling;  // .live-quote span (US + crypto; KLSE is an <a>, not button)
+    if (!target) return;
+    btn.classList.add('loading');
+    if (!target.querySelector('.green, .red')) target.innerHTML = '<span class="lq-time">…</span>';
+    try { renderResult(target, await quoteForBtn(btn)); }
+    catch (err) { target.innerHTML = `<span class="lq-err">err: ${err.message}</span>`; }
+    finally { btn.classList.remove('loading'); }
+  }
+  // Per-row click — fetch one quote on demand.
   document.querySelectorAll('button.ta-quote-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const target = btn.nextElementSibling;  // .live-quote span (US + crypto only — KLSE is an <a>, not button)
-      if (!target) return;
-      btn.classList.add('loading');
-      target.innerHTML = '<span class="lq-time">…</span>';
-      try {
-        let q;
-        const cryptoSrc = btn.dataset.cryptoSource;
-        const cryptoSym = btn.dataset.cryptoSymbol;
-        const usSym     = btn.dataset.symbol;
-        if (cryptoSym && cryptoSrc === 'binance') {
-          q = await fetchBinanceQuote(cryptoSym);
-        } else if (cryptoSym && cryptoSrc === 'coingecko') {
-          q = await fetchCoinGeckoQuote(cryptoSym);
-        } else if (usSym) {
-          q = await fetchUSQuote(usSym);
-        } else {
-          q = {err: 'unsupported ticker type'};
-        }
-        renderResult(target, q);
-      } catch (err) {
-        target.innerHTML = `<span class="lq-err">err: ${err.message}</span>`;
-      } finally {
-        btn.classList.remove('loading');
-      }
-    });
+    btn.addEventListener('click', (e) => { e.stopPropagation(); runBtn(btn); });
   });
+
+  // ⚡ Live mode — loop every quote button on a staggered interval (well under
+  // Finnhub's 60/min). Live values render in each row's .live-quote span, clearly
+  // distinct from the baked daily close; the authoritative price / RSI / vs-SMA /
+  // BTFD cells are NEVER overwritten from a single live tick (§1/§4: live vs baked
+  // must stay unmistakable, and composite signals need history the client lacks).
+  let liveTimer = null;
+  const LIVE_SWEEP_MS = 60000, LIVE_STAGGER_MS = 700;
+  function liveSweep(){
+    const btns = Array.from(document.querySelectorAll('button.ta-quote-btn'));
+    btns.forEach((btn, i) => setTimeout(() => { if (liveTimer) runBtn(btn); }, i * LIVE_STAGGER_MS));
+    const ind = document.getElementById('ta-live-ind');
+    if (ind) ind.textContent = '● live · ' + nowHHMM();
+  }
+  window.taToggleLive = function(){
+    const tb = document.getElementById('ta-live-btn');
+    if (liveTimer){
+      clearInterval(liveTimer); liveTimer = null;
+      if (tb){ tb.classList.remove('on'); tb.textContent = '⚡ Live quotes'; }
+      const ind = document.getElementById('ta-live-ind'); if (ind) ind.textContent = '';
+    } else {
+      if (tb){ tb.classList.add('on'); tb.textContent = '⚡ Live: ON'; }
+      liveSweep();
+      liveTimer = setInterval(liveSweep, LIVE_SWEEP_MS);
+    }
+  };
 })();
+
+// ── Watchlist filter (ticker/name) — pure client, works in static mode ──────
+function taFilter(q){
+  q = (q || '').trim().toLowerCase();
+  var total = 0, shown = 0;
+  document.querySelectorAll('tr.exp-row[data-filter]').forEach(function(row){
+    total++;
+    var match = !q || row.dataset.filter.indexOf(q) !== -1;
+    if(match) shown++;
+    row.style.display = match ? '' : 'none';
+    var body = document.getElementById(row.dataset.rowId + '-body');
+    if(body) body.style.display = match ? '' : 'none';
+  });
+  var c = document.getElementById('wl-filter-count');
+  if(c) c.textContent = q ? (shown + ' of ' + total + ' shown') : '';
+}
 
 // ── Generic expandable-row toggle (used by US, KLSE, Crypto grids) ───────
 (function(){
@@ -3363,185 +3461,6 @@ document.querySelectorAll('table').forEach(t => {
   });
 })();
 
-// ── Watchlist Manager — inline forms that generate wl.py CLI commands ─────
-(function(){
-  const wl = window.TA_WL;
-  const tabs = document.getElementById('wl-tabs');
-  const host = document.getElementById('wl-form-host');
-  if (!wl || !tabs || !host) return;
-
-  const WL = 'python3 .claude/skills/watchlist/wl.py';
-  function shq(s) { if (s == null) return "''"; return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
-  function allTickers() {
-    return [...(wl.us||[]), ...(wl.klse||[]), ...(wl.crypto||[])];
-  }
-  function sectionOf(t) {
-    if ((wl.us||[]).includes(t)) return 'US';
-    if ((wl.klse||[]).includes(t)) return 'KLSE';
-    if ((wl.crypto||[]).includes(t)) return 'Crypto';
-    return '—';
-  }
-
-  // Form definitions — same shape as the journal forms (def.fields + def.build)
-  const FORMS = {
-    add: () => ({
-      title: '➕ Add a ticker (auto-classify + auto-thesis)',
-      fields: [
-        {name: 'ticker',  label: 'Ticker',  type: 'text',     placeholder: 'e.g. NVDA, 7113.KL, ENA',
-         help: 'Auto-classified by section unless overridden. Validated via yfinance / CoinGecko.'},
-        {name: 'section', label: 'Section', type: 'select',   options: ['auto','us','klse','crypto','options']},
-        {name: 'thesis',  label: 'Thesis',  type: 'textarea', placeholder: 'Optional — leave blank for auto-generated thesis from sector/snapshot',
-         help: 'One line. Why is it on the list? What setup / catalyst / structure?'},
-        {name: 'allow_unresolved', label: 'Force-add', type: 'checkbox',
-         help: 'Add even if data source can\\'t resolve the ticker (use only when you\\'re sure of the symbol).'},
-      ],
-      build: (v) => {
-        const tkr = (v.ticker || '').trim();
-        if (!tkr) return {cmd: '', valid: false, hint: 'ticker required'};
-        if (allTickers().some(t => t.toUpperCase() === tkr.toUpperCase()))
-          return {cmd: '', valid: false, hint: `${tkr} is already in the watchlist (${sectionOf(allTickers().find(t => t.toUpperCase() === tkr.toUpperCase()))} section)`, invalid: true};
-        let cmd = `${WL} add ${tkr}`;
-        if (v.section && v.section !== 'auto') cmd += ` --section ${v.section}`;
-        if (v.thesis && v.thesis.trim()) cmd += ` --thesis ${shq(v.thesis.trim())}`;
-        if (v.allow_unresolved === 'on' || v.allow_unresolved === true) cmd += ' --allow-unresolved';
-        cmd += ' -y';
-        return {cmd, valid: true, hint: ''};
-      },
-    }),
-
-    remove: () => ({
-      title: '➖ Remove a ticker (soft-delete to Removed/retired)',
-      fields: [
-        {name: 'ticker', label: 'Ticker', type: 'datalist', source: allTickers(),
-         placeholder: 'pick or type', help: `Current watchlist: ${allTickers().length} tickers.`},
-        {name: 'reason', label: 'Reason', type: 'textarea', placeholder: 'e.g. Thesis invalidated — broke SMA200 with no recovery',
-         help: 'Required by doctrine. Goes in the audit trail.'},
-      ],
-      build: (v) => {
-        const tkr = (v.ticker || '').trim();
-        const reason = (v.reason || '').trim();
-        if (!tkr) return {cmd: '', valid: false, hint: 'ticker required'};
-        if (!allTickers().some(t => t.toUpperCase() === tkr.toUpperCase()))
-          return {cmd: '', valid: false, hint: `${tkr} is not in the watchlist`, invalid: true};
-        if (!reason) return {cmd: `${WL} remove ${tkr} --reason _REASON_ -y`, valid: false, hint: 'reason required (doctrine)'};
-        return {cmd: `${WL} remove ${tkr} --reason ${shq(reason)} -y`, valid: true, hint: `→ moved to Removed/retired (${sectionOf(tkr)})`};
-      },
-    }),
-
-    update: () => ({
-      title: '✎ Update a ticker\\'s thesis (in-place)',
-      fields: [
-        {name: 'ticker', label: 'Ticker', type: 'datalist', source: allTickers(),
-         placeholder: 'pick or type', help: 'Must already be in the watchlist.'},
-        {name: 'thesis', label: 'New thesis', type: 'textarea', placeholder: 'e.g. Now a momentum thesis post-breakout vs. prior pullback setup',
-         help: 'Replaces the existing thesis line entirely.'},
-      ],
-      build: (v) => {
-        const tkr = (v.ticker || '').trim();
-        const thesis = (v.thesis || '').trim();
-        if (!tkr) return {cmd: '', valid: false, hint: 'ticker required'};
-        if (!allTickers().some(t => t.toUpperCase() === tkr.toUpperCase()))
-          return {cmd: '', valid: false, hint: `${tkr} is not in the watchlist`, invalid: true};
-        if (!thesis) return {cmd: `${WL} update ${tkr} --thesis _THESIS_ -y`, valid: false, hint: 'new thesis required'};
-        return {cmd: `${WL} update ${tkr} --thesis ${shq(thesis)} -y`, valid: true, hint: `→ thesis updated in ${sectionOf(tkr)} section`};
-      },
-    }),
-  };
-
-  function renderForm(mode, opts) {
-    opts = opts || {};
-    const def = FORMS[mode]();
-    host.innerHTML = '';
-    const form = document.createElement('div');
-    form.className = 'action-form open';
-    form.innerHTML = `
-      <div class="form-title">${def.title}</div>
-      ${def.fields.map(f => {
-        let input;
-        if (f.type === 'textarea') {
-          input = `<textarea id="wlf_${f.name}" name="${f.name}" placeholder="${f.placeholder || ''}"></textarea>`;
-        } else if (f.type === 'select') {
-          input = `<select id="wlf_${f.name}" name="${f.name}">${(f.options || []).map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
-        } else if (f.type === 'checkbox') {
-          input = `<label style="font-weight:normal"><input id="wlf_${f.name}" name="${f.name}" type="checkbox" /> enable</label>`;
-        } else if (f.type === 'datalist') {
-          const listId = `wldl_${f.name}`;
-          input = `<input id="wlf_${f.name}" name="${f.name}" type="text" placeholder="${f.placeholder || ''}" list="${listId}" />
-                   <datalist id="${listId}">${(f.source || []).map(s => `<option value="${s}">`).join('')}</datalist>`;
-        } else {
-          input = `<input id="wlf_${f.name}" name="${f.name}" type="${f.type}" placeholder="${f.placeholder || ''}" />`;
-        }
-        return `
-          <div class="form-row">
-            <label for="wlf_${f.name}">${f.label}</label>
-            ${input}
-            ${f.help ? `<div class="help">${f.help}</div>` : ''}
-          </div>`;
-      }).join('')}
-      <div class="preview-label">Command preview</div>
-      <div class="preview" data-preview>(fill the form to generate)</div>
-      <div class="form-actions">
-        <button type="button" class="primary" data-copy>Copy command</button>
-      </div>
-    `;
-    host.appendChild(form);
-
-    const inputs = form.querySelectorAll('input,textarea,select');
-    const previewEl = form.querySelector('[data-preview]');
-    const copyBtn   = form.querySelector('[data-copy]');
-
-    function values() {
-      const v = {};
-      inputs.forEach(i => {
-        if (i.type === 'checkbox') v[i.name] = i.checked;
-        else v[i.name] = i.value;
-      });
-      return v;
-    }
-    function refresh() {
-      const r = def.build(values());
-      if (r.invalid) {
-        previewEl.innerHTML = `<span class="preview-invalid">⚠ ${r.hint}</span>`;
-        copyBtn.disabled = true; copyBtn.textContent = 'Copy command';
-        return;
-      }
-      previewEl.textContent = r.cmd || '(fill the form to generate)';
-      copyBtn.disabled = !r.valid;
-      copyBtn.textContent = r.valid ? 'Copy command' : (r.hint ? `Need: ${r.hint}` : 'Copy command');
-      copyBtn.dataset.cmd = r.cmd || '';
-      if (r.hint && r.valid) {
-        previewEl.insertAdjacentHTML('beforeend', `<div style="color:var(--green);font-size:11px;margin-top:4px">${r.hint}</div>`);
-      }
-    }
-    inputs.forEach(i => i.addEventListener('input', refresh));
-    inputs.forEach(i => i.addEventListener('change', refresh));
-    refresh();
-    // Only auto-focus on user-driven tab switches — NOT the initial render. The first-render
-    // focus was hijacking the viewport (Chrome auto-scrolls focused inputs into view), pushing
-    // the Action Zone above the fold off-screen on page load.
-    if (opts.userInitiated && inputs[0]) inputs[0].focus();
-
-    copyBtn.addEventListener('click', () => {
-      const cmd = copyBtn.dataset.cmd;
-      if (!cmd) return;
-      navigator.clipboard.writeText(cmd).then(() => {
-        copyBtn.classList.add('copied');
-        const orig = copyBtn.textContent;
-        copyBtn.textContent = '✓ copied — paste in terminal';
-        setTimeout(() => { copyBtn.classList.remove('copied'); copyBtn.textContent = orig; }, 2400);
-      });
-    });
-  }
-
-  tabs.querySelectorAll('.wl-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabs.querySelectorAll('.wl-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      renderForm(btn.dataset.mode, {userInitiated: true});
-    });
-  });
-  renderForm('add');  // default tab — no autofocus, no scroll-jack
-})();
 
 // ── Collapsible sections ───────────────────────────────────────────────────
 // Click any top-level panel's H2 to fold/unfold it. State persists in
@@ -3556,22 +3475,77 @@ document.querySelectorAll('table').forEach(t => {
     }
     return (h2.textContent || '').trim().slice(0, 30);
   }
-  document.querySelectorAll('.panel > h2').forEach(function(h2){
+  // Apply persisted collapsed state (re-runnable after a fragment swap).
+  window.taApplyCollapsed = function(){
+    document.querySelectorAll('.panel > h2').forEach(function(h2){
+      const key = 'ta_collapse:' + panelTitle(h2);
+      try { if (localStorage.getItem(key) === '1') h2.parentElement.classList.add('collapsed'); } catch(_){}
+    });
+  };
+  taApplyCollapsed();
+  // Delegated toggle — survives innerHTML swaps (e.g. the in-place Data Health refresh)
+  // so a swapped panel's new h2 still folds without re-binding.
+  document.addEventListener('click', function(e){
+    const h2 = e.target.closest('.panel > h2');
+    if (!h2) return;
+    // Don't toggle when an interactive control inside the header was clicked.
+    if (e.target.closest('button, a, input, select, textarea, label')) return;
     const panel = h2.parentElement;
     const key = 'ta_collapse:' + panelTitle(h2);
-    try { if (localStorage.getItem(key) === '1') panel.classList.add('collapsed'); } catch(_){}
-    h2.addEventListener('click', function(e){
-      // Don't toggle when an interactive control inside the header was clicked
-      // (e.g. Data Health's "refresh all stale" button).
-      if (e.target.closest('button, a, input, select, textarea, label')) return;
-      const nowCollapsed = panel.classList.toggle('collapsed');
-      try {
-        if (nowCollapsed) localStorage.setItem(key, '1');
-        else localStorage.removeItem(key);
-      } catch(_){}
-    });
+    const nowCollapsed = panel.classList.toggle('collapsed');
+    try {
+      if (nowCollapsed) localStorage.setItem(key, '1');
+      else localStorage.removeItem(key);
+    } catch(_){}
   });
 })();
+
+// ── In-place Data Health refresh — re-read cache freshness and swap just this
+// panel's contents, no rebuild / no reload. Reflects out-of-band cache changes
+// (e.g. a refresh CLI run in a terminal) instantly. No-ops in static file:// mode.
+async function taRefreshHealthPanel(){
+  var ind = document.getElementById('ta-health-live');
+  if(ind) ind.textContent = '…';
+  try{
+    var r = await (await fetch('/api/panel/health')).json();
+    if(!r || !r.ok || !r.html){ ind = document.getElementById('ta-health-live'); if(ind) ind.textContent=''; return; }
+    var tmp = document.createElement('div'); tmp.innerHTML = r.html;
+    var np = tmp.querySelector('#data-health-panel'), op = document.getElementById('data-health-panel');
+    if(np && op) op.innerHTML = np.innerHTML;          // guts only — panel element + collapsed state kept
+    var nd = tmp.querySelector('#ta-health-data'), od = document.getElementById('ta-health-data');
+    if(nd && od) od.replaceWith(nd);                    // refresh the toast-diff dataset
+    // The swap above replaced the indicator span too — re-query before stamping it.
+    ind = document.getElementById('ta-health-live');
+    if(ind) ind.textContent = 'updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }catch(e){ ind = document.getElementById('ta-health-live'); if(ind) ind.textContent=''; }
+}
+
+// ── Restore UI state after an update-driven reload ──────────────────────────
+// The control server snapshots scroll / expanded rows / sort / filter into
+// sessionStorage just before it reloads (taCaptureUiState), so a refresh or edit
+// never throws away your place. Expanded rows are keyed by TICKER (not row index)
+// so they survive re-sorting and add/remove. No-ops on a normal first load.
+function taRestoreUiState(){
+  var raw; try { raw = sessionStorage.getItem('ta_ui_state'); } catch(e){ return; }
+  if(!raw) return;
+  try { sessionStorage.removeItem('ta_ui_state'); } catch(e){}
+  var s; try { s = JSON.parse(raw); } catch(e){ return; }
+  var tables = document.querySelectorAll('table');
+  (s.sorts||[]).forEach(function(so){ if(tables[so.t]) applySort(tables[so.t], so.c, so.a); });
+  (s.expanded||[]).forEach(function(tk){
+    var row = document.querySelector('tr.exp-row[data-filter^="'+tk+' "], tr.exp-row[data-filter="'+tk+'"]');
+    if(!row) return;
+    var body = document.getElementById(row.dataset.rowId + '-body');
+    if(body){ body.classList.add('open'); row.classList.add('expanded');
+      var ch = row.querySelector('.exp-chevron'); if(ch) ch.textContent = '▼'; }
+  });
+  if(s.filter){
+    var fi = document.getElementById('wl-filter-input');
+    if(fi){ fi.value = s.filter; if(typeof taFilter === 'function') taFilter(s.filter); }
+  }
+  if(typeof s.y === 'number') window.scrollTo(0, s.y);
+}
+taRestoreUiState();
 """
 
 def _budget_bar_html():
@@ -3664,6 +3638,117 @@ def _classify_btfd_str_shared(chg, vol_ratio, rsi, asset_kind):
         if chg >= thr_chg and vol_ratio >= thr_vol and (thr_rsi is None or (rsi is not None and rsi >= thr_rsi)):
             return "STR"
     return None
+
+
+def render_health_panel_html(_health, _health_summary, _health_grouped, _health_err=None):
+    """Data Health panel fragment (hidden #ta-health-data div + #data-health-panel).
+    Standalone so the control server can re-render it in place via /api/panel/health
+    without a full dashboard rebuild. _health is the imported health module."""
+    if not _health_summary:
+        return ('<div class="panel"><h2>📊 Data Health</h2>'
+                f'<div class="dim">health module unavailable: {_health_err}</div></div>')
+    _n_server = _health_summary.get("n_actionable_server", 0)
+    rows = []
+    for src, recs in sorted(_health_grouped.items()):
+        counts = {}
+        for r in recs:
+            counts[r["state"]] = counts.get(r["state"], 0) + 1
+        chips = []
+        for st, sym in [(_health.STATE_FRESH, "✓"),
+                        (_health.STATE_STALE, "⏰"),
+                        (_health.STATE_ERR_TRANSIENT, "⚠"),
+                        (_health.STATE_ERR_PERMANENT, "🛑"),
+                        (_health.STATE_NO_COVERAGE, "—"),
+                        (_health.STATE_MISSING, "?")]:
+            n = counts.get(st, 0)
+            if n:
+                chips.append(f'<span class="hl-chip hl-{st.replace("_","-")}">{sym} {n}</span>')
+        # Per-source detail: list non-fresh entries only
+        problem_rows = [r for r in recs
+                        if _health.state_priority(r["state"]) >= 1]
+        detail_rows = ""
+        if problem_rows:
+            rows_html = []
+            for r in problem_rows[:15]:  # cap to keep panel sane
+                t = html.escape(r["ticker"] or "—")
+                rows_html.append(
+                    f'<div class="hl-row hl-{r["state"].replace("_","-")}">'
+                    f'<span class="hl-row-t">{t}</span>'
+                    f'<span class="hl-row-s">{html.escape(r["state"])}</span>'
+                    f'<span class="hl-row-d dim">{html.escape((r["detail"] or "")[:80])}</span>'
+                    f'</div>')
+            if len(problem_rows) > 15:
+                rows_html.append(f'<div class="dim hl-more">… and {len(problem_rows)-15} more</div>')
+            detail_rows = '<div class="hl-rows">' + "".join(rows_html) + '</div>'
+        # Determine refresh affordance for this source
+        via = _health.source_refresh_via(src)
+        has_problems = bool(problem_rows)
+        if via is None or via[0] == "agent":
+            # agent-only or unknown: show badge, no button
+            refresh_el = (f'<span class="hl-src-agent dim">agent</span>'
+                          if (via and via[0] == "agent" and has_problems) else '')
+        elif has_problems:
+            # server-refreshable with stale/transient records: show ↻ button
+            src_esc = html.escape(src, quote=True).replace("'", "\\'")
+            refresh_el = (f'<button class="hl-refresh-btn" '
+                          f'onclick="taRefreshSource(\'{src_esc}\')" '
+                          f'title="Refresh {html.escape(src)}">↻</button>')
+        else:
+            refresh_el = ''
+        rows.append(
+            f'<details class="hl-source"><summary>'
+            f'<span class="hl-src-name">{html.escape(src)}</span>'
+            f'<span class="hl-src-chips">{" ".join(chips)}{refresh_el}</span>'
+            f'</summary>{detail_rows}</details>'
+        )
+    headline_cls = "hl-ok"
+    if _health_summary["n_transient"] > 0 or _health_summary["n_permanent"] > 0:
+        headline_cls = "hl-warn"
+    # "refresh all stale" button — only when there's something the server can fix
+    refresh_all_btn = ""
+    if _n_server > 0:
+        refresh_all_btn = ('<button class="hl-refresh-all-btn" '
+                           'onclick="taRefresh(\'quick\')" '
+                           'title="Quick refresh: refresh all stale sources">↻ refresh all stale</button> ')
+    # In-place re-read button — updates this panel from current cache states with no
+    # rebuild/reload (catches out-of-band changes). Server-only; no-ops in static mode.
+    refresh_all_btn += ('<button class="hl-refresh-all-btn" onclick="taRefreshHealthPanel()" '
+                        'title="Re-read cache freshness and update this panel in place — no rebuild, no reload">'
+                        '↻ now</button> <span id="ta-health-live" class="dim" style="font-size:10px"></span> ')
+    # Hidden data element for post-refresh toast JS to diff before/after counts
+    health_data = (
+        f'<div id="ta-health-data" style="display:none" '
+        f'data-stale="{_health_summary["n_stale"]}" '
+        f'data-transient="{_health_summary["n_transient"]}" '
+        f'data-permanent="{_health_summary["n_permanent"]}" '
+        f'data-server="{_health_summary.get("n_actionable_server", 0)}" '
+        f'data-agent="{_health_summary.get("n_actionable_agent", 0)}"></div>'
+    )
+    # Explainer: honest about what refresh can and cannot fix
+    if _health_summary.get("n_actionable_agent", 0) > 0:
+        explainer_extra = (" Agent-only sources (e.g. crypto_unlocks) cannot be refreshed by the server"
+                           " — use a Claude session to update them.")
+    else:
+        explainer_extra = ""
+    return (
+        f'{health_data}'
+        f'<div class="panel" id="data-health-panel">'
+        f'<h2>📊 Data Health {refresh_all_btn}<span class="stale">'
+        f'{_health_summary["healthy_pct"]:.0f}% healthy · '
+        f'{_health_summary["counts"][_health.STATE_FRESH]} fresh · '
+        f'{_health_summary["n_stale"]} stale · '
+        f'{_health_summary["n_transient"]} transient · '
+        f'{_health_summary["n_permanent"]} permanent · '
+        f'{_health_summary["counts"][_health.STATE_NO_COVERAGE]} no-coverage · '
+        f'{_health_summary["counts"][_health.STATE_MISSING]} missing'
+        f'</span></h2>'
+        f'<div class="hl-explainer dim {headline_cls}">'
+        f'Per-source cache freshness. Stale and transient errors are fixable by a server refresh'
+        f' — use ↻ per-row or "refresh all stale" above. Permanent errors need code/config attention.'
+        f'{explainer_extra}'
+        f'</div>'
+        f'<div class="hl-sources">{"".join(rows)}</div>'
+        f'</div>')
 
 
 def render_html(ctx):
@@ -3988,13 +4073,12 @@ def render_html(ctx):
     }
     sim_json = json.dumps(sim_payload)
 
-    # Watchlist manager payload — current ticker rosters by section for the dropdowns
+    # Watchlist roster by section — the US set feeds the live-position cross-check below
     wl_payload = {
         "us":     [e["ticker"] for e in ctx["watchlist"]["us"]],
         "klse":   [e["ticker"] for e in ctx["watchlist"]["klse"]],
         "crypto": [e["ticker"] for e in ctx["watchlist"]["crypto"]],
     }
-    wl_json = json.dumps(wl_payload)
 
     sim_panel = f"""
 <div class="panel">
@@ -4020,19 +4104,6 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 </script>
 """
 
-    wl_us_count = len(wl_payload["us"]); wl_klse_count = len(wl_payload["klse"]); wl_crypto_count = len(wl_payload["crypto"])
-    wl_panel = f"""
-<div class="panel">
-  <h2>Watchlist Manager <span class="stale">generate <code>wl.py</code> commands · current: {wl_us_count} US · {wl_klse_count} KLSE · {wl_crypto_count} crypto</span></h2>
-  <div class="wl-mode-tabs" id="wl-tabs">
-    <button type="button" data-mode="add"    class="wl-tab active">➕ Add</button>
-    <button type="button" data-mode="remove" class="wl-tab">➖ Remove</button>
-    <button type="button" data-mode="update" class="wl-tab">✎ Update thesis</button>
-  </div>
-  <div id="wl-form-host"></div>
-</div>
-<script>window.TA_WL = {wl_json};</script>
-"""
 
     # ── Discovery panel — US screener + sector rotation ──────────────────
     screener_cache = PROJECT_ROOT / ".claude" / "cache" / "screener" / "candidates.json"
@@ -5214,10 +5285,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'</div>'
             )
             rows.append(f"""
-<tr class="exp-row {_rank_cls(_rank)}" data-row-id="us-{idx}">
+<tr class="exp-row {_rank_cls(_rank)}" data-row-id="us-{idx}" data-filter="{html.escape((tk + ' ' + (t.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(tk)}</b> <button class="sim-load-btn" onclick="event.stopPropagation(); taLoadSim('{html.escape(tk, quote=True)}')" title="Load into Risk Simulator (prefill entry/stop/TP)">→Sim</button></td>
-  <td class="dim">{html.escape((t.get('name') or '')[:24])}</td>
+  <td class="dim">{html.escape((t.get('name') or '')[:24])}{_sparkline_svg(t.get('spark') or [])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">{fmt_num(price,2)}{_price_age_suffix(t.get('price_date'))} <button class="ta-quote-btn" data-symbol="{html.escape(tk, quote=True)}" title="Fetch live quote (Finnhub)">🔄</button><span class="live-quote"></span></td>
   <td class="num {chg_cls}" data-sort="{chg or 0}" title="Day-over-day vs last cleanly-closed prior bar — not a true 24h read if a recent yfinance bar was NaN-skipped.">{fmt_pct(chg,2)}</td>
   <td class="num" data-sort="{rsi or 0}">{fmt_num(rsi,1)}</td>
@@ -5372,11 +5443,11 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'</div>'
             )
             rows.append(f"""
-<tr class="exp-row" data-row-id="klse-{idx}">
+<tr class="exp-row" data-row-id="klse-{idx}" data-filter="{html.escape((tk + ' ' + (t.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(tk)}</b></td>
-  <td class="dim">{html.escape((t.get('name') or '')[:22])}</td>
-  <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">MYR {fmt_num(price,3)}{_price_age_suffix(t.get('price_date'))} <a class="ta-quote-btn" href="https://klsescreener.com/v2/stocks/quote/{html.escape(code, quote=True)}" target="_blank" rel="noopener" title="Open klsescreener.com (free real-time KLSE quote not available via Finnhub)" onclick="event.stopPropagation()">📊</a></td>
+  <td class="dim">{html.escape((t.get('name') or '')[:22])}{_sparkline_svg(t.get('spark') or [])}</td>
+  <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">MYR {fmt_num(price,3)}{_price_age_suffix(t.get('price_date'))} <a class="ta-quote-btn" href="https://klsescreener.com/v2/stocks/view/{html.escape(code, quote=True)}" target="_blank" rel="noopener" title="Open klsescreener.com (free real-time KLSE quote not available via Finnhub)" onclick="event.stopPropagation()">📊</a></td>
   <td class="num {chg_cls}" data-sort="{chg or 0}">{fmt_pct(chg,2)}</td>
   <td class="num" data-sort="{rsi or 0}">{fmt_num(rsi,1)}</td>
   <td class="num" data-sort="{atr_pct or 0}" title="Daily ATR(14) as % of price">{fmt_num(atr_pct,2)}%</td>
@@ -5507,10 +5578,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'</div>'
             )
             rows.append(f"""
-<tr class="exp-row {_rank_cls(_rank)}" data-row-id="crypto-{idx}">
+<tr class="exp-row {_rank_cls(_rank)}" data-row-id="crypto-{idx}" data-filter="{html.escape(((r.get('symbol') or entry['ticker']) + ' ' + (r.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(entry['ticker'], quote=True)}')" title="Remove from watchlist">🗑️</button></td>
   <td><b>{html.escape(r.get('symbol','—'))}</b></td>
-  <td class="dim">{html.escape((r.get('name') or '')[:18])}</td>
+  <td class="dim">{html.escape((r.get('name') or '')[:18])}{_sparkline_svg(ind.get('spark') or [])}</td>
   <td class="num" data-sort="{r.get('price') or 0}">${fmt_num(r.get('price'),4)} <button class="ta-quote-btn" data-crypto-source="{ind.get('data_source','binance')}" data-crypto-symbol="{html.escape(ind.get('symbol') or (tk_up + 'USDT'), quote=True)}" title="Fetch live quote (Binance/CoinGecko)" onclick="event.stopPropagation()">🔄</button><span class="live-quote"></span></td>
   <td class="num {'green' if (ch24 or 0)>0 else 'red'}" data-sort="{ch24 or 0}">{fmt_pct(ch24,2)}</td>
   <td class="num {'green' if (ch7 or 0)>0 else 'red'}" data-sort="{ch7 or 0}">{fmt_pct(ch7,2)}</td>
@@ -5845,6 +5916,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     # Why: v2.0.x found four bugs where degraded data looked identical to
     # good data (silent failures rendered cleanly). Surfaces transient
     # errors, staleness, and missing caches so the operator sees them.
+    _health_err = None
     try:
         sys.path.insert(0, str(SCRIPT_DIR))
         import health as _health
@@ -5913,106 +5985,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
 
     # ── Data Health panel (collapsed by default) ──────────────────────────
     def render_health_panel():
-        if not _health_summary:
-            return ('<div class="panel"><h2>📊 Data Health</h2>'
-                    f'<div class="dim">health module unavailable: {_health_err}</div></div>')
-        _n_server = _health_summary.get("n_actionable_server", 0)
-        rows = []
-        for src, recs in sorted(_health_grouped.items()):
-            counts = {}
-            for r in recs:
-                counts[r["state"]] = counts.get(r["state"], 0) + 1
-            chips = []
-            for st, sym in [(_health.STATE_FRESH, "✓"),
-                            (_health.STATE_STALE, "⏰"),
-                            (_health.STATE_ERR_TRANSIENT, "⚠"),
-                            (_health.STATE_ERR_PERMANENT, "🛑"),
-                            (_health.STATE_NO_COVERAGE, "—"),
-                            (_health.STATE_MISSING, "?")]:
-                n = counts.get(st, 0)
-                if n:
-                    chips.append(f'<span class="hl-chip hl-{st.replace("_","-")}">{sym} {n}</span>')
-            # Per-source detail: list non-fresh entries only
-            problem_rows = [r for r in recs
-                            if _health.state_priority(r["state"]) >= 1]
-            detail_rows = ""
-            if problem_rows:
-                rows_html = []
-                for r in problem_rows[:15]:  # cap to keep panel sane
-                    t = html.escape(r["ticker"] or "—")
-                    rows_html.append(
-                        f'<div class="hl-row hl-{r["state"].replace("_","-")}">'
-                        f'<span class="hl-row-t">{t}</span>'
-                        f'<span class="hl-row-s">{html.escape(r["state"])}</span>'
-                        f'<span class="hl-row-d dim">{html.escape((r["detail"] or "")[:80])}</span>'
-                        f'</div>')
-                if len(problem_rows) > 15:
-                    rows_html.append(f'<div class="dim hl-more">… and {len(problem_rows)-15} more</div>')
-                detail_rows = '<div class="hl-rows">' + "".join(rows_html) + '</div>'
-            # Determine refresh affordance for this source
-            via = _health.source_refresh_via(src)
-            has_problems = bool(problem_rows)
-            if via is None or via[0] == "agent":
-                # agent-only or unknown: show badge, no button
-                refresh_el = (f'<span class="hl-src-agent dim">agent</span>'
-                              if (via and via[0] == "agent" and has_problems) else '')
-            elif has_problems:
-                # server-refreshable with stale/transient records: show ↻ button
-                src_esc = html.escape(src, quote=True).replace("'", "\\'")
-                refresh_el = (f'<button class="hl-refresh-btn" '
-                              f'onclick="taRefreshSource(\'{src_esc}\')" '
-                              f'title="Refresh {html.escape(src)}">↻</button>')
-            else:
-                refresh_el = ''
-            rows.append(
-                f'<details class="hl-source"><summary>'
-                f'<span class="hl-src-name">{html.escape(src)}</span>'
-                f'<span class="hl-src-chips">{" ".join(chips)}{refresh_el}</span>'
-                f'</summary>{detail_rows}</details>'
-            )
-        headline_cls = "hl-ok"
-        if _health_summary["n_transient"] > 0 or _health_summary["n_permanent"] > 0:
-            headline_cls = "hl-warn"
-        # "refresh all stale" button — only when there's something the server can fix
-        refresh_all_btn = ""
-        if _n_server > 0:
-            refresh_all_btn = ('<button class="hl-refresh-all-btn" '
-                               'onclick="taRefresh(\'quick\')" '
-                               'title="Quick refresh: refresh all stale sources">↻ refresh all stale</button> ')
-        # Hidden data element for post-refresh toast JS to diff before/after counts
-        health_data = (
-            f'<div id="ta-health-data" style="display:none" '
-            f'data-stale="{_health_summary["n_stale"]}" '
-            f'data-transient="{_health_summary["n_transient"]}" '
-            f'data-permanent="{_health_summary["n_permanent"]}" '
-            f'data-server="{_health_summary.get("n_actionable_server", 0)}" '
-            f'data-agent="{_health_summary.get("n_actionable_agent", 0)}"></div>'
-        )
-        # Explainer: honest about what refresh can and cannot fix
-        if _health_summary.get("n_actionable_agent", 0) > 0:
-            explainer_extra = (" Agent-only sources (e.g. crypto_unlocks) cannot be refreshed by the server"
-                               " — use a Claude session to update them.")
-        else:
-            explainer_extra = ""
-        return (
-            f'{health_data}'
-            f'<div class="panel" id="data-health-panel">'
-            f'<h2>📊 Data Health {refresh_all_btn}<span class="stale">'
-            f'{_health_summary["healthy_pct"]:.0f}% healthy · '
-            f'{_health_summary["counts"][_health.STATE_FRESH]} fresh · '
-            f'{_health_summary["n_stale"]} stale · '
-            f'{_health_summary["n_transient"]} transient · '
-            f'{_health_summary["n_permanent"]} permanent · '
-            f'{_health_summary["counts"][_health.STATE_NO_COVERAGE]} no-coverage · '
-            f'{_health_summary["counts"][_health.STATE_MISSING]} missing'
-            f'</span></h2>'
-            f'<div class="hl-explainer dim {headline_cls}">'
-            f'Per-source cache freshness. Stale and transient errors are fixable by a server refresh'
-            f' — use ↻ per-row or "refresh all stale" above. Permanent errors need code/config attention.'
-            f'{explainer_extra}'
-            f'</div>'
-            f'<div class="hl-sources">{"".join(rows)}</div>'
-            f'</div>')
+        return render_health_panel_html(_health, _health_summary, _health_grouped, _health_err)
 
     html_out = f"""<!doctype html>
 <html lang="en"><head>
@@ -6042,6 +6015,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
     {sim_panel}
   </div>
   {prospectus_panel}
+  <div class="wl-filter"><input type="text" id="wl-filter-input" placeholder="🔎 Filter watchlist by ticker or name…" oninput="taFilter(this.value)" autocomplete="off" spellcheck="false"><span class="wl-filter-count" id="wl-filter-count"></span><button type="button" id="ta-live-btn" class="ta-live-btn" onclick="taToggleLive()" title="Stream live quotes for every US + crypto row on an interval (Finnhub / Binance). KLSE has no free live quote. Live values show in each row beside the daily close.">⚡ Live quotes</button><span class="ta-live-ind" id="ta-live-ind"></span></div>
   {us_panel}
   {klse_panel}
   {crypto_panel}
@@ -6049,7 +6023,6 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
   {regime_panel}
   {strip}
   {portfolio_panel}
-  {wl_panel}
   {discovery_panel}
   {news_panel}
   {journal_panel}

@@ -65,7 +65,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 
 | Tool | Purpose |
 |---|---|
-| `server.py` | Local control server at `http://localhost:8787`. Serves `dashboard.html` with a control bar (Quick / Full refresh, Watchlist form, Journal form, watcher start/stop). Hybrid auto-refresh: stale-by->12h triggers one quick refresh per session. `--lan` binds 0.0.0.0 for phone access (Tailscale-trusted networks). Launch via `Trading Dashboard.command` in project root. |
+| `server.py` | Local control server at `http://localhost:8787`. Serves `dashboard.html` with a control bar (Quick / Full refresh, Watchlist form, Journal form, watcher start/stop). **Per-panel fragment refresh** via `/api/panel/health` (v2.7.0 — re-render one panel in place, no reload). Hybrid auto-refresh: stale-by->12h triggers one quick refresh per session. `--lan` binds 0.0.0.0 for phone access (Tailscale-trusted networks). Launch via `Trading Dashboard.command` in project root. |
 | `watcher.py` | Level/alert watcher — polls Finnhub during US market hours, fires macOS notifications on prospectus entry-trigger breaks, stop hits, TP1/TP2 touches, and watchlist names entering the Phase-1 band. Read-only and doctrine-clean: never trades, never writes journal. |
 | `setup_queue.py` | Turns Phase-1-band watchlist names into decision-ready prospectus drafts (ATR stop, 2R TP1, §5 size math) with one click via `j.py new`. Cuts friction from "P1-ready" to "logged paper trade." |
 | `portfolio.py` | Auto-derives portfolio heat + calibration metrics from the journal (source of truth). `j.py live` / `close` auto-regenerate `portfolio.md` — no hand-maintained drift. |
@@ -99,7 +99,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Progress banner + outcome toast** (v2.2.0) — a slim fixed banner at the top of the page appears while any job runs (not just when Control widget is open). After reload, a toast diffs pre/post health counts: "5 cleared, 2 still stale, 1 agent-only."
 - **🔭 Discovery panel** — sector-rotation heat strip + Q+V tagged candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE — ⚡ TECH retired in v1.9.1) with one-click "+ Add to watchlist". Tightened qualification (RSI 38-48, SMA50 slope ≥ 1%/5d).
 - **Portfolio & Calibration panel** — auto-derived heat, sector-correlation warning, expectancy line, MAE/MFE per open position.
-- **Watchlist Manager** — inline forms generating `wl.py add/remove/update` commands with live preview. 🗑️ remove buttons on every row.
+- **Watchlist add/remove/update** — the live control-panel form (server) is the single watchlist UI: add (with section override + force-add), remove (with reason), update thesis; it runs `wl.py` and auto-rebuilds. 🗑️ remove buttons on every row. (The older static copy-paste "Watchlist Manager" panel was removed in the v2.7.0 consolidation — one path, no redundancy.)
 - **Journal tail**.
 - **Account KPI strip** — single-line collapsible (`$20k · Phase 1 · Heat $0/$1,200 · P2 gate · AV news`).
 - **Live quote buttons** — 🔄 next to each US price (Finnhub real-time), 🔄 for crypto (Binance/CoinGecko), 📊 link for KLSE (klsescreener.com).
@@ -110,6 +110,12 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Collapsible sections (v2.4.0)** — click any panel's `<h2>` to fold/unfold it; fold state persists per-panel in `localStorage` (keyed by the heading's leading text) and works in static `file://` mode. Pure CSS (`.panel.collapsed > *:not(h2){display:none}`) + a small JS IIFE; header controls are excluded from the toggle. The Regime panel keeps its older native `<details>` collapse.
 - **Editorial-dark theme (v2.5.0)** — Archivo (headers/labels) + IBM Plex Mono (data) self-hosted and base64-embedded at build time via `_embed_fonts_css()` (`.claude/skills/dashboard/fonts/*.woff2`); fully offline/self-contained. Layered surfaces, hairline borders, Action Rail inset cards, accent chevrons. Restyle is CSS + a `<head>` font-embed only — no structural/JS change.
 - **Refresh feedback (v2.5.0, server mode)** — clicking any refresh button shows an instant top progress banner (spinner + live build-phase from the job log + ticking elapsed timer); completion fires a toast **and** an OS notification (success/failure) when permission is granted. Build degrades gracefully — a transient failure in one enrichment layer (news/sentiment/glyph) renders from cache + reports the degraded layer instead of crashing. Job output persists to `.claude/cache/dashboard/last_job.log` for post-mortem.
+- **Live dashboard (v2.7.0)** — the page behaves like an app, not a static export:
+  - **🔎 Watchlist filter** — instant ticker/name filter above the grids (pure client; hides non-matching rows + their detail bodies, with an "N of M shown" count).
+  - **Per-row sparklines** — inline SVG price trend (green if the window closes up, red if down) baked from a downsampled `spark` close-series now captured in `fetch_yfinance_ticker` + `_compute_indicators_from_ohlcv`. Watchlist grids only (not the ~180-name discovery).
+  - **⚡ Live quotes toggle** — sweeps every US + crypto row on a staggered interval (Finnhub / Binance, well under 60/min), rendering the live price beside the baked daily close with a ticking "● live" stamp. KLSE skipped (no free CORS quote). Authoritative cells (RSI/vs-SMA/BTFD/sim) are never overwritten from a live tick.
+  - **State-preserving updates** — scroll position, expanded rows (keyed by **ticker**, so they survive re-sorting and add/remove), active column sort, and filter text persist across every refresh/edit. The server snapshots UI state (`taCaptureUiState`) just before reload; the rebuilt page restores it (`taRestoreUiState`). No more "lost my place."
+  - **In-place Data Health refresh** — **↻ now** re-reads cache freshness and swaps just the Data Health panel via `/api/panel/health` (no rebuild, no reload). `render_health_panel` was lifted to a standalone `render_health_panel_html()`; panel collapse is event-delegated so swapped panels keep folding.
 
 ### Architectural patterns established
 
@@ -122,6 +128,8 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Provider fallback chains** — FMP paywalled symbol → yfinance fallback; yfinance NaN-Close bar → Twelve Data fallback
 - **LLM fallback chains** — both the news-glyph scorer AND `sentiment-cache.classify_messages` retry with `gpt-oss-120b:free` on transient errors from Gemma (v2.0.6 closed the parity gap; the fallback constant was defined but never referenced before that release). `_is_transient_error` explicitly enumerates 429/5xx/URLError/timeout so future tweaks can't accidentally widen the trigger.
 - **Live quote endpoints** are browser-side (JS fetches Finnhub/Binance directly), separate from cached daily-close pipeline
+- **Tiered DOM updates (v2.7.0)** — three update paths instead of always rebuild-and-reload: leaf data-patch (client live quotes), panel fragment-swap (`/api/panel/health` re-renders one panel), and state-preserving reload (snapshot UI state → reload → restore). Full rebuilds stay the exception.
+- **Atomic cache writes (v2.7.0)** — `cache_set` writes a temp file then `os.replace()`s it, so a concurrent reader (the parallel-fetch ThreadPool, or a second process) never sees a half-written JSON cache.
 - **Bulk resolution cache** — single directory scan instead of per-ticker file reads (T3-S2)
 - **Parallel I/O** — yfinance per-ticker calls use `ThreadPoolExecutor` (T3-S3); v2.3.0 extended this to the macro+crypto regime fetches (run concurrently) and the per-coin Binance funding loop
 - **Watchlist auto-inclusion** in screener universe (T3-E3)
@@ -132,7 +140,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **Hoisted shared classifiers** — `_classify_btfd_str_shared` lives at module scope so both the Action Rail count and the BTFD/STR panel reference the same function (v2.0.3 — they used to be independent code paths and drifted on every threshold tweak).
 - **Health-state taxonomy** — every data source classified into one of six explicit states (`fresh` / `stale` / `error_transient` / `error_permanent` / `no_coverage` / `missing`). Degraded data must never render identically to good data. v2.1.0.
 
-### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 + v2.5.0 + v2.6.0 — currently 250 tests, ~5s)
+### Test suite (added v2.0.5, expanded v2.0.6 + v2.1.0 + v2.2.0 + v2.3.0 + v2.4.0 + v2.5.0 + v2.6.0 + v2.7.0 — currently 286 tests, ~5s)
 
 Pure-logic regression net under the dashboard's silent-failure surfaces. Every bug fix in the v2.0.x → v2.1.0 series left a regression test behind.
 

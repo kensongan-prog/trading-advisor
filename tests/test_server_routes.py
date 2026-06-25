@@ -28,6 +28,12 @@ class TestRefreshFlags:
 
 
 class TestJobSemantics:
+    @pytest.fixture(autouse=True)
+    def _isolate_job_log(self, tmp_path, monkeypatch):
+        # Completed jobs persist their output to LAST_JOB_LOG; redirect it to a temp
+        # file so these tests never clobber the operator's live last_job.log.
+        monkeypatch.setattr(server, "LAST_JOB_LOG", tmp_path / "last_job.log")
+
     def test_fresh_job_is_idle(self):
         j = server.Job()
         s = j.status()

@@ -255,6 +255,7 @@ CONTROL_BAR = """
 <details><summary>Watchlist</summary>
 <div class="row"><select id="wl-action"><option value="add">add</option><option value="remove">remove</option><option value="update">update thesis</option></select><input id="wl-ticker" placeholder="ticker"></div>
 <div class="row"><input id="wl-text" placeholder="thesis (add/update) or reason (remove)"></div>
+<div class="row"><select id="wl-section"><option value="auto">auto-classify</option><option value="us">us</option><option value="klse">klse</option><option value="crypto">crypto</option><option value="options">options</option></select><label style="font-weight:normal;font-size:12px"><input type="checkbox" id="wl-force"> force-add (skip resolve)</label></div>
 <div class="row"><button onclick="taWatchlist()">Apply</button></div>
 </details>
 <details><summary>Journal</summary>
@@ -324,8 +325,9 @@ async function poll(){
       taBannerStop();
       if(wasRunning){
         if(j.state==='done'){
-          // Stash pre-reload state already captured; now reload to show fresh page
-          location.reload();return;
+          // Snapshot scroll/expanded/sort/filter, then reload — the fresh page's
+          // taRestoreUiState() puts your view back so an update never loses your place.
+          taCaptureUiState();location.reload();return;
         }
         $('tactl-state').innerHTML='<span class="err">✗ '+j.label+' failed</span>';
         $('tactl-log').textContent=j.log_tail.join('\\n');
@@ -348,6 +350,28 @@ function captureHealthState(){
     stale:+hd.dataset.stale, transient:+hd.dataset.transient,
     permanent:+hd.dataset.permanent, server:+hd.dataset.server, agent:+hd.dataset.agent
   }));
+}
+// Snapshot ephemeral view state just before a reload; the rebuilt page's
+// taRestoreUiState() (baked by dashboard.py) reads it back. Keyed by ticker so
+// expanded rows survive re-sorting and watchlist add/remove.
+function taCaptureUiState(){
+  try{
+    var tables=document.querySelectorAll('table'), sorts=[];
+    tables.forEach(function(t,ti){
+      var th=t.querySelector('th.sort-asc, th.sort-desc');
+      if(th){ var ths=Array.prototype.slice.call(t.querySelectorAll('th'));
+        sorts.push({t:ti,c:ths.indexOf(th),a:th.classList.contains('sort-asc')}); }
+    });
+    var expanded=[];
+    document.querySelectorAll('tr.exp-details.open').forEach(function(body){
+      var row=document.querySelector('tr.exp-row[data-row-id="'+body.id.replace(/-body$/,'')+'"]');
+      if(row && row.dataset.filter) expanded.push(row.dataset.filter.split(' ')[0]);
+    });
+    var fi=document.getElementById('wl-filter-input');
+    sessionStorage.setItem('ta_ui_state',JSON.stringify({
+      y:window.scrollY, sorts:sorts, expanded:expanded, filter:fi?fi.value:''
+    }));
+  }catch(e){}
 }
 // Ask for OS-notification permission on the user's click (browsers require a
 // gesture). Best-effort; declined/unsupported just falls back to the in-page toast.
@@ -408,7 +432,7 @@ window.taCreateProspectus=async function(ticker){
 };
 window.taWatchlist=async function(){
   const r=await (await fetch('/api/watchlist',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:$('wl-action').value,ticker:$('wl-ticker').value.trim(),text:$('wl-text').value.trim()})})).json();
+    body:JSON.stringify({action:$('wl-action').value,ticker:$('wl-ticker').value.trim(),text:$('wl-text').value.trim(),section:$('wl-section').value,allow_unresolved:$('wl-force').checked})})).json();
   showResult(r);
 };
 $('j-action').addEventListener('change',function(){
@@ -550,6 +574,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "candidates": setup_queue.candidates()})
             except Exception as e:
                 self._json({"ok": False, "output": f"{type(e).__name__}: {e}"})
+        elif self.path == "/api/panel/health":
+            self._json(self._panel_health())
         else:
             self._send(404, "not found", "text/plain")
 
@@ -611,6 +637,22 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, "not found", "text/plain")
 
+    def _panel_health(self):
+        """Re-render the Data Health panel fragment from current cache states — no data
+        fetch and no full rebuild (health only reads cache freshness). Lets the client
+        swap the panel in place to reflect out-of-band cache changes instantly."""
+        if _health_mod is None:
+            return {"ok": False, "output": "health module unavailable"}
+        try:
+            import dashboard
+            wl = dashboard.parse_watchlist()
+            recs = _health_mod.collect_health(wl)
+            frag = dashboard.render_health_panel_html(
+                _health_mod, _health_mod.summarize(recs), _health_mod.group_by_source(recs))
+            return {"ok": True, "html": frag}
+        except Exception as e:
+            return {"ok": False, "output": f"{type(e).__name__}: {e}"}
+
     def _watchlist(self, b):
         action, ticker, text = b.get("action"), b.get("ticker", ""), b.get("text", "")
         if not ticker:
@@ -618,6 +660,11 @@ class Handler(BaseHTTPRequestHandler):
         argv = [sys.executable, str(WL_PY)]
         if action == "add":
             argv += ["add", ticker, "--yes"] + (["--thesis", text] if text else [])
+            section = b.get("section")
+            if section and section != "auto":
+                argv += ["--section", section]
+            if b.get("allow_unresolved"):
+                argv += ["--allow-unresolved"]
         elif action == "remove":
             if not text:
                 return {"ok": False, "rc": -1, "output": "removal reason required (doctrine)"}
