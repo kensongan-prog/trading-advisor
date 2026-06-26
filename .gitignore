@@ -4,6 +4,14 @@
 *.key
 *.pem
 
+# Personal trading data — real records stay LOCAL, never in the repo.
+# Templates (*.example.md) are tracked so the project still builds + replicates;
+# copy them to the real filenames on a fresh clone. See PROJECT_LOG.md.
+/watchlist.md
+/portfolio.md
+/journal/*.md
+!/journal/README.md
+
 # Python
 __pycache__/
 *.pyc
