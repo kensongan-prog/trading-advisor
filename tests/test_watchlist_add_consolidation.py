@@ -41,11 +41,11 @@ def _capture_add(body, monkeypatch):
 
 def test_add_forwards_section_and_force(monkeypatch):
     seen, res = _capture_add(
-        {"action": "add", "ticker": "MU", "text": "Memory shortage play",
+        {"action": "add", "ticker": "AMD", "text": "example thesis",
          "section": "us", "allow_unresolved": True}, monkeypatch)
     argv = seen["argv"]
-    assert "add" in argv and "MU" in argv
-    assert "--thesis" in argv and "Memory shortage play" in argv
+    assert "add" in argv and "AMD" in argv
+    assert "--thesis" in argv and "example thesis" in argv
     assert argv[argv.index("--section") + 1] == "us"
     assert "--allow-unresolved" in argv
     assert res["ok"] is True
