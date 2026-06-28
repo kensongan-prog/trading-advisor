@@ -44,7 +44,7 @@ Before the operator clears or closes the session **mid-task**:
 
 ## Keep the knowledge vault in sync
 
-An Obsidian knowledge vault mirrors this project for cross-agent (Claude + Codex) and human navigation: **`~/Projects/Claude Codex Vault/Trading Advisor/`** (entry point `00 — Trading Advisor Home.md`). The **repo is the source of truth; the vault is a synthesized, navigable index** — when they disagree, the repo wins. It lives **outside this git repo**, so vault edits are not part of repo commits.
+An Obsidian knowledge vault mirrors this project for cross-agent (Claude + Codex) and human navigation: **`/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Trading Advisor/`** (entry point `00 — Trading Advisor Home.md`; on an external volume — `/Volumes/Mac Mini SSD` must be mounted to reach it). The **repo is the source of truth; the vault is a synthesized, navigable index** — when they disagree, the repo wins. It lives **outside this git repo**, so vault edits are not part of repo commits.
 
 When you ship a meaningful change, mirror it into the vault — same discipline as the CHANGELOG entry, so it doesn't drift. Map the change to the note that owns it:
 - New/changed skill → `Architecture — Skills Catalog`
