@@ -4,6 +4,27 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
+
+**Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8787**. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused — that's the bug we already fixed once; don't regress.
+
+**How to launch:** double-click **`Trading Dashboard.command`** in the project root. It now does:
+```sh
+exec /usr/bin/env python3 ".claude/skills/dashboard/server.py" --lan --open
+```
+`--lan` → dual-stack bind; `--open` → opens browser to localhost. Manual workflow only — close the Terminal window to stop the server.
+
+**Do NOT install a LaunchAgent for autostart.** An earlier session explored that path and discovered the TCC trap below; the LaunchAgent + autostart .command + Application Support directory were all removed when Kenson said autostart wasn't wanted. If a future session is tempted to "make it persistent again," check with Kenson first — manual launch is the standing preference.
+
+**The TCC trap (kept here as reference, since this folder isn't moving anytime soon).** A naive LaunchAgent like `ProgramArguments = [/usr/bin/python3, .../server.py, --lan, --port, 8787]` **silently fails with exit code 78 (EX_CONFIG)** because the project lives under `~/Documents/`, which macOS TCC treats as protected. A launchd-spawned process has NO TCC grants for `~/Documents` and errors with `Operation not permitted` before `server.py` is even read. Symptoms in `launchctl print`:
+- `state = spawn scheduled` (forever)
+- `last exit code = 78: EX_CONFIG`
+- nothing in StandardOutPath if that path is also in `~/Documents` (launchd can't open it for redirection either)
+
+The workaround that **did** work (if it's ever wanted again) is `/usr/bin/open -g -j <autostart.command>` from a LaunchAgent, where the autostart .command lives outside ~/Documents and nohup-detaches a python that the user-session Terminal launches. `open` dispatches via LaunchServices so the spawned chain inherits the user's TCC grants. Don't set KeepAlive on that pattern — `open` exits immediately and it would respawn forever.
+
+**Verify after a manual launch:** `curl -sS -o /dev/null -w "%{http_code}\n" http://100.71.94.40:8787/` should return `200`. If it's `000`, either the dashboard isn't running (double-click the .command) or `--lan` got dropped somewhere — check `Trading Dashboard.command` first.
+
 ### 2026-06-25 — Data builds need system `python3`, NOT `.venv-playwright` (pandas/yfinance)
 
 The project venv `.venv-playwright` has **pytest + playwright but NOT pandas/yfinance**. So `dashboard.py --force` (or anything calling `fetch_yfinance_ticker` / `_compute_indicators_from_ohlcv`) only works under **system `python3`** — the venv only succeeds on cache hits (no recompute path triggers the import). `server.py` spawns builds via `sys.executable`, so **run the server with system `python3`** or builds will fail on the first cache miss. Tests that touch pandas use `pytest.importorskip("pandas")` so the suite stays green in the venv (1 skip is expected there). Bootstrap pytest still uses the venv; only *data builds* need system python.
