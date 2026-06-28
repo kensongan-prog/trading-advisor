@@ -34,7 +34,8 @@ Massive MCP gives prices and indicators, not news/sentiment. Per AGENTS.md Secti
    Then `source ~/.zshrc` (or restart the terminal / desktop app).
 3. Verify:
    ```bash
-   python3 /Users/aiagent/Documents/Claude/Projects/Trading\ Advisor/.claude/skills/us-news/av_news.py --ticker AAPL --limit 3
+   # from the project root:
+   python3 .claude/skills/us-news/av_news.py --ticker AAPL --limit 3
    ```
 
 **Free-tier limits to be aware of:** 25 NEWS_SENTIMENT calls/day. That's enough for triage across a small watchlist, NOT enough to loop on. If you upgrade to a premium tier (75/min, 1200/day, etc.), the script doesn't need changing — same env var.

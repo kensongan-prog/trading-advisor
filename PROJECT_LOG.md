@@ -225,7 +225,7 @@ Refresh model: **operator-driven** (no cron, no auto-poll). The dashboard's refr
 
 ### Step 1: Copy the project folder
 
-Take the entire `Trading Advisor/` directory and place it under whatever project root the brother prefers (e.g. `~/Documents/Claude/Projects/Trading Advisor/`).
+Take the entire `Trading Advisor/` directory and place it under whatever project root the brother prefers (e.g. `/Volumes/Mac Mini SSD/Projects/Claude/Trading Advisor/`).
 
 **Files to copy:**
 - `AGENTS.md`, `CLAUDE.md` (CLAUDE auto-loads its bootstrap; AGENTS.md is the cross-agent doctrine)
