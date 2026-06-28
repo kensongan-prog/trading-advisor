@@ -4,6 +4,12 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-06-29 — Project moved off `~/Documents` to the external SSD — supersedes the TCC-trap context below
+
+The repo now lives at **`/Volumes/Mac Mini SSD/Projects/Claude/Trading Advisor`** (moved 2026-06-29, off the old `~/Documents/Claude/Projects/…` location). This updates two now-stale claims in the 2026-06-26 entry below:
+- **"This folder isn't moving anytime soon"** — it did move. The SSD must be mounted to reach the repo (and the vault); if a session can't find either, check the volume first.
+- **The launchd `EX_CONFIG`/TCC trap was specific to `~/Documents`** (a macOS TCC-protected location). The project is no longer there, so that exact failure mode no longer applies here. The 2026-06-26 entry's trap writeup stays as **general reference** (it's still true for any project under `~/Documents`/`~/Desktop`/`~/Downloads`), but it's no longer a live constraint for *this* repo. Note `/Volumes/…` external volumes have their own caveat — they're not TCC-protected like `~/Documents`, but a launchd job firing before the volume mounts would fail differently (path not found). Autostart remains unwanted regardless — manual launch is the standing preference.
+
 ### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
 
 **Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8787**. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused — that's the bug we already fixed once; don't regress.
