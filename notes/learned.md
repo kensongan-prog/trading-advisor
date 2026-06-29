@@ -33,7 +33,7 @@ The workaround that **did** work (if it's ever wanted again) is `/usr/bin/open -
 
 ### 2026-06-25 — Data builds need system `python3`, NOT `.venv-playwright` (pandas/yfinance)
 
-The project venv `.venv-playwright` has **pytest + playwright but NOT pandas/yfinance**. So `dashboard.py --force` (or anything calling `fetch_yfinance_ticker` / `_compute_indicators_from_ohlcv`) only works under **system `python3`** — the venv only succeeds on cache hits (no recompute path triggers the import). `server.py` spawns builds via `sys.executable`, so **run the server with system `python3`** or builds will fail on the first cache miss. Tests that touch pandas use `pytest.importorskip("pandas")` so the suite stays green in the venv (1 skip is expected there). Bootstrap pytest still uses the venv; only *data builds* need system python.
+The project venv `.venv-playwright` has **pytest + playwright but NOT pandas/yfinance**. So `dashboard.py --force` (or anything calling `fetch_yfinance_ticker` / `_compute_indicators_from_ohlcv`) only works under **system `python3`** — the venv only succeeds on cache hits (no recompute path triggers the import). `server.py` spawns builds via `sys.executable`, so **run the server with system `python3`** or builds will fail on the first cache miss. Tests that touch pandas use `pytest.importorskip("pandas")` so the suite stays green in the venv (3 skips are expected there as of 2026-06-29: `test_sparkline.py` + the two pandas-gated cases in `test_earnings_skip.py`). Bootstrap pytest still uses the venv; only *data builds* need system python.
 
 ### 2026-06-25 — klsescreener stock URL is `/v2/stocks/view/{code}`, not `/quote/`
 

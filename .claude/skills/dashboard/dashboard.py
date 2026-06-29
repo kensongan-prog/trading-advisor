@@ -528,6 +528,13 @@ def _sparkline_svg(vals, w=66, h=18):
             f'fill="currentColor"/></svg>')
 
 
+# Context-only gauges (ETFs/indices like SPY) have no company earnings. yfinance's
+# calendarEvents quoteSummary call 404s for them ("No fundamentals data found for
+# symbol: SPY") and logs the HTTP error as noise on every build. Skip the earnings
+# fetch for these — they're never trade candidates, so next_earnings is irrelevant.
+EARNINGS_SKIP_TICKERS = {"SPY"}
+
+
 def fetch_yfinance_ticker(ticker, force=False):
     cache_key = f"yfin_{ticker.replace('.', '_').replace(':', '_')}"
     data, age = cache_get(cache_key, 14400, force)  # 4h TTL — daily bars don't change intraday; user wanting live quote uses the Finnhub quote button
@@ -639,20 +646,21 @@ def fetch_yfinance_ticker(ticker, force=False):
         except Exception:
             atr = None
 
-        # Next earnings
+        # Next earnings — skipped for context gauges (see EARNINGS_SKIP_TICKERS)
         next_earnings = None
-        try:
-            cal = y.calendar or {}
-            ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
-            if isinstance(ed, list) and ed:
-                ed = ed[0]
-            if ed:
-                if hasattr(ed, "isoformat"):
-                    next_earnings = ed.isoformat()[:10]
-                else:
-                    next_earnings = str(ed)[:10]
-        except Exception:
-            pass
+        if ticker not in EARNINGS_SKIP_TICKERS:
+            try:
+                cal = y.calendar or {}
+                ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
+                if isinstance(ed, list) and ed:
+                    ed = ed[0]
+                if ed:
+                    if hasattr(ed, "isoformat"):
+                        next_earnings = ed.isoformat()[:10]
+                    else:
+                        next_earnings = str(ed)[:10]
+            except Exception:
+                pass
 
         out.update({
             "name": info.get("shortName") or info.get("longName") or ticker,
