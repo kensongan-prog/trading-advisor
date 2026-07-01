@@ -117,6 +117,16 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ---
 
+## [v2.8.0] — 2026-07-01
+
+### Added
+- **🌏 Asian-ADR tag in Discovery.** Liquid Asian ADRs (25 names across Taiwan, China, India, Japan, Singapore, South Korea — e.g. TSM, BABA, PDD, INFY, SONY, SE) now screen alongside US names, and any that pass P1 and earn a Buffett tier tag (💎/🏆/💰) carry an additional **🌏 region badge**. The badge composes *with* the tier — ADRs are scored on the exact same Quality+Value gates as US names, the globe just flags the foreign listing. Expanding an ADR row shows its extra risks (FX drift, overnight home-market gap, ADR custody fee, and — China only — the PCAOB/HFCAA delisting overhang). Banks were deliberately excluded (no gross-margin / EV-EBITDA → they'd never tag, same as US financials). Source of truth is a new `adrs` region-map in `universe.json`; universe grew 176 → 200 names. Coverage was verified first: 29-name draft, all resolved in yfinance, and the names that don't score are the ones that shouldn't (banks, loss-making EV startups). Regression test `tests/test_adr_tag.py`.
+
+### Fixed
+- **SPY no longer spams a yfinance 404 on every build.** SPY is the index/regime gauge — an ETF with no company earnings — so yfinance's `.calendar` (calendarEvents quoteSummary) call 404'd for it ("No fundamentals data found for symbol: SPY") and logged the HTTP error as noise on every dashboard rebuild. The earnings fetch now skips tickers in a new `EARNINGS_SKIP_TICKERS` set (`{SPY}`); `.info` and price history were always fine and SPY has no earnings, so nothing is lost. Surfaced while adding GPUS — the 404 was SPY's, unrelated to the new ticker. Regression test `tests/test_earnings_skip.py`.
+
+---
+
 ## [v2.7.0] — 2026-06-25
 
 ### Added

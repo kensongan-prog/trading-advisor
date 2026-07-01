@@ -535,6 +535,31 @@ def _sparkline_svg(vals, w=66, h=18):
 EARNINGS_SKIP_TICKERS = {"SPY"}
 
 
+def adr_badge_and_note(region):
+    """Build the 🌏 ADR badge + expanded risk note for a Discovery row.
+
+    Returns (badge_html, note_html); ('', '') when `region` is falsy (not an ADR).
+    The badge COMPOSES with the tier tag (💎/🏆/💰) — it doesn't replace it: an ADR
+    is scored on the SAME Q+V gates as US names, the globe just flags the foreign
+    listing and its extra risks. China adds the PCAOB/HFCAA delisting overhang.
+    """
+    if not region:
+        return "", ""
+    risk_bits = ["FX drift vs home currency",
+                 "home market trades overnight (gap risk at US open)",
+                 "ADR custody fee"]
+    if region == "China":
+        risk_bits.append("PCAOB/HFCAA delisting overhang")
+    risk_txt = " · ".join(risk_bits)
+    badge_tip = (f"Asian ADR — {region}. Same Q+V gates as US names; region flagged, "
+                 f"not re-scored. Risks: {risk_txt}.")
+    badge = (f'<span class="badge b-adr" title="{html.escape(badge_tip, quote=True)}">'
+             f'🌏 {html.escape(region)}</span>')
+    note = (f'<div class="dd-adr-note">🌏 <b>ADR ({html.escape(region)}):</b> {html.escape(risk_txt)}. '
+            f'<span class="dim">Same Q+V gates as US names — region flagged, not re-scored.</span></div>')
+    return badge, note
+
+
 def fetch_yfinance_ticker(ticker, force=False):
     cache_key = f"yfin_{ticker.replace('.', '_').replace(':', '_')}"
     data, age = cache_get(cache_key, 14400, force)  # 4h TTL — daily bars don't change intraday; user wanting live quote uses the Finnhub quote button
@@ -1769,6 +1794,9 @@ td.dim { color: var(--dim); }
 .b-red { background: rgba(var(--red-rgb), 0.15); color: var(--red); border: 1px solid var(--red); }
 .b-yellow { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
 .b-dim { background: var(--panel-2); color: var(--dim); border: 1px solid var(--bord); }
+.b-adr { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 1px solid var(--accent); margin-left: 4px; }
+.dd-adr-note { font-size: 11px; color: var(--accent); margin: 0 0 8px; }
+.dd-adr-note .dim { color: var(--dim); }
 .sent-fade { background: rgba(var(--red-rgb), 0.16); border-left: 3px solid rgba(var(--red-rgb), 0.6); }
 .sent-buy { background: rgba(var(--green-rgb), 0.16); border-left: 3px solid rgba(var(--green-rgb), 0.6); }
 .sent-flag-fade { color: var(--red); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
@@ -4252,6 +4280,9 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             wl_cmd = f"python3 .claude/skills/watchlist/wl.py add {c['ticker']} --thesis '{auto_thesis}' -y"
             tag_tip = c.get("tag_desc", "")
 
+            # 🌏 ADR badge composes with the tier tag (see adr_badge_and_note).
+            adr_badge, adr_note_html = adr_badge_and_note(c.get("adr_region") if c.get("is_adr") else None)
+
             # Build details panel (full Q/V gate breakdown + synthesized why)
             def render_checks(checks, tip):
                 if not checks: return '<div class="dim">no detail</div>'
@@ -4270,6 +4301,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 return "\n".join(lines)
             details_html = (
                 f'<div class="discovery-details-content">'
+                f'  {adr_note_html}'
                 f'  <div class="dd-thesis">{synthesize_thesis(c, f, tech, tag, q_checks, v_checks, sector)}</div>'
                 f'  <div class="dd-gates-grid">'
                 f'    <div class="dd-gate-col"><div class="dd-gate-head">Quality gates ({q_str})</div>{render_checks(q_checks, "")}</div>'
@@ -4289,7 +4321,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             rows.append(f"""
 <tr class="discovery-row" data-row-id="dd-{idx}">
   <td><span class="discovery-chevron">▶</span></td>
-  <td><span class="badge {tag_cls}" title="{html.escape(tag_tip, quote=True)}">{html.escape(tag)}</span></td>
+  <td><span class="badge {tag_cls}" title="{html.escape(tag_tip, quote=True)}">{html.escape(tag)}</span>{adr_badge}</td>
   <td><b>{html.escape(c['ticker'])}</b></td>
   <td class="dim">{html.escape((f.get('name') or '')[:24])}</td>
   <td class="dim">{html.escape(sector[:18])}</td>

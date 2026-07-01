@@ -68,6 +68,15 @@ def load_universe(include_watchlist=True):
             out.append((tk, "_watchlist"))  # sector marker so they're distinguishable
     return out
 
+def adr_regions():
+    """Map of {TICKER: region} for Asian ADRs in the universe — source of truth for
+    the 🌏 ADR badge. Region (e.g. 'China', 'Taiwan') drives the badge tooltip + risk
+    note. Missing key = not an ADR. Kept in universe.json alongside 'sectors'."""
+    try:
+        return {k.upper(): v for k, v in json.loads(UNIVERSE.read_text()).get("adrs", {}).items()}
+    except Exception:
+        return {}
+
 def watchlist_us_tickers():
     if not WATCHLIST.exists(): return set()
     out = set()
@@ -659,6 +668,7 @@ def run_scan(force=False, tech_only=False):
     universe = load_universe()
     tickers = [t for t, _ in universe]
     sector_map = {t: s for t, s in universe}
+    adr_map = adr_regions()
     wl = watchlist_us_tickers()
 
     print(f"Universe: {len(tickers)} tickers · {len(set(s for _, s in universe))} sectors · watchlist excludes {len(wl)} names")
@@ -718,6 +728,8 @@ def run_scan(force=False, tech_only=False):
             "quality": {"passes": q_pass, "total": q_total, "checks": q_checks},
             "value":   {"passes": v_pass, "total": v_total, "checks": v_checks},
             "tag": tag, "tag_desc": tag_desc,
+            "is_adr": c["ticker"] in adr_map,
+            "adr_region": adr_map.get(c["ticker"]),
         })
     if dropped_no_tag:
         print(f"  [filter] dropped {dropped_no_tag} P1-passer(s) with no Quality/Value backing (v1.9.1 ⚡ TECH filter)")

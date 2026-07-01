@@ -54,7 +54,7 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 | Skill | Purpose | Notes |
 |---|---|---|
 | `sector-rotation` | Rank 11 SPDR sector ETFs by composite vs SPY (1m/3m/6m weighted) | Twelve Data backend; 4h TTL; cooldown + stale fallback |
-| `us-screener` | Curated 176-name universe scan: P1 technical gates + Buffett Q+V tagging | TD for technicals, FMP→yfinance fallback for fundamentals; tiered HOT/WARM/COLD cache |
+| `us-screener` | Curated 200-name universe scan (incl. 25 Asian ADRs, 🌏-tagged): P1 technical gates + Buffett Q+V tagging | TD for technicals, FMP→yfinance fallback for fundamentals; tiered HOT/WARM/COLD cache |
 | `dashboard` | Render `dashboard.html` (the operating surface) | Aggregates everything; supports `--with-discovery` for one-command refresh |
 | `watchlist` | CLI for `watchlist.md` add/remove/update/resolve | Maintains resolution cache so new alts auto-discover their CoinGecko id + Binance pair |
 | `journal` | Lifecycle CLI for `journal/*.md` (new / live / update / close / dead / R-multiple calc) | Backups + audit trail |
@@ -97,7 +97,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 - **📊 Data Health panel** (v2.1.0) — per-source rows with chip counts (✓/⏰/⚠/🛑/—/?); expandable per-ticker detail with exact error or staleness reason. The thing that makes degraded data visible instead of silently identical to good data.
 - **↻ Per-source refresh buttons** (v2.2.0) — each server-refreshable row in the Data Health panel shows a "↻ refresh" button; clicking POSTs to `/api/refresh-source` which runs `--refresh-stale`. Agent-only sources (crypto_unlocks) show an "agent" badge. "↻ refresh all stale" button in panel header.
 - **Progress banner + outcome toast** (v2.2.0) — a slim fixed banner at the top of the page appears while any job runs (not just when Control widget is open). After reload, a toast diffs pre/post health counts: "5 cleared, 2 still stale, 1 agent-only."
-- **🔭 Discovery panel** — sector-rotation heat strip + Q+V tagged candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE — ⚡ TECH retired in v1.9.1) with one-click "+ Add to watchlist". Tightened qualification (RSI 38-48, SMA50 slope ≥ 1%/5d).
+- **🔭 Discovery panel** — sector-rotation heat strip + Q+V tagged candidates (💎 BUFFETT / 🏆 QUALITY / 💰 VALUE — ⚡ TECH retired in v1.9.1) with one-click "+ Add to watchlist". Tightened qualification (RSI 38-48, SMA50 slope ≥ 1%/5d). Asian ADRs that qualify carry an additional 🌏 region badge composed with the tier (same Q+V gates; region flagged, not re-scored — v2.8.0).
 - **Portfolio & Calibration panel** — auto-derived heat, sector-correlation warning, expectancy line, MAE/MFE per open position.
 - **Watchlist add/remove/update** — the live control-panel form (server) is the single watchlist UI: add (with section override + force-add), remove (with reason), update thesis; it runs `wl.py` and auto-rebuilds. 🗑️ remove buttons on every row. (The older static copy-paste "Watchlist Manager" panel was removed in the v2.7.0 consolidation — one path, no redundancy.)
 - **Journal tail**.
