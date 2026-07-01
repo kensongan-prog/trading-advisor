@@ -18,7 +18,11 @@ Then orient out loud with **three short bullets** (current version / most recent
 
 **Skip the bootstrap** if the operator's first message is prefixed `quick:` / `oneshot:`, the session is resumed via `--resume`, or the first message is already a status check.
 
-**End-of-session ritual:** before the operator clears or closes mid-task, write an `### In flight` paragraph to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's bootstrap picks it up. If the operator forgets, prompt once.
+**End-of-session ritual** (before the operator clears or closes mid-task, and after shipping any change):
+
+1. **Run the test suite** one last time — `.venv-playwright/bin/python3 -m pytest --tb=line -q`. If red, fix it or capture the fact in the in-flight note; don't leave the next session walking into broken tests.
+2. **Write an `### In flight` paragraph** to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's bootstrap picks it up. If the operator forgets, prompt once.
+3. **Sync the knowledge vault — for every meaningful change shipped this session. Don't ask whether to; just do it** (skip only when nothing material shipped). An Obsidian vault mirrors this project for cross-agent (Claude + Codex) + human navigation at **`/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Trading Advisor/`** (entry `00 — Trading Advisor Home.md`; external volume — `/Volumes/Mac Mini SSD` must be mounted). Repo is the source of truth, the vault its synthesized index — they must not drift. Map the change to the note that owns it (Skills Catalog / Tests / Gotchas & Landmines / Decisions Log / a `State — *` / `00 — Home` version+snapshot), edit that note **in place** (don't duplicate), bump its `updated:` frontmatter, keep `source:` honest, synthesize (don't paste), then run the wikilink-verification script in `Vault Guide — Contributing.md`. The vault lives **outside this git repo**, so vault edits aren't part of repo commits.
 
 ## 1. Role & Mission
 

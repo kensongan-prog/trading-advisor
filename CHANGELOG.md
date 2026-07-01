@@ -106,6 +106,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Added
 
 ### Changed
+- **End-of-session ritual is now cross-agent (in `AGENTS.md`).** The ritual — final test run + `[Unreleased]` in-flight note + **knowledge-vault sync** — previously lived only in `CLAUDE.md`, which Codex doesn't auto-load (Codex reads `AGENTS.md`). So Codex had no instruction to sync the vault, risking repo↔vault drift on Codex sessions. `AGENTS.md`'s minimal end-of-session note (in-flight only) was expanded to the full three-step ritual, and the vault-sync step in both files now reads "for every meaningful change — don't ask, just do it" (skip only when nothing material shipped). Makes "all updates get written to the vault" true for both agents.
 
 ### Fixed
 

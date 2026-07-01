@@ -40,7 +40,7 @@ Before the operator clears or closes the session **mid-task**:
 
 1. **Run `.venv-playwright/bin/python3 -m pytest --tb=line -q`** one last time. If tests are red, either fix them or capture that fact in the in-flight note — don't leave the next session walking into broken tests without warning.
 2. **Write an `### In flight` paragraph** to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's auto-bootstrap will pick it up. If the operator forgets, prompt them once: *"Want me to capture an in-flight note before you clear?"*
-3. **Sync the knowledge vault** for any meaningful change shipped this session (see "Keep the knowledge vault in sync" below). If nothing material changed, skip it.
+3. **Sync the knowledge vault** for every meaningful change shipped this session — **don't ask whether to, just do it** (skip only when nothing material shipped). See "Keep the knowledge vault in sync" below. This mirrors AGENTS.md's end-of-session ritual so Claude and Codex stay consistent.
 
 ## Keep the knowledge vault in sync
 
