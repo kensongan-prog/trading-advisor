@@ -40,6 +40,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 REDDIT_CACHE = PROJECT_ROOT / ".claude" / "cache" / "reddit_sentiment"
 STOCKTWITS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "stocktwits_sentiment"
 HACKERNEWS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "hn_sentiment"
+KLSE_COMMENTS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "klse_sentiment"
 ENV_FILE = SCRIPT_DIR / ".env"
 
 DEFAULT_MODEL = "google/gemma-4-31b-it:free"
@@ -359,6 +360,47 @@ def load_hackernews(ticker):
         return None
 
 
+def load_klse_comments(ticker):
+    # klse_sentiment cache is keyed by 4-digit Bursa code; watchlist form is "9431.KL".
+    code = ticker.upper().replace(".KL", "").strip()
+    if code.isdigit():
+        code = code.zfill(4)
+    p = KLSE_COMMENTS_CACHE / f"{code}.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def process_klse(raw, model):
+    """KLSE community comments (klsescreener). Same LLM path as stocktwits, but the
+    thread carries no per-message engagement metric → uniform weighting."""
+    if not raw or raw.get("no_coverage") or not raw.get("messages"):
+        return None, None
+    msgs = [m for m in raw["messages"] if m.get("body")]
+    if not msgs:
+        return None, None
+    bodies = [m["body"] for m in msgs]
+    classifications, err, _raw = classify_messages(
+        bodies, raw["ticker"], model=model, asset_class=raw.get("asset_class"))
+    if err:
+        return None, f"LLM scoring failed: {err}"
+    pcts = llm_pcts(classifications)  # no engagement weighting available
+    return {
+        "present": True,
+        "n_messages": len(msgs),
+        "llm_bull_pct": pcts["bull"] if pcts else None,
+        "llm_bear_pct": pcts["bear"] if pcts else None,
+        "llm_neutral_pct": pcts["neutral"] if pcts else None,
+        "llm_avg_conviction": pcts["avg_conviction"] if pcts else None,
+        "n_off_topic": pcts.get("n_off_topic") if pcts else None,
+        "n_mention": pcts.get("n_mention") if pcts else None,
+        "n_primary": pcts.get("n_primary") if pcts else None,
+    }, None
+
+
 def process_hackernews(raw, model):
     """Flatten HN stories + top comments into a single classification pass.
     Each story title contributes one body with engagement = story.engagement.
@@ -512,12 +554,14 @@ def process_reddit(raw, model):
 
 
 # ── Composite ─────────────────────────────────────────────────────────────
-def compute_composite(st_summary, rd_summary, hn_summary=None):
+def compute_composite(st_summary, rd_summary, hn_summary=None, klse_summary=None):
     """Combine source summaries into composite scores + label + contrarian flag.
 
     Source weights: ST 1.0, Reddit 1.0, HN 1.2 (HN signal is generally less
     gameable + carries higher per-comment information density, so it earns
-    a slight bump above the cheap-talk forums)."""
+    a slight bump above the cheap-talk forums), KLSE comments 1.0. KLSE is
+    additive — for Bursa names the other legs are usually empty (StockTwits 404s,
+    Reddit r/Bursa is thin), so it fills a near-empty slot rather than re-weighting."""
     weights = []
     bulls, bears, neuts = [], [], []
     convictions = []
@@ -555,6 +599,14 @@ def compute_composite(st_summary, rd_summary, hn_summary=None):
         if hn_summary.get("llm_avg_conviction") is not None:
             convictions.append(hn_summary["llm_avg_conviction"])
 
+    if klse_summary and klse_summary.get("present"):
+        bulls.append(klse_summary.get("llm_bull_pct") or 0.0)
+        bears.append(klse_summary.get("llm_bear_pct") or 0.0)
+        neuts.append(klse_summary.get("llm_neutral_pct") or 0.0)
+        weights.append(1.0)
+        if klse_summary.get("llm_avg_conviction") is not None:
+            convictions.append(klse_summary["llm_avg_conviction"])
+
     if not weights:
         return {
             "bull_score": None, "bear_score": None, "neutral_score": None,
@@ -582,7 +634,7 @@ def compute_composite(st_summary, rd_summary, hn_summary=None):
         if s.get("n_scored_bodies") is not None:
             return s["n_scored_bodies"]
         return (s.get("n_messages") or 0) + (s.get("n_posts") or 0) + (s.get("n_comments") or 0)
-    n_total = _sample_n(st_summary) + _sample_n(rd_summary) + _sample_n(hn_summary)
+    n_total = _sample_n(st_summary) + _sample_n(rd_summary) + _sample_n(hn_summary) + _sample_n(klse_summary)
     TARGET_N = 25  # on-topic items for ~full-confidence; below this, conviction is dampened
     coverage = round(min(1.0, _math.log1p(n_total) / _math.log1p(TARGET_N)), 3) if n_total > 0 else 0.0
     conviction = round(conviction_raw * coverage, 3)
@@ -613,7 +665,7 @@ def compute_composite(st_summary, rd_summary, hn_summary=None):
     }
 
 
-def build_rationale(st, rd, composite, hn=None):
+def build_rationale(st, rd, composite, hn=None, klse=None):
     parts = []
     if st and st.get("present"):
         ut = st.get("user_tagged_bull_pct")
@@ -634,6 +686,11 @@ def build_rationale(st, rd, composite, hn=None):
             f"HN: {hn.get('story_count')} stories ({hn.get('n_bodies_scored')} bodies), "
             f"LLM bull/bear/neut {hn.get('llm_bull_pct'):.0%}/{hn.get('llm_bear_pct'):.0%}/{hn.get('llm_neutral_pct'):.0%}"
         )
+    if klse and klse.get("present"):
+        parts.append(
+            f"KLSE comments: {klse.get('n_messages')} msgs, "
+            f"LLM bull/bear/neut {klse.get('llm_bull_pct'):.0%}/{klse.get('llm_bear_pct'):.0%}/{klse.get('llm_neutral_pct'):.0%}"
+        )
     if not parts:
         return "No source data available."
     flag_note = ""
@@ -650,19 +707,21 @@ def score_ticker(ticker, model=None, verbose=True):
     st_raw = load_stocktwits(ticker)
     rd_raw = load_reddit(ticker)
     hn_raw = load_hackernews(ticker)
+    klse_raw = load_klse_comments(ticker)
 
     if verbose:
         st_status = "ok" if (st_raw and not st_raw.get("no_coverage") and st_raw.get("messages")) else "missing"
         rd_status = "ok" if (rd_raw and rd_raw.get("posts")) else "missing"
         hn_status = "ok" if (hn_raw and (hn_raw.get("stories") or [])) else ("skip" if hn_raw and hn_raw.get("no_coverage") else "missing")
-        print(f"  sources: stocktwits={st_status}  reddit={rd_status}  hn={hn_status}")
+        klse_status = "ok" if (klse_raw and not klse_raw.get("no_coverage") and klse_raw.get("messages")) else "missing"
+        print(f"  sources: stocktwits={st_status}  reddit={rd_status}  hn={hn_status}  klse={klse_status}")
 
     # Resolve asset_class once and inject into every raw cache so the per-source
     # processors can pass it to classify_messages → _company_label. StockTwits
     # and Reddit raw files store it; the HN fetcher doesn't yet. Fall back to a
     # crude ticker-pattern guess so older caches without the field still get a
     # useful prompt subject.
-    inferred_asset_class = (st_raw or rd_raw or hn_raw or {}).get("asset_class")
+    inferred_asset_class = (st_raw or rd_raw or hn_raw or klse_raw or {}).get("asset_class")
     if not inferred_asset_class:
         if ticker.upper().endswith(".KL"):
             inferred_asset_class = "klse"
@@ -670,7 +729,7 @@ def score_ticker(ticker, model=None, verbose=True):
             inferred_asset_class = "crypto"
         else:
             inferred_asset_class = "us_equity"
-    for raw in (st_raw, rd_raw, hn_raw):
+    for raw in (st_raw, rd_raw, hn_raw, klse_raw):
         if raw is not None and "asset_class" not in raw:
             raw["asset_class"] = inferred_asset_class
 
@@ -683,10 +742,13 @@ def score_ticker(ticker, model=None, verbose=True):
     hn_summary, hn_err = process_hackernews(hn_raw, model) if hn_raw else (None, None)
     if hn_err and verbose:
         print(f"  hn LLM error: {hn_err}")
+    klse_summary, klse_err = process_klse(klse_raw, model) if klse_raw else (None, None)
+    if klse_err and verbose:
+        print(f"  klse LLM error: {klse_err}")
 
-    asset_class = (st_raw or rd_raw or hn_raw or {}).get("asset_class", "unknown")
-    composite = compute_composite(st_summary, rd_summary, hn_summary)
-    rationale = build_rationale(st_summary, rd_summary, composite, hn=hn_summary)
+    asset_class = (st_raw or rd_raw or hn_raw or klse_raw or {}).get("asset_class", "unknown")
+    composite = compute_composite(st_summary, rd_summary, hn_summary, klse_summary)
+    rationale = build_rationale(st_summary, rd_summary, composite, hn=hn_summary, klse=klse_summary)
     composite["rationale"] = rationale
 
     return {
@@ -698,6 +760,7 @@ def score_ticker(ticker, model=None, verbose=True):
             "stocktwits":  st_summary or {"present": False, "error": st_err},
             "reddit":      rd_summary or {"present": False, "error": rd_err},
             "hackernews":  hn_summary or {"present": False, "error": hn_err},
+            "klse":        klse_summary or {"present": False, "error": klse_err},
         },
         "composite": composite,
     }

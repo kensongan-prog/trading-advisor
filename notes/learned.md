@@ -4,6 +4,14 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-07-01 — klsescreener comment threads + the "KLSE news already exists" trap
+
+**Two findings from building the `klse-sentiment` leg.**
+
+**1. klsescreener has a per-stock community comment thread — and a working endpoint.** `https://www.klsescreener.com/v2/comments/all/stock/{CODE}` (GET, server-rendered HTML, no auth) returns the full recent thread (caps ~26 comments). Real multilingual retail chatter (English/Chinese/Malay). This is the Bursa-native retail-sentiment source that fills the gap StockTwits (404s on KLSE) + Reddit (thin Bursa) leave — before this, KLSE names scored `UNKNOWN`. **Dead ends mapped:** the in-page AJAX pager `/v2/comments/comment/stock/{code}` (singular "comment") 404s — deprecated; the real double-"comments" path `/v2/comments/comments/stock/{code}/{page}` also 404s (the `#comment_load_more` button is commented out in the HTML). The live surface is the "all" page above. The stock **view** page only server-renders a ~2-comment preview — do NOT use it to gauge volume (every stock shows 2). Wired into `sentiment_cache` as `process_klse` (weight 1.0, additive) + coverage-haircut (`n_total` includes klse). Coverage is uneven: active names 12–25 recent comments, quiet names dead for months (→ `no_coverage`).
+
+**2. KLSE *news* is ALREADY scraped programmatically by `news_glyph`, not the klse-news skill.** The `klse-news/SKILL.md` is WebFetch/agent-only, which is misleading — `us-news/news_glyph.py::refresh_klse` + `_scrape_klse_news` already scrape `/v2/news/stock/{code}` into `.claude/cache/klse_news/{code}.json` (`items[]` of `{date, source, headline, url}`), LLM-score it, and wire it into the dashboard news glyph + `--refresh-news-glyph`. **A standalone klse-news fetcher was built and then DELETED as redundant.** Lesson (the recurring one): **grep for the capability in the consuming module before building a fetcher** — the SKILL.md dir isn't the whole story. Two small fixes WERE made to the existing `refresh_klse`: a **180-day recency window** (`_window_klse_items`) and an **`html.unescape` in the headline cleaner** (`&#039;` was leaking through). Both tested in `tests/test_news_glyph_klse.py`.
+
 ### 2026-06-29 — Project moved off `~/Documents` to the external SSD — supersedes the TCC-trap context below
 
 The repo now lives at **`/Volumes/Mac Mini SSD/Projects/Claude/Trading Advisor`** (moved 2026-06-29, off the old `~/Documents/Claude/Projects/…` location). This updates two now-stale claims in the 2026-06-26 entry below:

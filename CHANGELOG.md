@@ -106,7 +106,6 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Added
 
 ### Changed
-- **End-of-session ritual is now cross-agent (in `AGENTS.md`).** The ritual — final test run + `[Unreleased]` in-flight note + **knowledge-vault sync** — previously lived only in `CLAUDE.md`, which Codex doesn't auto-load (Codex reads `AGENTS.md`). So Codex had no instruction to sync the vault, risking repo↔vault drift on Codex sessions. `AGENTS.md`'s minimal end-of-session note (in-flight only) was expanded to the full three-step ritual, and the vault-sync step in both files now reads "for every meaningful change — don't ask, just do it" (skip only when nothing material shipped). Makes "all updates get written to the vault" true for both agents.
 
 ### Fixed
 
@@ -115,6 +114,17 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 ### Deprecated
 
 ### Security
+
+---
+
+## [v2.9.0] — 2026-07-01
+
+### Added
+- **KLSE retail-sentiment leg (`klse-sentiment`).** Bursa Malaysia names had essentially no retail-sentiment read — StockTwits 404s on KLSE codes and Reddit's `r/Bursa_Malaysia` is thin, so they scored `UNKNOWN`. New skill scrapes klsescreener's per-stock community comment thread (`/v2/comments/all/stock/{code}` — real, multilingual, no login wall), windows to a recent 180 days, and feeds a new `process_klse` source into the `sentiment-cache` composite (weight 1.0, additive — it fills a near-empty slot rather than re-weighting). For an active Bursa name like Seni Jaya (9431) that's ~20 recent comments → a real BULL/BEAR/NEUTRAL composite where before there was nothing. Coverage is uneven by design (quiet names store `no_coverage`; the composite's coverage-haircut keeps thin samples from firing high-conviction flags). Registered in Data Health (TTL 24h, refreshable). Regression tests `tests/test_klse_sentiment.py`. *(KLSE **news** was investigated too but NOT rebuilt — `news_glyph.refresh_klse` already scrapes it; see `notes/learned.md`.)*
+
+### Changed
+- **KLSE news is now windowed to 180 days + headlines decode HTML entities.** `news_glyph.refresh_klse` (the existing KLSE news scraper) now filters to the last 180 days — a ceiling for firehose names, a floor that trims quiet names' years-old stale tail — and the headline cleaner runs `html.unescape`, so `&#039;`/`&amp;` no longer leak into the glyph (a pre-existing bug). Regression test `tests/test_news_glyph_klse.py`.
+- **End-of-session ritual is now cross-agent (in `AGENTS.md`).** The ritual — final test run + `[Unreleased]` in-flight note + **knowledge-vault sync** — previously lived only in `CLAUDE.md`, which Codex doesn't auto-load (Codex reads `AGENTS.md`). So Codex had no instruction to sync the vault, risking repo↔vault drift on Codex sessions. `AGENTS.md`'s minimal end-of-session note (in-flight only) was expanded to the full three-step ritual, and the vault-sync step in both files now reads "for every meaningful change — don't ask, just do it" (skip only when nothing material shipped). Makes "all updates get written to the vault" true for both agents.
 
 ---
 

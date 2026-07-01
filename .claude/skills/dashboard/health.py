@@ -70,6 +70,7 @@ TTL_HOURS = {
     "reddit_sentiment": 24,
     "stocktwits_sentiment": 12,   # ST updates intraday
     "hn_sentiment":    24,
+    "klse_sentiment":  24,       # Bursa community comments (klsescreener) — lower velocity than ST
     "sentiment":       24,       # LLM composite re-score
     "polymarket":      12,
     "sector_rotation":  6,
@@ -97,6 +98,7 @@ REFRESH_VIA = {
     "reddit_sentiment":     ("flag", "--refresh-sentiment"),
     "stocktwits_sentiment": ("flag", "--refresh-sentiment"),
     "hn_sentiment":         ("flag", "--refresh-sentiment"),
+    "klse_sentiment":       ("cli",  ".claude/skills/klse-sentiment/klse_sentiment.py"),
     "sentiment":            ("flag", "--refresh-sentiment"),
     "polymarket":           ("flag", "--refresh-polymarket"),
     "sector_rotation":      ("flag", "--with-discovery"),
@@ -321,6 +323,7 @@ PER_TICKER_SOURCES = [
     ("klse_news",          "klse_news",            ("klse",),            _klse_key,   "items"),
     ("klse_announcements", "klse_announcements",   ("klse",),            _klse_key,   None),
     ("klse_fundamentals",  "klse_fundamentals",    ("klse",),            _klse_key,   None),
+    ("klse_sentiment",     "klse_sentiment",       ("klse",),            _klse_key,   "messages"),
     ("crypto_news",        "crypto_news",          ("crypto",),          _crypto_news_key, "items"),
     ("reddit_sentiment",   "reddit_sentiment",     ("us", "klse", "crypto"), _identity, "posts"),
     ("stocktwits_sentiment", "stocktwits_sentiment", ("us", "klse", "crypto"), _identity, "messages"),

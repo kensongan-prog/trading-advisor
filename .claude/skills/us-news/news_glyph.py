@@ -29,6 +29,7 @@ CLI:
 from __future__ import annotations
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -778,9 +779,31 @@ def refresh_us(tickers, force=False, max_age_h=1.0, skip_llm=False):
             _autoscore_after_refresh("us", tk_u)
 
 
-def refresh_klse(codes, force=False, max_age_h=1.0, skip_llm=False):
+def _window_klse_items(items, window_days):
+    """Keep only news items dated within the last `window_days`. Undated items
+    (rare) are kept — dropping them would silently lose coverage. A busy name
+    (Maybank ≈ 20 items = 2 days) is unaffected; a quiet name's 20 items reach
+    back years, so this trims the stale tail to the recent, decision-relevant set."""
+    if not window_days:
+        return items
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    kept = []
+    for it in items:
+        dt = it.get("date")
+        if not dt:
+            kept.append(it)
+            continue
+        try:
+            if datetime.fromisoformat(dt) >= cutoff:
+                kept.append(it)
+        except Exception:
+            kept.append(it)
+    return kept
+
+
+def refresh_klse(codes, force=False, max_age_h=1.0, skip_llm=False, window_days=180):
     """Scrape klsescreener.com/v2/news/stock/{CODE} for each code.
-    Stored as items[] of {date, source, headline, url}.
+    Stored as items[] of {date, source, headline, url}, filtered to window_days (180d).
     """
     KLSE_NEWS_CACHE.mkdir(parents=True, exist_ok=True)
     for code in codes:
@@ -797,7 +820,7 @@ def refresh_klse(codes, force=False, max_age_h=1.0, skip_llm=False):
                 pass
         url = f"https://www.klsescreener.com/v2/news/stock/{code}"
         print(f"  [fetch] {code}", end=" ", flush=True)
-        items = _scrape_klse_news(url)
+        items = _window_klse_items(_scrape_klse_news(url), window_days)
         payload = {
             "code": code,
             "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -835,7 +858,9 @@ def _scrape_klse_news(url):
 
     tag_strip = re.compile(r'<[^>]+>')
     def _clean(s):
-        return tag_strip.sub("", s or "").replace("&nbsp;", " ").strip()
+        # unescape HTML entities (&#039; → ', &amp; → &) after stripping tags,
+        # else Chinese/English KLSE headlines leak raw entities into the glyph.
+        return html.unescape(tag_strip.sub("", s or "").replace("&nbsp;", " ")).strip()
 
     # Each article is a <div class="article ..."> block. Capture each block's
     # span via a permissive non-greedy match; closing div is implicit (we slice

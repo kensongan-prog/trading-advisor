@@ -46,7 +46,8 @@ Each item below is a skill or feature shipped during the build sessions. The ski
 | `reddit-sentiment` | Per-ticker posts + (OAuth-only) top comments — raw retail-forum cache | Reddit RSS (free) / OAuth (optional) | optional `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` |
 | `stocktwits-sentiment` | Per-ticker messages + user-tagged bull/bear% — raw retail-forum cache | StockTwits public | none |
 | `hn-sentiment` | Per-ticker stories + top comments via Algolia HN — the "less-gameable" retail leg (1.2× source weight) | Algolia HN | none |
-| `sentiment-cache` | LLM-scores raw retail caches into composite per-ticker read with 🔥 FADE / 🧊 BUY contrarian flags; relevance-gated (primary/mention/none) since v2.0.4; transient-error fallback to gpt-oss-120b since v2.0.6 | OpenRouter free | `OPENROUTER_API_KEY` |
+| `klse-sentiment` | Per-ticker Bursa community comments (klsescreener `/v2/comments/all/stock/{code}`, 180d window) — the KLSE-native retail leg; fills the ST-404 / thin-Reddit gap so Bursa names no longer score UNKNOWN (v2.9.0) | klsescreener | none |
+| `sentiment-cache` | LLM-scores the 4 raw retail caches (ST/Reddit/HN/KLSE) into a composite per-ticker read with 🔥 FADE / 🧊 BUY contrarian flags; relevance-gated (primary/mention/none) since v2.0.4; transient-error fallback to gpt-oss-120b since v2.0.6 | OpenRouter free | `OPENROUTER_API_KEY` |
 | `polymarket-events` | Implied probabilities on Fed cuts, recession, inflation, BTC/ETH ranges, geopolitics — money-weighted macro confluence (additive, not contrarian) | Polymarket Gamma | none |
 
 ### Analysis + discovery skills
