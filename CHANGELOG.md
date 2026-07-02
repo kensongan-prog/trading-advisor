@@ -104,6 +104,7 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
+- **TA ↔ MooMoo bridge contract pinned (Phase 0 of the broker-bridge plan).** The MooMoo broker adapter (`Projects/Codex/MooMoo`) reads this repo's `watchlist.md` + `journal/*.md` to build trade intents — but nothing on this side guaranteed those formats stay parseable. New `tests/test_bridge_contract.py` (7 tests) mirrors MooMoo's parser regexes and pins the TA-side contract: every watchlist ticker bullet matches the bridge row pattern, the `j.py new` prospectus template carries every field MooMoo keys on (Action/structure, Entry-trigger/Stop-loss/TP1 table, Reference entry/Stop sizing lines, Max loss), a fresh stub is NOT detected as closed (empty Realized-R line), and the full `live → close` status-flip round-trip matches MooMoo's closed-detection. The cross-agent contract doc lives in the vault: "Bridge Contract — Trading Advisor ↔ MooMoo" (formats, gates, known gaps incl. the KLSE `_KL`-stem market-inference bug, and the Phase 0–4 bridge plan).
 
 ### Changed
 
