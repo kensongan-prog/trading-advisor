@@ -4,6 +4,16 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-07-02 — Broker (MooMoo) panel (Bridge Phase 3): observed-but-never-submitted intents need their own display fallback
+
+**Real bug caught only by live-verifying the panel against MooMoo's actual on-disk `staged_orders.json`** (not synthetic fixtures — the same pattern that caught the `broker-sync` bug earlier the same day): a staged order that's been observed in `sync_state.json` but never actually submitted (no `order_id`, no `journal_path`, hence no `journal_stem`) fell through to displaying the **raw `intent_id` string** in the panel's ticker column — a long, path-laden mess like `trading_advisor:AUPH:_Volumes_Mac_Mini_SSD_Projects_Claude_Trading_Advisor_journal_2026-06-03_AUPH.md`. Fix: `_display_ticker()` falls back to parsing the ticker out of `intent_id`'s own `source:TICKER:path` format (`intent_id.split(":")[1]`) before ever falling back to the whole raw string.
+
+**Reusable lesson (second time in one day): always render/exercise a new cross-repo status surface against the real upstream artifact at least once, even after exhaustive synthetic-fixture tests pass.** Synthetic fixtures naturally model the "normal, complete" shapes an author expects; real production data reliably contains the partial/incomplete shapes (a staged-but-unfilled order, an observed-but-never-submitted intent) that only show up from actually running the thing.
+
+**MooMoo's `trade_ledger.json` reflects the operator's REAL brokerage account, not paper trading** — it's built from `historical_fills`/`historical_orders`/`order_fees` with no `SIMULATE` filtering applied (MooMoo's ledger code intentionally ignores SIMULATE rows entirely). Any TA surface that reads it must label it unambiguously as real-account context, separate from the paper-trading picture `broker-sync`'s own `sync_state.json` tracks — conflating the two would misrepresent what Phase 1 doctrine is actually about.
+
+---
+
 ### 2026-07-02 — broker-sync (Bridge Phase 2): MooMoo already aggregates fills; don't re-derive them
 
 **MooMoo's `staged_orders.json` is the authoritative, ALREADY-AGGREGATED per-intent view — don't re-derive fill totals from raw `fills.json`.** Read `src/moomoo_adapter/execution.py::_refresh_staged_orders` in the MooMoo repo before building anything that touches fills: every sync there joins fills → staged orders by `order_id` and writes back `filled_qty` (sum), `filled_avg_price` (notional-weighted), `fill_count`, `last_fill_at`, and an `approval_state` state machine (`staged → submitted → partially_filled → filled` / `canceling → canceled` / `failed`) directly onto each staged order. TA's broker-sync reads THAT, not raw fills — far simpler and avoids two systems computing the same aggregate differently.
