@@ -386,6 +386,8 @@ on logged-trade count + realized expectancy, NOT on calendar time or vibes.
   - Adds: P2 defined-risk premium sales, P3 lottery sleeve (capped 5%), small crypto perp positions if the operator wants them (with the size-down rules per §5).
 
 - **Demotion rule**: if the trailing 20 trades show negative expectancy or any drawdown circuit-breaker trip → demote one phase. Earn the next phase back the same way you earned it the first time.
+
+**Cross-repo doctrine alignment (Bridge Phase 4, set 2026-07-02):** this project has a companion broker adapter, MooMoo (`Projects/Codex/MooMoo`), that stages and can execute real-money orders. **`MOOMOO_LIVE_TRADING_ENABLED=true` must require the SAME 20-trade paper-calibration gate above (≥20 closed trades, ≥0R cumulative) to have passed — one unified ramp, not a separately-invented criterion for real-money execution.** `portfolio.py sync` (also triggered by every `j.py live`/`update`/`close`) writes `risk_params.json` at the repo root — a machine-readable export of account equity, the 2%/6% caps, and this gate's live pass/fail state (`live_trading_unlock_eligible`) — which MooMoo reads read-only via its existing `TRADING_ADVISOR_ROOT`, the same bridge pattern as `watchlist.md`/`journal/*.md`. Full field-by-field contract: vault note "Bridge Contract — Trading Advisor ↔ MooMoo". Crypto stays out of this bridge (MooMoo's Malaysia brokerage has no crypto rails).
 - Max risk per trade: **2%**   | Max portfolio heat: **6%**
 - Drawdown circuit-breaker: **15%** from peak equity
 - Instruments in scope:

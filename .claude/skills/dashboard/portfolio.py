@@ -32,9 +32,12 @@ PROJECT_ROOT = SKILLS_DIR.parent.parent
 JOURNAL_DIR = PROJECT_ROOT / "journal"
 DASH_CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard"
 PORTFOLIO_MD = PROJECT_ROOT / "portfolio.md"
+RISK_PARAMS_JSON = PROJECT_ROOT / "risk_params.json"
 
 ACCOUNT = 20000.0
 HEAT_MAX = 1200.0  # 6% of account, per AGENTS.md USER CONFIG
+RISK_PCT_PER_TRADE = 0.02  # 2% max risk per trade, per AGENTS.md USER CONFIG
+PHASE2_GATE_TARGET = 20    # closed trades needed to exit Phase 1, per AGENTS.md Phased Ramp
 
 
 def _status(txt):
@@ -175,6 +178,14 @@ def correlation_note(h):
     return "Correlated exposure: " + "; ".join(bits) + " — treat each cluster as closer to one bet for sizing."
 
 
+def phase2_gate_passed():
+    """The Phase 1 exit / Phase 2 unlock criterion per AGENTS.md's Phased Ramp:
+    >=20 closed trades with >=0R cumulative. Named after portfolio.py's own
+    pre-existing 'phase2_gate' dict — this is that same gate, just as a bool."""
+    exp = expectancy()
+    return exp["n"] >= PHASE2_GATE_TARGET and exp["sum_r"] >= 0
+
+
 def state():
     h = heat()
     return {
@@ -183,8 +194,9 @@ def state():
         "expectancy": expectancy(),
         "open_positions": open_positions(),
         "correlation_note": correlation_note(h),
-        "phase2_gate": {"closed": expectancy()["n"], "target": 20,
-                        "cum_r": expectancy()["sum_r"]},
+        "phase2_gate": {"closed": expectancy()["n"], "target": PHASE2_GATE_TARGET,
+                        "cum_r": expectancy()["sum_r"],
+                        "passed": phase2_gate_passed()},
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -259,6 +271,50 @@ def write_portfolio_md():
     return PORTFOLIO_MD
 
 
+# ── risk_params.json export (Bridge Phase 4) ────────────────────────────────
+def risk_params():
+    """TA's own live risk parameters + calibration-gate state, in the shape
+    MooMoo (a separate repo/process) reads read-only via its existing
+    TRADING_ADVISOR_ROOT — same bridge pattern as watchlist.md/journal/*.md,
+    just machine-readable. Lets MooMoo's staging validate against the
+    operator's ACTUAL current account size/caps instead of whatever number
+    was baked into a prospectus's prose at draft time, and gives it a single
+    boolean to gate MOOMOO_LIVE_TRADING_ENABLED on (doctrine alignment: real-
+    money execution unlocks on the SAME 20-trade paper gate that unlocks
+    TA's own Phase 2, not a separately-invented criterion).
+    """
+    exp = expectancy()
+    h = heat()
+    gate_passed = phase2_gate_passed()
+    return {
+        "account_equity_usd": ACCOUNT,
+        "max_risk_pct_per_trade": RISK_PCT_PER_TRADE,
+        "heat_ceiling_pct": HEAT_MAX / ACCOUNT,
+        "heat_ceiling_usd": HEAT_MAX,
+        "heat_used_usd": h["used"],
+        "heat_headroom_usd": h["headroom"],
+        "phase2_gate": {
+            "closed_trades": exp["n"],
+            "target_trades": PHASE2_GATE_TARGET,
+            "cum_r": exp["sum_r"],
+            "passed": gate_passed,
+        },
+        # The literal field MooMoo's own live-trading gate should check — named
+        # generically (not "phase2_gate_passed") so a reader in a different repo
+        # doesn't need to know TA's internal phase-naming to use it correctly.
+        "live_trading_unlock_eligible": gate_passed,
+        "_generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def write_risk_params():
+    payload = risk_params()
+    tmp = RISK_PARAMS_JSON.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(RISK_PARAMS_JSON)
+    return RISK_PARAMS_JSON
+
+
 def cmd_show():
     s = state()
     h, exp = s["heat"], s["expectancy"]
@@ -277,9 +333,13 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "show"
     if cmd == "state":
         print(json.dumps(state(), indent=2))
+    elif cmd == "risk-params":
+        print(json.dumps(risk_params(), indent=2))
     elif cmd == "sync":
         p = write_portfolio_md()
+        rp = write_risk_params()
         print(f"✓ Synced {p}")
+        print(f"✓ Synced {rp}")
         cmd_show()
     else:
         cmd_show()

@@ -215,6 +215,8 @@ def sync_portfolio():
         import portfolio
         portfolio.write_portfolio_md()
         print("  ↻ portfolio.md synced from journal")
+        portfolio.write_risk_params()
+        print("  ↻ risk_params.json synced (Bridge Phase 4 — MooMoo reads this read-only)")
     except Exception as e:
         print(f"  ⚠ portfolio.md sync skipped ({type(e).__name__}: {e})", file=sys.stderr)
 

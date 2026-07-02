@@ -9,6 +9,7 @@
 # copy them to the real filenames on a fresh clone. See PROJECT_LOG.md.
 /watchlist.md
 /portfolio.md
+/risk_params.json
 /journal/*.md
 !/journal/README.md
 

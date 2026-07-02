@@ -8,6 +8,7 @@ pointing the module at a temp journal dir (so they exercise the real markdown
 parse, not a mock).
 """
 import importlib
+import json
 import pytest
 import portfolio
 
@@ -109,6 +110,64 @@ class TestCorrelationNote:
         note = portfolio.correlation_note(h)
         assert "Tech" in note and "NVDA" in note and "MRVL" in note
         assert "one bet" in note
+
+
+class TestRiskParams:
+    """Bridge Phase 4: risk_params.json is the machine-readable artifact MooMoo
+    reads read-only (same TRADING_ADVISOR_ROOT it already uses for watchlist.md/
+    journal/*.md) to validate staging against TA's live account params and to
+    gate MOOMOO_LIVE_TRADING_ENABLED on the same 20-trade paper gate that
+    unlocks TA's own Phase 2 — one unified ramp, not two separate criteria."""
+
+    def test_gate_not_passed_below_target(self, journal):
+        for i in range(19):
+            journal(f"2026-05-{i+1:02d}_T{i}", f"# T{i}\n\n**Status:** CLOSED — win (+1.0R)\n")
+        assert portfolio.phase2_gate_passed() is False
+
+    def test_gate_passed_at_target_with_nonneg_cum_r(self, journal):
+        for i in range(20):
+            journal(f"2026-05-{i+1:02d}_T{i}", f"# T{i}\n\n**Status:** CLOSED — win (+1.0R)\n")
+        assert portfolio.phase2_gate_passed() is True
+
+    def test_gate_not_passed_with_negative_cum_r_even_at_target(self, journal):
+        for i in range(20):
+            journal(f"2026-05-{i+1:02d}_T{i}", f"# T{i}\n\n**Status:** CLOSED — loss (-1.0R)\n")
+        assert portfolio.phase2_gate_passed() is False
+
+    def test_risk_params_shape_and_values(self, journal):
+        journal("2026-06-11_CLSK", LIVE_TPL.format(ticker="CLSK"))
+        journal("2026-05-01_A", "# A\n\n**Status:** CLOSED — win (+2.0R)\n")
+        rp = portfolio.risk_params()
+        assert rp["account_equity_usd"] == portfolio.ACCOUNT
+        assert rp["max_risk_pct_per_trade"] == portfolio.RISK_PCT_PER_TRADE
+        assert rp["heat_ceiling_usd"] == portfolio.HEAT_MAX
+        assert rp["heat_ceiling_pct"] == pytest.approx(portfolio.HEAT_MAX / portfolio.ACCOUNT)
+        assert rp["heat_used_usd"] == 183.0
+        assert rp["heat_headroom_usd"] == pytest.approx(1017.0)
+        assert rp["phase2_gate"]["closed_trades"] == 1
+        assert rp["phase2_gate"]["target_trades"] == 20
+        assert rp["phase2_gate"]["cum_r"] == 2.0
+        assert rp["phase2_gate"]["passed"] is False
+        assert rp["live_trading_unlock_eligible"] is False
+        assert "_generated_at" in rp
+
+    def test_live_trading_unlock_eligible_tracks_gate_passed(self, journal):
+        for i in range(20):
+            journal(f"2026-05-{i+1:02d}_T{i}", f"# T{i}\n\n**Status:** CLOSED — win (+1.0R)\n")
+        rp = portfolio.risk_params()
+        assert rp["phase2_gate"]["passed"] is True
+        assert rp["live_trading_unlock_eligible"] is True
+
+    def test_write_risk_params_writes_valid_json(self, journal, tmp_path, monkeypatch):
+        out = tmp_path / "risk_params.json"
+        monkeypatch.setattr(portfolio, "RISK_PARAMS_JSON", out)
+        result_path = portfolio.write_risk_params()
+        assert result_path == out
+        assert out.is_file()
+        data = json.loads(out.read_text())
+        assert data["account_equity_usd"] == portfolio.ACCOUNT
+        # No leftover temp file after the atomic replace.
+        assert not out.with_suffix(".json.tmp").exists()
 
 
 class TestParsingHelpers:
