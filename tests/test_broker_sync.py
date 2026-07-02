@@ -115,7 +115,7 @@ def _new_args(**over):
         timeframe=None, status_line=None, entry_logic=None, entry_note=None,
         stop_logic=None, tp1_logic=None, tp2_logic=None, thesis=None,
         case_against=None, event_risk=None, regime=None, rr_floor=None,
-        rsi=None, atr_pct=None, quality_flags=None,
+        rsi=None, atr_pct=None, quality_flags=None, sector=None, sentiment_flag=None, rs_1m=None,
     )
     base.update(over)
     return SimpleNamespace(**base)

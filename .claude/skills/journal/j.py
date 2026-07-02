@@ -571,6 +571,9 @@ $ at risk:               ${actual_risk:.2f}  ({actual_risk_pct:.2f}% of equity)
 | RSI(14) daily | {rsi_str} | dashboard cache | {now_utc} |
 | ATR(14) % of price | {atr_pct_str} | dashboard cache | {now_utc} |
 | Market regime | {regime} (R:R floor {rr_floor_str}) | macro-rates / dashboard | {now_utc} |
+| Sector | {sector_str} | dashboard cache | {now_utc} |
+| Sentiment flag | {sentiment_flag_str} | dashboard sentiment composite | {now_utc} |
+| RS vs SPY (1m) | {rs_1m_str} | dashboard rel_strength cache | {now_utc} |
 
 ---
 
@@ -688,6 +691,9 @@ def cmd_new(args):
     rr_floor_str = args.rr_floor or "—"
     rsi_str = args.rsi or "—"
     atr_pct_str = (f"{args.atr_pct}" if args.atr_pct else "—")
+    sector_str = args.sector or "—"
+    sentiment_flag_str = args.sentiment_flag or "—"
+    rs_1m_str = args.rs_1m or "—"
     quality_flags_section = _render_quality_flags_section(args.quality_flags)
 
     body = PROSPECTUS_TEMPLATE.format(
@@ -706,6 +712,7 @@ def cmd_new(args):
         gain1=gain1, heat_after=heat_after, heat_max=heat_max, heat_headroom=heat_headroom,
         rr_floor_note=rr_floor_note, rr_floor_str=rr_floor_str,
         regime=regime, rsi_str=rsi_str, atr_pct_str=atr_pct_str,
+        sector_str=sector_str, sentiment_flag_str=sentiment_flag_str, rs_1m_str=rs_1m_str,
         stem=stem,
         thesis=thesis, case_against=case_against, event_risk=event_risk,
         quality_flags_section=quality_flags_section,
@@ -842,6 +849,9 @@ def main():
     pn.add_argument("--rsi", help="RSI(14) for snapshot table")
     pn.add_argument("--atr-pct", help="ATR%% for snapshot table")
     pn.add_argument("--quality-flags", help="Comma-separated structural-quality flag keys from the Risk Simulator (e.g. PENNY,LOW_MC) — records what was known at entry")
+    pn.add_argument("--sector", help="Sector at entry, for calibration-report bucketing")
+    pn.add_argument("--sentiment-flag", help="Retail-sentiment contrarian flag at entry (FADE/BUY), for calibration-report bucketing")
+    pn.add_argument("--rs-1m", help="1-month relative strength vs SPY at entry (e.g. +3.2%%), for calibration-report bucketing")
     pn.add_argument("--overwrite", action="store_true", help="Replace if file already exists today")
     pn.set_defaults(func=cmd_new)
 

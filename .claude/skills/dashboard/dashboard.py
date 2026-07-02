@@ -534,6 +534,85 @@ def _sparkline_svg(vals, w=66, h=18):
 # fetch for these — they're never trade candidates, so next_earnings is irrelevant.
 EARNINGS_SKIP_TICKERS = {"SPY"}
 
+# yfinance GICS sector string -> sector-rotation.py's SPDR-ETF "name" field (Analysis C3),
+# so a watchlist row's sector can be checked against the bottom-3 lagging sectors without
+# re-deriving the mapping in two places.
+YF_SECTOR_TO_SPDR_NAME = {
+    "Technology": "Technology",
+    "Financial Services": "Financials",
+    "Healthcare": "Health Care",
+    "Consumer Cyclical": "Consumer Disc.",
+    "Consumer Defensive": "Consumer Staples",
+    "Energy": "Energy",
+    "Industrials": "Industrials",
+    "Basic Materials": "Materials",
+    "Utilities": "Utilities",
+    "Real Estate": "Real Estate",
+    "Communication Services": "Comm. Services",
+}
+
+
+def _parse_earnings_surprise_history(edates, now, limit=8):
+    """edates: yfinance Ticker.earnings_dates DataFrame (or None). Returns
+    (history, beat_streak) — history is up to `limit` past quarters, most-recent-first,
+    as [{"date": "YYYY-MM-DD", "surprise_pct": float|None}, ...]; beat_streak is the count
+    of consecutive most-recent quarters with a positive surprise (Analysis C4 — context
+    only, not a gate)."""
+    if edates is None or (hasattr(edates, "empty") and edates.empty):
+        return [], 0
+    try:
+        past = edates[edates.index <= now]
+        past = past.sort_index(ascending=False).head(limit)
+        history = []
+        for idx, row in past.iterrows():
+            surp = row.get("Surprise(%)")
+            ok = surp is not None and surp == surp  # NaN-safe (NaN != NaN)
+            history.append({"date": str(idx)[:10], "surprise_pct": float(surp) if ok else None})
+        streak = 0
+        for h in history:
+            if h["surprise_pct"] is not None and h["surprise_pct"] > 0:
+                streak += 1
+            else:
+                break
+        return history, streak
+    except Exception:
+        return [], 0
+
+
+def earnings_streak_text(beat_streak, history):
+    """Compact human-readable summary of _parse_earnings_surprise_history's output."""
+    if not history:
+        return "—"
+    last = history[0]
+    last_txt = f"{last['surprise_pct']:+.1f}%" if last.get("surprise_pct") is not None else "n/a"
+    if beat_streak and beat_streak >= 2:
+        return f"🔥 {beat_streak} beats in a row (last {last_txt})"
+    if beat_streak == 1:
+        return f"beat last qtr ({last_txt})"
+    if last.get("surprise_pct") is not None and last["surprise_pct"] < 0:
+        return f"missed last qtr ({last_txt})"
+    return f"last {last_txt}"
+
+
+def fetch_earnings_beat_streak(ticker, force=False):
+    """Cached beat/miss-streak lookup for Discovery-panel candidates, which aren't
+    already fetched via fetch_yfinance_ticker. Analysis C4, context only — capped to
+    the ≤20 candidates actually rendered (DISCOVERY_CAP), not the full scanned universe,
+    so this never becomes a per-scan cost like the us-screener's own 200-name pass."""
+    cache_key = f"earnings_hist_{ticker.replace('.', '_')}"
+    data, _age = cache_get(cache_key, 86400, force)  # 24h TTL — earnings history changes ~4x/year
+    if data:
+        return data
+    out = {"history": [], "beat_streak": 0}
+    try:
+        import yfinance as yf
+        edates = yf.Ticker(ticker).earnings_dates
+        out["history"], out["beat_streak"] = _parse_earnings_surprise_history(edates, datetime.now(timezone.utc))
+    except Exception:
+        pass
+    cache_set(cache_key, out)
+    return out
+
 
 def adr_badge_and_note(region):
     """Build the 🌏 ADR badge + expanded risk note for a Discovery row.
@@ -761,6 +840,18 @@ def fetch_yfinance_ticker(ticker, force=False):
             except Exception:
                 pass
 
+        # Earnings-surprise beat streak (Analysis C4, context only, not a gate) — reuses
+        # the SAME already-open Ticker object, one more attribute access, zero extra
+        # network round-trip beyond what this function already pays for.
+        earnings_history, earnings_beat_streak = [], 0
+        if ticker not in EARNINGS_SKIP_TICKERS:
+            try:
+                earnings_history, earnings_beat_streak = _parse_earnings_surprise_history(
+                    y.earnings_dates, datetime.now(timezone.utc)
+                )
+            except Exception:
+                pass
+
         out.update({
             "name": info.get("shortName") or info.get("longName") or ticker,
             "price": last_close,
@@ -789,6 +880,8 @@ def fetch_yfinance_ticker(ticker, force=False):
             "short_pct_float": info.get("shortPercentOfFloat"),
             "beta": info.get("beta"),
             "analyst_count": info.get("numberOfAnalystOpinions"),
+            "earnings_history": earnings_history,
+            "earnings_beat_streak": earnings_beat_streak,
             "held_pct_insiders": info.get("heldPercentInsiders"),
             "held_pct_institutions": info.get("heldPercentInstitutions"),
         })
@@ -3326,6 +3419,32 @@ document.querySelectorAll('table').forEach(t => {
       }
     }
 
+    // 8c. Relative strength vs SPY, 1m (Analysis C2) — US only. The watchlist's own
+    // stated edge is "buy P1 pullbacks in leaders," but nothing enforced that before
+    // this. Warn, not block: RS can legitimately turn during a base before price does.
+    if (market === 'us') {
+      if (t.rs_vs_spy_1m == null) {
+        g('info', 'Relative strength (1m)', 'RS vs SPY not available — run rel_strength.py refresh');
+      } else if (t.rs_vs_spy_1m < 0) {
+        g('warn', 'Relative strength (1m)', `${t.rs_vs_spy_1m.toFixed(1)}% vs SPY — lagging the market; the P1 edge assumes buying pullbacks in leaders, not laggards.`);
+      } else {
+        g('ok', 'Relative strength (1m)', `${t.rs_vs_spy_1m.toFixed(1)}% vs SPY — leading`);
+      }
+    }
+
+    // 8d. Sector rotation caveat (Analysis C3) — US only, informational. Money can still
+    // be made in a lagging sector on a name-specific catalyst; this just flags that the
+    // tailwind isn't there.
+    if (market === 'us') {
+      if (t.sector_bottom3) {
+        g('warn', 'Sector rotation', `${t.sector || 'this sector'} is in the bottom-3 SPDR sectors by 1m/3m/6m composite vs SPY — rotation is moving OUT, not in.`);
+      } else if (t.sector) {
+        g('ok', 'Sector rotation', `${t.sector} is not in the bottom-3 lagging sectors`);
+      } else {
+        g('info', 'Sector rotation', 'sector not available — cannot assess rotation context');
+      }
+    }
+
     // 9. R:R floor (regime-adjusted)
     // Tolerance on the R:R compare — float precision can produce 1.9999999987 from cleanly
     // doctrine-passing inputs (e.g. entry 15.55, stop 14.77, TP1 17.11 → 2.0R exactly).
@@ -3425,6 +3544,9 @@ document.querySelectorAll('table').forEach(t => {
       // no extra fetch. Records what the operator saw in the sim at prospectus creation.
       prospParts.push(`--quality-flags ${shqSim(t.quality_flags.join(','))}`);
     }
+    if (t && t.sector)         prospParts.push(`--sector ${shqSim(t.sector)}`);
+    if (t && t.sentiment_flag) prospParts.push(`--sentiment-flag ${shqSim(t.sentiment_flag)}`);
+    if (t && t.rs_vs_spy_1m != null) prospParts.push(`--rs-1m ${shqSim(t.rs_vs_spy_1m.toFixed(1) + '%')}`);
     const prospCmd = prospParts.join(' ');
     const canProsp = hardBads.length === 0;
     const prospBlock = `
@@ -4185,6 +4307,23 @@ def render_html(ctx):
         rr_floor = 1.5
 
     # Build per-ticker simulator data — US + KLSE (crypto deferred to a later phase)
+    # RS-vs-SPY cache, read once here so US sim rows can carry it (calibration-report input)
+    _rs_cache_path = CACHE_DIR / "rel_strength.json"
+    try:
+        _rs_tickers = (json.loads(_rs_cache_path.read_text()).get("tickers") or {}) if _rs_cache_path.is_file() else {}
+    except Exception:
+        _rs_tickers = {}
+    # Sector-rotation bottom-3 (Analysis C3) — read once here so US sim rows can flag
+    # "your sector is lagging" without re-reading the cache per ticker.
+    _bottom3_sectors = set()
+    try:
+        _sr_cache_path = PROJECT_ROOT / ".claude" / "cache" / "sector_rotation" / "data.json"
+        if _sr_cache_path.is_file():
+            _sr_rows = json.loads(_sr_cache_path.read_text()).get("rows") or []
+            _sr_sorted = sorted(_sr_rows, key=lambda r: r.get("composite") if r.get("composite") is not None else 0)
+            _bottom3_sectors = {r["name"] for r in _sr_sorted[:3]}
+    except Exception:
+        _bottom3_sectors = set()
     sim_tickers = {}
     for entry in ctx["watchlist"]["us"]:
         tk = entry["ticker"]
@@ -4209,6 +4348,9 @@ def render_html(ctx):
             "change_pct": t.get("change_pct"),
             "next_earnings": t.get("next_earnings"),
             "status_label": status_label,
+            "sector": t.get("sector"),
+            "rs_vs_spy_1m": (_rs_tickers.get(tk.upper()) or {}).get("vs_spy_1m"),
+            "sector_bottom3": YF_SECTOR_TO_SPDR_NAME.get(t.get("sector")) in _bottom3_sectors,
             "quality_flags": row_quality_flags(t, "us", sentiment_flag=_sent_fields.get("sentiment_flag"), ticker=tk),
         }
         sim_tickers[tk].update(_sent_fields)
@@ -4511,6 +4653,14 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             # 🌏 ADR badge composes with the tier tag (see adr_badge_and_note).
             adr_badge, adr_note_html = adr_badge_and_note(c.get("adr_region") if c.get("is_adr") else None)
 
+            # Earnings-surprise beat streak (Analysis C4, context only, not a gate) — cached
+            # per ticker, only for the DISCOVERY_CAP rows actually rendered, not the full
+            # scanned universe. A row-level badge only above 2 consecutive beats to avoid
+            # cluttering every row; the full history is always in the expanded detail.
+            _earn = fetch_earnings_beat_streak(c["ticker"])
+            _earn_streak = _earn.get("beat_streak", 0)
+            earn_row_badge = f' <span class="badge b-green" title="Beat/miss history — context only, not a gate">🔥{_earn_streak}</span>' if _earn_streak >= 2 else ""
+
             # Build details panel (full Q/V gate breakdown + synthesized why)
             def render_checks(checks, tip):
                 if not checks: return '<div class="dim">no detail</div>'
@@ -4542,6 +4692,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'    <span><b>Rev growth YoY:</b> {(f.get("revenue_growth_yoy") or 0)*100:.1f}%</span>'
                 f'    <span><b>ROE:</b> {(f.get("roe") or 0)*100:.1f}%</span>'
                 f'    <span><b>Debt/Equity:</b> {(f.get("debt_equity") or 0):.0f}</span>'
+                f'    <span><b>Earnings history:</b> {html.escape(earnings_streak_text(_earn.get("beat_streak"), _earn.get("history")))}</span>'
                 f'  </div>'
                 f'</div>'
             )
@@ -4549,7 +4700,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             rows.append(f"""
 <tr class="discovery-row" data-row-id="dd-{idx}">
   <td><span class="discovery-chevron">▶</span></td>
-  <td><span class="badge {tag_cls}" title="{html.escape(tag_tip, quote=True)}">{html.escape(tag)}</span>{adr_badge}</td>
+  <td><span class="badge {tag_cls}" title="{html.escape(tag_tip, quote=True)}">{html.escape(tag)}</span>{adr_badge}{earn_row_badge}</td>
   <td><b>{html.escape(c['ticker'])}</b></td>
   <td class="dim">{html.escape((f.get('name') or '')[:24])}</td>
   <td class="dim">{html.escape(sector[:18])}</td>
@@ -5554,6 +5705,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                 f'    <span><b>vs SMA50:</b> {fmt_pct(v50,2)}</span>'
                 f'    <span><b>vs SMA200:</b> {fmt_pct(v200,2)}</span>'
                 f'    <span><b>Next earnings:</b> {ne} ({days_to_e})</span>'
+                f'    <span title="Beat/miss history is context, not a gate — see AGENTS.md §5 for the earnings halt-window rule."><b>Earnings history:</b> {html.escape(earnings_streak_text(t.get("earnings_beat_streak"), t.get("earnings_history")))}</span>'
                 f'  </div>'
                 f'</div>'
             )

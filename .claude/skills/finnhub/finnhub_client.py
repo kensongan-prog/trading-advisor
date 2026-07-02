@@ -105,16 +105,3 @@ def company_news(symbol, days=2):
     if not isinstance(data, list):
         return None, "unexpected response shape"
     return data, None
-
-
-def upgrade_downgrade(symbol):
-    """Analyst rating actions. Returns list[{symbol, gradeTime, fromGrade, toGrade, company, action}].
-
-    `action` is one of: 'up', 'down', 'init', 'main', 'reit' (Finnhub vocabulary).
-    `gradeTime` is a unix timestamp.
-    """
-    data, err = _get("/stock/upgrade-downgrade", {"symbol": symbol})
-    if err: return None, err
-    if not isinstance(data, list):
-        return None, "unexpected response shape"
-    return data, None

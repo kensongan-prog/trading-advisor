@@ -7,7 +7,9 @@ in the row's expandable dropdown.
 
 Sources by asset class:
   US      AV cache (.claude/cache/us_news/{TICKER}.json, sentiment pre-scored)
-          + Finnhub upgrade_downgrade (.claude/cache/finnhub_news/{TICKER}.json)
+          + yfinance upgrades_downgrades (.claude/cache/finnhub_news/{TICKER}.json —
+            Finnhub's own upgrade_downgrade is premium-gated, HTTP 403 on the free
+            tier; verified live 2026-07-01, see _yf_upgrades_downgrades below)
           + Finnhub company_news (coverage gap-filler)
   KLSE    .claude/cache/klse_news/{CODE}.json (scraped from klsescreener.com)
   Crypto  .claude/cache/crypto_news/{COIN}.json (CoinGecko status_updates + headlines)
