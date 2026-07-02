@@ -219,6 +219,31 @@ def sync_portfolio():
         print(f"  ⚠ portfolio.md sync skipped ({type(e).__name__}: {e})", file=sys.stderr)
 
 
+def _render_quality_flags_section(quality_flags_arg):
+    """Render the prospectus's '### Structural risk flags' section from a
+    comma-separated flag-key string (see dashboard/quality_flags.py — same
+    cross-skill import as sync_portfolio above). Records what the operator saw
+    in the Risk Simulator at the moment they created this prospectus. Returns
+    '' when no flags were passed, so the section is invisible for clean names."""
+    keys = [k.strip() for k in (quality_flags_arg or "").split(",") if k.strip()]
+    if not keys:
+        return ""
+    try:
+        sys.path.insert(0, str(SKILLS_DIR / "dashboard"))
+        import quality_flags as qf
+        labels = qf.FLAG_LABELS
+    except Exception:
+        labels = {}
+    lines = [f"- {labels.get(k, ('⚠️', k, k))[0]} **{labels.get(k, ('⚠️', k, k))[1]}:** {labels.get(k, ('⚠️', k, k))[2]}"
+             for k in keys]
+    return (
+        "\n### Structural risk flags\n\n"
+        "_Flagged by the Risk Simulator at prospectus creation — warn-loudly-never-block; "
+        "this trade was entered with these known:_\n\n"
+        + "\n".join(lines) + "\n"
+    )
+
+
 # ── Confirmation ──────────────────────────────────────────────────────────
 def confirm(prompt, default_no=True):
     suffix = "[y/N]" if default_no else "[Y/n]"
@@ -537,7 +562,7 @@ $ at risk:               ${actual_risk:.2f}  ({actual_risk_pct:.2f}% of equity)
 ### Event risk
 
 {event_risk}
-
+{quality_flags_section}
 ### Data snapshot
 
 | Field | Value | Source | Fetched (UTC) |
@@ -663,6 +688,7 @@ def cmd_new(args):
     rr_floor_str = args.rr_floor or "—"
     rsi_str = args.rsi or "—"
     atr_pct_str = (f"{args.atr_pct}" if args.atr_pct else "—")
+    quality_flags_section = _render_quality_flags_section(args.quality_flags)
 
     body = PROSPECTUS_TEMPLATE.format(
         date=today, today=today, now_utc=now_utc,
@@ -682,6 +708,7 @@ def cmd_new(args):
         regime=regime, rsi_str=rsi_str, atr_pct_str=atr_pct_str,
         stem=stem,
         thesis=thesis, case_against=case_against, event_risk=event_risk,
+        quality_flags_section=quality_flags_section,
     )
 
     JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -814,6 +841,7 @@ def main():
     pn.add_argument("--rr-floor", help="Active R:R floor (e.g. 2.0R)")
     pn.add_argument("--rsi", help="RSI(14) for snapshot table")
     pn.add_argument("--atr-pct", help="ATR%% for snapshot table")
+    pn.add_argument("--quality-flags", help="Comma-separated structural-quality flag keys from the Risk Simulator (e.g. PENNY,LOW_MC) — records what was known at entry")
     pn.add_argument("--overwrite", action="store_true", help="Replace if file already exists today")
     pn.set_defaults(func=cmd_new)
 

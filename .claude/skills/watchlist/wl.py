@@ -216,6 +216,13 @@ def fetch_us_meta(ticker):
             "exchange": info.get("exchange"),
             "country": info.get("country"),
             "price": float(h["Close"].iloc[-1]),
+            "currency": info.get("currency", "USD"),
+            # Structural-quality fields for quality_flags() — same .info call, no extra cost.
+            "market_cap": info.get("marketCap"),
+            "avg_vol_30d": info.get("averageVolume"),
+            "short_pct_float": info.get("shortPercentOfFloat"),
+            "beta": info.get("beta"),
+            "analyst_count": info.get("numberOfAnalystOpinions"),
         }, None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -239,6 +246,12 @@ def fetch_klse_meta(ticker):
             "sector": info.get("sector"),
             "currency": info.get("currency", "MYR"),
             "price": float(h["Close"].iloc[-1]),
+            # Structural-quality fields for quality_flags() — same .info call, no extra cost.
+            "market_cap": info.get("marketCap"),
+            "avg_vol_30d": info.get("averageVolume"),
+            "short_pct_float": info.get("shortPercentOfFloat"),
+            "beta": info.get("beta"),
+            "analyst_count": info.get("numberOfAnalystOpinions"),
         }, None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -265,7 +278,35 @@ def fetch_crypto_meta(symbol):
         "market_cap_rank": data.get("market_cap_rank"),
         "categories": data.get("categories") or [],
         "current_price": (md.get("current_price") or {}).get("usd"),
+        # Structural-quality fields for quality_flags() — same coin lookup, no extra cost.
+        "market_cap": (md.get("market_cap") or {}).get("usd"),
+        "volume": (md.get("total_volume") or {}).get("usd"),
     }, None
+
+
+def quality_flags_for(meta, section):
+    """Structural-quality flags for a new watchlist add (see quality_flags.py).
+
+    Cross-skill import from dashboard/ — same pattern j.py already uses for
+    sync_portfolio(): thresholds are a single source of truth, not the kind of
+    trivial boilerplate the "stay self-contained per-dir" rule is about (see
+    notes/decisions.md). No pump-and-dump composite here — that needs price
+    history/vol_ratio this lightweight add-time snapshot doesn't have; it
+    degrades safely (quality_flags.pump_dump_risk returns False without
+    vol_ratio), so only the structural flags fire.
+    """
+    if not meta:
+        return []
+    try:
+        sys.path.insert(0, str(SKILLS_DIR / "dashboard"))
+        import quality_flags as qf
+    except ImportError:
+        return []
+    try:
+        asset_class = "crypto" if section == "crypto" else ("klse" if section == "klse" else "us")
+        return qf.all_flags(meta, asset_class=asset_class)
+    except Exception:
+        return []
 
 
 # ── Thesis builders ───────────────────────────────────────────────────────
@@ -475,12 +516,28 @@ def cmd_add(args):
     if meta.get("market_cap_rank"):
         print(f"  Rank:    #{meta['market_cap_rank']}")
     print(f"  Section: {section}")
+
+    qflags = quality_flags_for(meta, section)
+    if qflags:
+        try:
+            sys.path.insert(0, str(SKILLS_DIR / "dashboard"))
+            import quality_flags as qf
+            labels = qf.FLAG_LABELS
+        except ImportError:
+            labels = {}
+        print()
+        print(f"  ⚠ {len(qflags)} structural-quality flag(s):")
+        for key in qflags:
+            icon, name, desc = labels.get(key, ("⚠️", key, key))
+            print(f"      {icon} {name} — {desc}")
+
     print()
     print(f"Will insert into '{section}' section:")
     print(f"  {new_line}")
     print()
 
-    if not args.yes and not confirm("Proceed?"):
+    prompt = f"⚠ {len(qflags)} structural-quality flag(s) above — add anyway?" if qflags else "Proceed?"
+    if not args.yes and not confirm(prompt):
         print("Aborted.")
         return 0
 

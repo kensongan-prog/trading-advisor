@@ -3302,6 +3302,30 @@ document.querySelectorAll('table').forEach(t => {
       }
     }
 
+    // 8b. Structural quality (Guardrails Phase B) — "what kind of thing is this",
+    // independent of the technical setup. Warn-loudly-never-block: EVERY flag here
+    // renders 'warn', including the pump-and-dump composite, so this can never flip
+    // hardBads and disable Create Prospectus. Doctrine §1: the operator decides —
+    // this is a flag to read closely, not a veto. See quality_flags.py.
+    {
+      const QF_LABELS = {
+        PENNY: ['🪙', 'Penny stock'], LOW_MC: ['🐜', 'Low market cap'],
+        ILLIQUID: ['🏜️', 'Illiquid'], HIGH_SHORT: ['🎯', 'High short interest'],
+        HIGH_BETA: ['🎢', 'High beta'], NO_COVERAGE: ['👻', 'No analyst coverage'],
+        LOW_MC_RANK: ['🐜', 'Low cap-rank'], THIN_VOLUME: ['🏜️', 'Thin volume'],
+        PUMP_DUMP_RISK: ['🚩', 'Pump-and-dump pattern'],
+      };
+      const qflags = t.quality_flags || [];
+      if (qflags.length === 0) {
+        g('ok', 'Structural quality', 'no penny/low-cap/illiquid/short-interest/beta/coverage flags');
+      } else {
+        const isPD = qflags.includes('PUMP_DUMP_RISK');
+        const names = qflags.map(k => (QF_LABELS[k] || ['⚠️', k])[1]);
+        g('warn', 'Structural quality' + (isPD ? ' — 🚩 PUMP/DUMP PATTERN' : ''),
+          `${names.join(' · ')} — review before sizing; warns, does not block.`);
+      }
+    }
+
     // 9. R:R floor (regime-adjusted)
     // Tolerance on the R:R compare — float precision can produce 1.9999999987 from cleanly
     // doctrine-passing inputs (e.g. entry 15.55, stop 14.77, TP1 17.11 → 2.0R exactly).
@@ -3396,6 +3420,11 @@ document.querySelectorAll('table').forEach(t => {
       prospParts.push(`--atr-pct ${shqSim(atrP.toFixed(2) + '%')}`);
     }
     if (tName)            prospParts.push(`--name ${shqSim(tName)}`);
+    if (t && t.quality_flags && t.quality_flags.length) {
+      // Reuse the SAME flags already computed for the Structural quality gate above —
+      // no extra fetch. Records what the operator saw in the sim at prospectus creation.
+      prospParts.push(`--quality-flags ${shqSim(t.quality_flags.join(','))}`);
+    }
     const prospCmd = prospParts.join(' ');
     const canProsp = hardBads.length === 0;
     const prospBlock = `
@@ -4060,6 +4089,7 @@ def render_html(ctx):
         if t.get("error") or t.get("price") is None:
             continue
         _, status_label, _ = us_status({**t, "ticker": tk}, macro_events_for_status)
+        _sent_fields = sentiment_sim_fields(tk)
         sim_tickers[tk] = {
             "market": "us",
             "currency": "USD",
@@ -4076,8 +4106,9 @@ def render_html(ctx):
             "change_pct": t.get("change_pct"),
             "next_earnings": t.get("next_earnings"),
             "status_label": status_label,
+            "quality_flags": row_quality_flags(t, "us", sentiment_flag=_sent_fields.get("sentiment_flag"), ticker=tk),
         }
-        sim_tickers[tk].update(sentiment_sim_fields(tk))
+        sim_tickers[tk].update(_sent_fields)
 
     # KLSE: same shape, plus market='klse', currency='MYR', lot_size=100, fundamentals if cached
     klse_fund_local = ctx.get("klse_fundamentals", {}) or {}
@@ -4094,6 +4125,7 @@ def render_html(ctx):
         name = (fund.get("stock_name") or ann.get("stock_name") or fund.get("page_title") or t.get("name") or tk)
         # Trim announcements to just the fields the gate needs (keep payload small)
         fr_info = ann.get("most_recent_financial_results") or {}
+        _sent_fields = sentiment_sim_fields(tk)
         sim_tickers[tk] = {
             "market": "klse",
             "currency": "MYR",
@@ -4122,14 +4154,18 @@ def render_html(ctx):
             "fr_next_expected_period_end": fr_info.get("next_expected_period_end"),
             "fr_next_expected_filing_by": fr_info.get("next_expected_filing_by"),
             "upcoming_events": ann.get("upcoming_events") or [],
+            "quality_flags": row_quality_flags(t, "klse", sentiment_flag=_sent_fields.get("sentiment_flag"), ticker=tk),
         }
-        sim_tickers[tk].update(sentiment_sim_fields(tk))
+        sim_tickers[tk].update(_sent_fields)
 
     # Crypto: spot-only, USD-native, fractional units. Indicators from Binance daily klines.
     crypto_ind_local    = ctx.get("crypto_indicators", {}) or {}
     crypto_fund_local   = ctx.get("crypto_funding", {}) or {}
     crypto_regime_local = ctx.get("crypto_regime", {}) or {}
     crypto_unlocks_local = ctx.get("crypto_unlocks", {}) or {}
+    # CoinGecko market rows (market_cap/rank/volume/chg) — separate from the Binance
+    # indicators (ind) above; quality_flags needs both. Mirrors render_crypto_grid's lookup.
+    _cg_rows_by_sym = {(r.get("symbol") or "").upper(): r for r in (ctx.get("crypto_rows") or [])}
     for entry in ctx["watchlist"]["crypto"]:
         tk = entry["ticker"].upper()
         ind = crypto_ind_local.get(tk, {}) or {}
@@ -4138,6 +4174,8 @@ def render_html(ctx):
             continue
         sym_pair = ind.get("symbol") or (tk + "USDT")
         fnd = crypto_fund_local.get(sym_pair, {}) or {}
+        _cg_row = _cg_rows_by_sym.get(tk) or {}
+        _sent_fields = sentiment_sim_fields(tk)
         sim_tickers[tk] = {
             "market": "crypto",
             "currency": "USD",
@@ -4163,8 +4201,9 @@ def render_html(ctx):
             # Token unlock cache (consumed by §5 48h-halt gate)
             "unlock_entry": crypto_unlocks_local.get(tk),
             "data_source": ind.get("data_source", "binance"),
+            "quality_flags": row_quality_flags(_cg_row, "crypto", sentiment_flag=_sent_fields.get("sentiment_flag"), ticker=tk),
         }
-        sim_tickers[tk].update(sentiment_sim_fields(tk))
+        sim_tickers[tk].update(_sent_fields)
 
     sim_payload = {
         "config": {

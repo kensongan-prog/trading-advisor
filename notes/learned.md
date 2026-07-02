@@ -4,6 +4,16 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-07-02 — Guardrails Phase B: why the pump-and-dump flag is `'warn'`, not `'bad'`; and cross-skill imports ARE allowed for shared logic
+
+**The Risk Simulator's `hardBads` list has real teeth.** `gates.filter(x => x.ok === 'bad')` directly disables the "Create Prospectus" button (`canProsp = hardBads.length === 0`) — no override affordance exists anywhere in the UI. The Guardrails Phase A/B plan's own proposal ("P&D composite → bad, verdict downgrade to NO-by-default, override-able") assumed an override path that doesn't exist. Making it `'bad'` would have been the project's **first real hard block**, contradicting doctrine §1 (operator decides) and the "warn-loudly-never-block" principle the whole guardrails effort is built on. **Decision: ship it as `'warn'`** — visually distinct (🚩 prefix in the gate text) but never disables anything. Verified live in Chromium via Playwright: GPUS's Structural quality gate renders `warn` even while three OTHER pre-existing gates (Trend filter, Pullback shape, Macro halt) correctly fail it to 🔴 NO-TRADE — those are unrelated to this change. If a real override-able hard-block is wanted later, it needs actual UI work (a checkbox/confirm state), not just flipping a gate status.
+
+**Cross-skill imports are an established, intentional pattern for genuinely shared logic — the "self-contained skill dirs" rule (2026-06-13 entry below) is about NOT sharing trivial boilerplate, not a blanket ban.** `j.py`'s `sync_portfolio()` already does `sys.path.insert(0, str(SKILLS_DIR / "dashboard")); import portfolio` — a real precedent found while wiring Phase B. `quality_flags.py`'s thresholds are exactly the kind of thing that MUST be single-sourced (if PENNY threshold changes, every consumer needs the same number): `wl.py` now imports it from `dashboard/` the same way, and `j.py` imports it a second time to render the prospectus's flag labels. Don't duplicate the module; mirror the existing cross-skill-import pattern.
+
+**Operational note, not a code gotcha: be extremely careful chaining `git stash` into a "just check status" one-liner.** Mid-session, a command meant to check `git status` accidentally included `git stash -u -q` first, silently stashing ~200 lines of uncommitted work (dashboard.py + wl.py edits + a new test file) with no visible error. Caught immediately by comparing `git status`/`grep` for an expected function before/after; recovered cleanly with `git stash pop`. No data lost, but it's a reminder: never bundle `git stash` (or other state-mutating git commands) into a multi-command one-liner opportunistically — run it alone, deliberately, only when actually needed.
+
+---
+
 ### 2026-07-02 — Structural-quality flags (quality_flags.py): two live-verification catches
 
 **1. yfinance omits `numberOfAnalystOpinions` entirely (`None`) for zero-coverage names — it's not an explicit `0`.** Verified live on GPUS vs AAPL: AAPL returns `42`, GPUS returns `None`, not `0`. A naive `== 0` check misses every uncovered microcap, which is exactly the population this flag exists to catch. Fix: treat `None` as no-coverage too, but gate the check on `price is not None` first — otherwise a totally-failed fetch (every field `None`) spuriously flags NO_COVERAGE alone with zero other evidence.
