@@ -4,6 +4,16 @@ Append-only log of things worth knowing. Newest at top. The agent reads this at 
 
 ---
 
+### 2026-07-02 — Structural-quality flags (quality_flags.py): two live-verification catches
+
+**1. yfinance omits `numberOfAnalystOpinions` entirely (`None`) for zero-coverage names — it's not an explicit `0`.** Verified live on GPUS vs AAPL: AAPL returns `42`, GPUS returns `None`, not `0`. A naive `== 0` check misses every uncovered microcap, which is exactly the population this flag exists to catch. Fix: treat `None` as no-coverage too, but gate the check on `price is not None` first — otherwise a totally-failed fetch (every field `None`) spuriously flags NO_COVERAGE alone with zero other evidence.
+
+**2. Context-only gauges (SPY, `EARNINGS_SKIP_TICKERS`) need the SAME skip applied to quality flags as to earnings.** SPY is an ETF/regime gauge, never a trade candidate — but it has no analyst coverage by construction (ETFs don't get sell-side opinions), so the NO_COVERAGE check fired on every build. Caught only by exact-match live verification (`<b>SPY</b>` in the rendered `dashboard.html`) — a loose substring search on the ticker missed it because "SPY" appears in unrelated contexts (sector-rotation baseline text, tooltips) elsewhere on the page. **Lesson: when grepping a rendered dashboard for a ticker's row, anchor on the exact cell pattern (`<b>{TICKER}</b>`), not a bare substring — false negatives AND false positives both hide behind loose matches.** Fix mirrors the existing `EARNINGS_SKIP_TICKERS` pattern exactly: `row_quality_flags()` takes an optional `ticker=` and skips gauges before classifying.
+
+**Reusable pattern worth repeating elsewhere:** `chg_5d_pct`/`chg_30d_pct` were added to `fetch_yfinance_ticker`'s output for free — `h["Close"]` (the 1y price history) is already loaded in memory for RSI/SMA/ATR; deriving two more percentage changes from it costs zero extra API calls. Same principle as the ADR-tag work's `market_cap_rank` and this module's `short_pct_float`/`beta`/`analyst_count`: check what's already in the response/dataframe before reaching for a new fetch.
+
+---
+
 ### 2026-07-01 — klsescreener comment threads + the "KLSE news already exists" trap
 
 **Two findings from building the `klse-sentiment` leg.**

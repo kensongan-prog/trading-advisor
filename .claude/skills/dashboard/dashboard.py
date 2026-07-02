@@ -560,6 +560,65 @@ def adr_badge_and_note(region):
     return badge, note
 
 
+def row_quality_flags(row, asset_class, sentiment_flag=None, ticker=None):
+    """Structural-quality flags for one watchlist row (see quality_flags.py).
+    Lazy-imports the sibling module so a broken import degrades to 'no flags'
+    rather than a build failure. `row` is the raw ticker/coin dict (t/r in the
+    render loops); `sentiment_flag` is the contrarian_flag ('FADE'|'BUY'|None)
+    from ctx["sentiment"] for this ticker, if the caller has it handy.
+
+    Context-only gauges (EARNINGS_SKIP_TICKERS, e.g. SPY) are never trade
+    candidates — an ETF/index structurally has no analyst opinions, so
+    NO_COVERAGE would fire on every gauge as noise, not signal. Skip them."""
+    if ticker in EARNINGS_SKIP_TICKERS:
+        return []
+    try:
+        import quality_flags as qf
+    except ImportError:
+        return []
+    try:
+        return qf.all_flags(row, asset_class=asset_class, sentiment_flag=sentiment_flag)
+    except Exception:
+        return []
+
+
+def quality_chips_html(flags):
+    """Compact inline chip row for structural-quality flags. PUMP_DUMP_RISK
+    renders red (alarm); every other flag renders yellow (caution). Splices
+    directly after a ticker symbol — returns '' when flags is empty."""
+    if not flags:
+        return ""
+    try:
+        import quality_flags as qf
+    except ImportError:
+        return ""
+    chips = []
+    for key in flags:
+        icon, name, desc = qf.FLAG_LABELS.get(key, ("⚠️", key, key))
+        cls = "b-red" if key == "PUMP_DUMP_RISK" else "b-yellow"
+        tip = f"{name} — {desc}"
+        chips.append(f'<span class="badge {cls} qf-chip" title="{html.escape(tip, quote=True)}">{icon}</span>')
+    return "".join(chips)
+
+
+def quality_flags_note_html(flags):
+    """Expanded-row note listing every structural-quality flag with its full
+    tooltip text. Returns '' when flags is empty."""
+    if not flags:
+        return ""
+    try:
+        import quality_flags as qf
+    except ImportError:
+        return ""
+    danger = "PUMP_DUMP_RISK" in flags
+    bits = []
+    for key in flags:
+        icon, name, desc = qf.FLAG_LABELS.get(key, ("⚠️", key, key))
+        bits.append(f"{icon} <b>{html.escape(name)}:</b> {html.escape(desc)}")
+    cls = "qf-flags-note qf-danger" if danger else "qf-flags-note"
+    return f'<div class="{cls}">' + " · ".join(bits) + "</div>"
+
+
 def fetch_yfinance_ticker(ticker, force=False):
     cache_key = f"yfin_{ticker.replace('.', '_').replace(':', '_')}"
     data, age = cache_get(cache_key, 14400, force)  # 4h TTL — daily bars don't change intraday; user wanting live quote uses the Finnhub quote button
@@ -660,6 +719,21 @@ def fetch_yfinance_ticker(ticker, force=False):
             except Exception:
                 pass
 
+        # 5d/30d price change — for quality_flags.pump_dump_risk (spike detection).
+        # h["Close"] is already loaded above; this is pure Python, zero extra API cost.
+        chg_5d_pct = None
+        chg_30d_pct = None
+        if len(h) >= 6:
+            try:
+                chg_5d_pct = (last_close / float(h["Close"].iloc[-6]) - 1) * 100
+            except Exception:
+                pass
+        if len(h) >= 31:
+            try:
+                chg_30d_pct = (last_close / float(h["Close"].iloc[-31]) - 1) * 100
+            except Exception:
+                pass
+
         # ATR(14)
         try:
             tr = pd.concat([
@@ -709,6 +783,14 @@ def fetch_yfinance_ticker(ticker, force=False):
             "currency": info.get("currency", "USD"),
             "trailing_pe": info.get("trailingPE"),
             "spark": _spark_series(list(h["Close"])),
+            "chg_5d_pct": chg_5d_pct,
+            "chg_30d_pct": chg_30d_pct,
+            # Structural-quality fields for quality_flags() — same .info call, no extra cost.
+            "short_pct_float": info.get("shortPercentOfFloat"),
+            "beta": info.get("beta"),
+            "analyst_count": info.get("numberOfAnalystOpinions"),
+            "held_pct_insiders": info.get("heldPercentInsiders"),
+            "held_pct_institutions": info.get("heldPercentInstitutions"),
         })
     except Exception as e:
         out["error"] = f"yfinance error: {type(e).__name__}: {e}"
@@ -903,6 +985,7 @@ def fetch_crypto_markets(coins, force=False):
             "chg_7d": r.get("price_change_percentage_7d_in_currency"),
             "chg_30d": r.get("price_change_percentage_30d_in_currency"),
             "market_cap": r.get("market_cap"),
+            "market_cap_rank": r.get("market_cap_rank"),
             "volume": r.get("total_volume"),
         })
     out = {"rows": rows}
@@ -1797,6 +1880,9 @@ td.dim { color: var(--dim); }
 .b-adr { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 1px solid var(--accent); margin-left: 4px; }
 .dd-adr-note { font-size: 11px; color: var(--accent); margin: 0 0 8px; }
 .dd-adr-note .dim { color: var(--dim); }
+.qf-chip { margin-left: 3px; padding: 1px 4px; font-size: 10px; cursor: help; }
+.qf-flags-note { font-size: 11px; color: var(--yellow); margin: 0 0 8px; }
+.qf-flags-note.qf-danger { color: var(--red); }
 .sent-fade { background: rgba(var(--red-rgb), 0.16); border-left: 3px solid rgba(var(--red-rgb), 0.6); }
 .sent-buy { background: rgba(var(--green-rgb), 0.16); border-left: 3px solid rgba(var(--green-rgb), 0.6); }
 .sent-flag-fade { color: var(--red); font-weight: bold; font-size: 10px; letter-spacing: 0.5px; }
@@ -5297,12 +5383,17 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             atr_pct = (atr14 / price * 100) if (atr14 and price) else None
             v50 = t.get("vs_sma50_pct"); v200 = t.get("vs_sma200_pct")
             news_txt, news_sort, news_cls = news_age_cell(tk)
+            _sent = (ctx.get("sentiment") or {}).get(tk.upper())
+            _sent_flag = ((_sent or {}).get("composite") or {}).get("contrarian_flag") if _sent else None
+            qflags = row_quality_flags(t, "us", sentiment_flag=_sent_flag, ticker=tk)
+            qchips = quality_chips_html(qflags)
             # Build expandable details
             news_entry = (ctx.get("us_news_cache") or {}).get(tk.upper())
             thesis_html, gates = synthesize_us_thesis(tk, t, label, reason, macro_events_for_status, news_entry)
             gates_html = "\n".join(_gate_html(*g) for g in gates)
             details_html = (
                 f'<div class="exp-details-content">'
+                f'  {quality_flags_note_html(qflags)}'
                 f'  <div class="exp-thesis">{thesis_html}</div>'
                 f'  <div class="exp-gates-grid">'
                 f'    <div class="exp-gate-col"><div class="exp-gate-head">P1 technical gates ({sum(1 for _,o,_ in gates if o)}/{len(gates)})</div>{gates_html}</div>'
@@ -5327,7 +5418,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             rows.append(f"""
 <tr class="exp-row {_rank_cls(_rank)}" data-row-id="us-{idx}" data-filter="{html.escape((tk + ' ' + (t.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
-  <td><b>{html.escape(tk)}</b> <button class="sim-load-btn" onclick="event.stopPropagation(); taLoadSim('{html.escape(tk, quote=True)}')" title="Load into Risk Simulator (prefill entry/stop/TP)">→Sim</button></td>
+  <td><b>{html.escape(tk)}</b>{qchips} <button class="sim-load-btn" onclick="event.stopPropagation(); taLoadSim('{html.escape(tk, quote=True)}')" title="Load into Risk Simulator (prefill entry/stop/TP)">→Sim</button></td>
   <td class="dim">{html.escape((t.get('name') or '')[:24])}{_sparkline_svg(t.get('spark') or [])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">{fmt_num(price,2)}{_price_age_suffix(t.get('price_date'))} <button class="ta-quote-btn" data-symbol="{html.escape(tk, quote=True)}" title="Fetch live quote (Finnhub)">🔄</button><span class="live-quote"></span></td>
   <td class="num {chg_cls}" data-sort="{chg or 0}" title="Day-over-day vs last cleanly-closed prior bar — not a true 24h read if a recent yfinance bar was NaN-skipped.">{fmt_pct(chg,2)}</td>
@@ -5455,10 +5546,15 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
                     age_h = (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds() / 3600
                     fund_age = f"{age_h:.0f}h" if age_h < 48 else f"{age_h/24:.0f}d"
                 except Exception: pass
+            _sent = (ctx.get("sentiment") or {}).get(tk.upper())
+            _sent_flag = ((_sent or {}).get("composite") or {}).get("contrarian_flag") if _sent else None
+            qflags = row_quality_flags(t, "klse", sentiment_flag=_sent_flag, ticker=tk)
+            qchips = quality_chips_html(qflags)
             thesis_html, gates = synthesize_klse_thesis(tk, t, label, reason, f, ann)
             gates_html = "\n".join(_gate_html(*g) for g in gates)
             details_html = (
                 f'<div class="exp-details-content">'
+                f'  {quality_flags_note_html(qflags)}'
                 f'  <div class="exp-thesis">{thesis_html}</div>'
                 f'  <div class="exp-gates-grid">'
                 f'    <div class="exp-gate-col"><div class="exp-gate-head">P1 technical gates ({sum(1 for _,o,_ in gates if o)}/{len(gates)})</div>{gates_html}</div>'
@@ -5485,7 +5581,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             rows.append(f"""
 <tr class="exp-row" data-row-id="klse-{idx}" data-filter="{html.escape((tk + ' ' + (t.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(tk, quote=True)}')" title="Remove from watchlist">🗑️</button></td>
-  <td><b>{html.escape(tk)}</b></td>
+  <td><b>{html.escape(tk)}</b>{qchips}</td>
   <td class="dim">{html.escape((t.get('name') or '')[:22])}{_sparkline_svg(t.get('spark') or [])}</td>
   <td class="num{' stale-price' if _price_stale(t.get('price_date')) else ''}" data-sort="{price or 0}" title="{_price_tooltip(t.get('price_date'))}">MYR {fmt_num(price,3)}{_price_age_suffix(t.get('price_date'))} <a class="ta-quote-btn" href="https://klsescreener.com/v2/stocks/view/{html.escape(code, quote=True)}" target="_blank" rel="noopener" title="Open klsescreener.com (free real-time KLSE quote not available via Finnhub)" onclick="event.stopPropagation()">📊</a></td>
   <td class="num {chg_cls}" data-sort="{chg or 0}">{fmt_pct(chg,2)}</td>
@@ -5584,6 +5680,10 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             v50 = ((price_ind / s50 - 1) * 100) if (price_ind and s50) else None
             unlock_entry = crypto_unlocks_grid.get(tk_up)
             cr_summary = {"label": crypto_regime_grid.get("regime"), "score": crypto_regime_grid.get("score")}
+            _sent = (ctx.get("sentiment") or {}).get(entry["ticker"].upper())
+            _sent_flag = ((_sent or {}).get("composite") or {}).get("contrarian_flag") if _sent else None
+            qflags = row_quality_flags(r, "crypto", sentiment_flag=_sent_flag, ticker=entry["ticker"])
+            qchips = quality_chips_html(qflags)
             thesis_html = synthesize_crypto_thesis(tk_up, r, ind, fnd, unlock_entry, cr_summary)
             # Build a simplified gate readout column for crypto (not a P1 framework but useful context)
             ctx_lines = []
@@ -5594,6 +5694,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             ctx_lines.append(_gate_html("Crypto regime", cr_summary["score"] is not None, f"{cr_summary['label']} ({cr_summary['score']:+.2f})" if cr_summary["score"] is not None else "missing"))
             details_html = (
                 f'<div class="exp-details-content">'
+                f'  {quality_flags_note_html(qflags)}'
                 f'  <div class="exp-thesis">{thesis_html}</div>'
                 f'  <div class="exp-gates-grid">'
                 f'    <div class="exp-gate-col"><div class="exp-gate-head">Data coverage</div>{"".join(ctx_lines)}</div>'
@@ -5620,7 +5721,7 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
             rows.append(f"""
 <tr class="exp-row {_rank_cls(_rank)}" data-row-id="crypto-{idx}" data-filter="{html.escape(((r.get('symbol') or entry['ticker']) + ' ' + (r.get('name') or '')).lower(), quote=True)}">
   <td><span class="exp-chevron">▶</span><button class="wl-remove-btn" onclick="event.stopPropagation(); wlRemove('{html.escape(entry['ticker'], quote=True)}')" title="Remove from watchlist">🗑️</button></td>
-  <td><b>{html.escape(r.get('symbol','—'))}</b></td>
+  <td><b>{html.escape(r.get('symbol','—'))}</b>{qchips}</td>
   <td class="dim">{html.escape((r.get('name') or '')[:18])}{_sparkline_svg(ind.get('spark') or [])}</td>
   <td class="num" data-sort="{r.get('price') or 0}">${fmt_num(r.get('price'),4)} <button class="ta-quote-btn" data-crypto-source="{ind.get('data_source','binance')}" data-crypto-symbol="{html.escape(ind.get('symbol') or (tk_up + 'USDT'), quote=True)}" title="Fetch live quote (Binance/CoinGecko)" onclick="event.stopPropagation()">🔄</button><span class="live-quote"></span></td>
   <td class="num {'green' if (ch24 or 0)>0 else 'red'}" data-sort="{ch24 or 0}">{fmt_pct(ch24,2)}</td>
