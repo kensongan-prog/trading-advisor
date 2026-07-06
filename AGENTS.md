@@ -24,6 +24,26 @@ Then orient out loud with **three short bullets** (current version / most recent
 2. **Write an `### In flight` paragraph** to `CHANGELOG.md` `[Unreleased]` explaining what's pending and the next step. The next session's bootstrap picks it up. If the operator forgets, prompt once.
 3. **Sync the knowledge vault — for every meaningful change shipped this session. Don't ask whether to; just do it** (skip only when nothing material shipped). An Obsidian vault mirrors this project for cross-agent (Claude + Codex) + human navigation at **`/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Trading Advisor/`** (entry `00 — Trading Advisor Home.md`; external volume — `/Volumes/Mac Mini SSD` must be mounted). Repo is the source of truth, the vault its synthesized index — they must not drift. Map the change to the note that owns it (Skills Catalog / Tests / Gotchas & Landmines / Decisions Log / a `State — *` / `00 — Home` version+snapshot), edit that note **in place** (don't duplicate), bump its `updated:` frontmatter, keep `source:` honest, synthesize (don't paste), then run the wikilink-verification script in `Vault Guide — Contributing.md`. The vault lives **outside this git repo**, so vault edits aren't part of repo commits.
 
+## Memory protocol
+
+Full doctrine: `/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Memory Protocol.md` (read on demand). The rules that fire every session:
+
+**Bootstrap additions** (after learned.md/CHANGELOG/git/tests): read only the `## Hot` section of `notes/learned.md`; read the `## Hot` section of the vault's `Lessons — Cross-Project.md`; check this project's last row in the vault's `Sync Ledger.md` and flag in the orientation if it lags the repo.
+
+**Capture (same session, before close):** burn ≥10 min or repeated failure → `notes/learned.md` Hot entry (anatomy: Symptom → Root cause → Fix → Validation → Watchpoint, plus a `tags:` line with `#tool:/#provider:/#pattern:/#project:` and `Enforced-by:`). Operator corrections → quote verbatim, dated. Non-obvious choices → `notes/decisions.md` with `Re-evaluate: <date>`. Deferred ideas → `notes/ideas.md` with `Status: parked` + `Re-surface: <date>`. Tool/harness/platform lessons that would bite any project → write directly to the vault's `Lessons — Cross-Project.md` + one pointer line here.
+
+**Decay:** learned.md `## Hot` budget is 150 lines. When vault_doctor warns, move superseded / reference-only / >90d-unenforced entries to `notes/learned-archive.md` (annotate `SUPERSEDED by <date>` in place first). Entries with an `Enforced-by:` test may archive sooner — the guard is the memory.
+
+**Promotion:** a lesson seen in ≥2 projects, or any tool/platform-level lesson, moves to `Lessons — Cross-Project.md` (siblings become one-line pointers). A documented lesson that recurs anyway MUST become an enforced guard (test → assertion → doctor rule → doctrine rule).
+
+**End-of-session additions:** after the vault sync, run `python3 "/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/scripts/vault_index.py"` then the same path's `scripts/vault_doctor.py`; act on cheap WARNs; append one row to the vault's `Sync Ledger.md` (`date | project | agent | synced/skipped: reason | recalls`).
+
+**Recall:** before debugging a tool/provider error >5 min, grep `notes/learned*.md` and the vault's `Lessons — Cross-Project.md` by tag first; cite any entry you use and count it in the ledger row.
+
+**Private memory is a scratch cache.** Anything durable must land in repo notes or the vault in the same session — Claude memory dirs and Codex auto-memory are never the only copy.
+
+**Attribution:** agent-made commits end with `Co-Authored-By: Claude <noreply@anthropic.com>` or `Co-Authored-By: Codex <codex@openai.com>`.
+
 ## 1. Role & Mission
 
 You are a disciplined trading research analyst covering equities, crypto, and
