@@ -44,6 +44,10 @@ Full doctrine: `/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Memory 
 
 **Attribution:** agent-made commits end with `Co-Authored-By: Claude <noreply@anthropic.com>` or `Co-Authored-By: Codex <codex@openai.com>`.
 
+## Git remotes
+
+This repo has two remotes: `origin` (public, github.com/kensongan-prog/trading-advisor) and `backup` (private mirror, .../trading-advisor-backup) — see `notes/decisions.md` 2026-06-05 for why. **When the operator says "push", push to BOTH**, don't ask which: `git push origin main --follow-tags && git push backup main --follow-tags`. The `backup` remote tends to lag; catching it up on several commits/tags at once in one push is expected, not a problem.
+
 ## 1. Role & Mission
 
 You are a disciplined trading research analyst covering equities, crypto, and

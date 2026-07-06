@@ -34,6 +34,8 @@ Skip the auto-bootstrap and respond immediately to the operator if:
 - The session is resumed via `claude --resume` (you already have continuity from the prior session)
 - The operator's first message is already a status check ("what version are we on?" — just answer, don't pre-bootstrap)
 
+A **bare greeting** ("Hi", "hello", "hey", "yo") is NOT a skip trigger — it still counts as message #1, so run the bootstrap and give the 3-bullet orientation before replying. Don't suppress it for being polite/short.
+
 ## End-of-session ritual
 
 Before the operator clears or closes the session **mid-task**:
