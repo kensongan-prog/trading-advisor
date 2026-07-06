@@ -5,6 +5,8 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 ---
 
 ### 2026-06-11 — X (Twitter) as a 4th retail-sentiment leg
+Status: parked
+Re-surface: 2026-07-20
 
 **Motivation:** Current retail stack is StockTwits (volume workhorse) + Reddit (meme-stocks) + HN (tech-substance) + Polymarket (money-weighted macro). All free tier. X would add **live retail pulse for fast-moving headline reactions** and **crypto-Twitter native signal**.
 
@@ -45,6 +47,7 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 ---
 
 ### 2026-06-11 — One-click refresh from the Data Health rail chip — SHIPPED in v2.2.0
+Status: shipped
 
 **Motivation:** Right now the see→fix loop for data degradation is: glance the DATA chip → click it (jumps to panel) → scroll to find the Control widget → click ⚡ Quick or 🔄 Full → wait. That's 3 clicks + scroll. The chip already knows *what's wrong* (transient vs permanent vs stale); it could trigger the right refresh kind directly.
 
@@ -63,12 +66,15 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 ---
 
 ### 2026-06-10 — Data-health surface on the dashboard — SHIPPED in v2.1.0
+Status: shipped
 
 Action Rail's 4th slot now shows DATA: `✓/⚠/🛑` summary; the `📊 Data Health` panel under the rail expands per-source breakdowns with chip counts (fresh/stale/transient-error/permanent-error/no-coverage/missing). State classifier in `.claude/skills/dashboard/health.py`, pure-logic tests in `tests/test_health.py` (41 tests). First deployment immediately surfaced 6 sentiment sources still cached in the pre-v2.0.6 HTTP 429 state — exactly the silent degradation this was meant to catch.
 
 ---
 
 ### 2026-06-10 — Paper-trade execution implementer
+Status: parked
+Re-surface: 2026-08-05
 
 **Motivation:** The system already finds setups (Discovery, Setup Queue), drafts prospectuses (`j.py new`), and watches levels (`watcher.py`). But the operator still has to manually fill a prospectus and execute the paper trade. The 20-trade Phase-2 gate isn't filling because of that friction — every step exists but the chain takes effort to walk.
 
@@ -85,6 +91,8 @@ Action Rail's 4th slot now shows DATA: `✓/⚠/🛑` summary; the `📊 Data He
 ---
 
 ### 2026-06-09 — Standalone app (v2.0.0) — DESIGNED, DEFERRED
+Status: parked
+Re-surface: 2026-10-04
 
 Decision: not worth the cost right now. The current static-HTML + paste-command workflow is friction-y but functional; rebuilding it as a long-running local server costs 5-6 weeks of focused work for a UX win that's nice-to-have, not load-bearing.
 
@@ -120,18 +128,23 @@ Trigger to revisit: (a) friction with the manual-refresh workflow becomes a sust
 ---
 
 ### 2026-06-07 — Fundamentals-quality tag for Asian ADRs in the screener
+Status: parked
+Re-surface: 2026-08-05
 
 Currently the screener's Buffett Q+V tagging (💎/🏆/💰) is US-equity-only. ADRs of Asian quality compounders (TSM, BABA, JD, NIO, SE, GRAB, etc.) could carry an additional 🌏 ASIA-Q+V tag if their fundamentals pass the same gross-margin / ROE / FCF-yield thresholds. Would need an ADR universe additions to the screener input list.
 
 ---
 
 ### 2026-06-07 — Notes folder convention (this file)
+Status: shipped
 
 Adding `notes/` (ideas + decisions + learned) as a session-continuity layer. If this proves useful over a few weeks of real use, consider whether `journal/sessions/` (transcript dumps from past Claude sessions) is also worth adding for fully auditable continuity.
 
 ---
 
 ### Earlier ideas (no date — captured during initial build)
+Status: parked
+Re-surface: 2026-08-05
 
 - Optional Telegram alert when a Risk Sim run produces a 🟢 GO verdict on a watchlist name (low-friction "this just became actionable" ping)
 - Per-watchlist subdirectories so the operator can have a "core" watchlist and a "exploration" watchlist that the dashboard renders separately
