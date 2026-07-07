@@ -6,6 +6,21 @@ Newest at top. The agent reads only `## Hot` at session start (budget ≤150 lin
 
 ## Hot
 
+### 2026-07-06 — Reddit no-auth `.json` endpoints verified still dead; PullPush too throttled; RSS remains the only no-auth path
+tags: #tool:reddit-api #pattern:provider-verification #project:trading-advisor
+
+While investigating whether the `reddit-sentiment` skill could restore real engagement scores without full OAuth setup (RSS-sourced posts/comments carry `score=None`, so the RSS leg's engagement weighting is flat), live-probed every no-auth route from this machine: `www.reddit.com/r/stocks/search.json` — HTTP 403 with both a descriptive UA (`trading-advisor:reddit-sentiment:0.2.0 (by /u/anonymous)`) and a Chrome 126 browser UA; `old.reddit.com/.../search.json` — 403 (both UAs); plain listing `www.reddit.com/r/stocks/new.json` — 403; comment thread `www.reddit.com/comments/1up4hpi.json` — 403. PullPush.io (`api.pullpush.io/reddit/search/submission/`) — HTTP 429 on first call AND on a retry after 20s backoff, too throttled to serve as a pipeline leg. RSS `search.rss` (the skill's current path, used as control) — HTTP 200. **Conclusion:** the widely-blogged "`.json` suffix" trick is dead from this machine/IP as of 2026, consistent with the 2023 blocking already noted in the skill's SKILL.md; PullPush is not dependable. Two standing takeaways: (a) the only route to real engagement scores is the already-built OAuth path (`reddit_search_oauth`/`fetch_comments_oauth` in `reddit_sentiment.py`, functional since v1.10.0) — a Reddit "script"-type app registration at reddit.com/prefs/apps is instant and free (the 2-4 week review only applies to the commercial tier), it auto-activates once `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` land in the skill's `.env`; (b) 2026-era blog posts claiming the `.json` trick still works do not hold from this machine/IP — always re-probe with one curl before building on such claims. Operator decision (Kenson, 2026-07-06): keep the RSS status quo; this entry records the findings so `.json` isn't re-investigated from scratch.
+Enforced-by: — none yet (investigation-only, no code change)
+
+### 2026-07-07 — SUPERSEDES the 2026-06-26 entry below: dashboard now runs under launchd, GG-8-owned
+tags: #pattern:daemon-lifecycle #project:trading-advisor
+
+**Decision (Kenson, 2026-07-07):** dashboards across the fleet (net-worth, Trading Advisor, MooMoo) were starting inconsistently — some launchd, some manual/ad-hoc from whichever project created them. Kenson asked for all three standardized under launchd and handed to GG-8 (Hermes finance-analyst profile) for start/restart/status control through a single agent. This directly supersedes the 2026-06-26 entry's "manual launch is the standing preference" / "do NOT install a LaunchAgent without checking with Kenson first" — that check happened, and the answer is now yes.
+**What changed:** new service `ai.hermes.trading-advisor-dashboard` (`~/Library/LaunchAgents/`, RunAtLoad+KeepAlive+ThrottleInterval 10, hermes-agent venv python `-u` for unbuffered logs, `--lan`, logs on the internal drive at `~/Library/Logs/trading-advisor-dashboard.{log,error.log}`). Registry entry: `~/.hermes/shared/dashboards.json` (id `trading-advisor`). `Trading Dashboard.command` no longer starts its own server process — it ensures the launchd service is up (`launchctl kickstart`) and opens a browser tab; closing the window no longer stops the dashboard. `.claude/launch.json` port fixed 8787→8789 (was stale/wrong — collided with the net-worth dashboard's port). GG-8 controls it via `gg8_dashctl.py` (finance-analyst profile scripts): `status|start|restart|stop trading-advisor`.
+**Verified live 2026-07-07:** bootstrap → running, health 200; kill → KeepAlive restart ≤10s; bootout/bootstrap cycle → exactly one listener on 8789; full 427-test TA suite still green after the doc/launch.json edits.
+**Watchpoint:** the historical no-LaunchAgent reason in the archived 2026-06-26 entry is now doubly moot (SSD move + this explicit re-authorization) — do not resurrect it as a blocker for future dashboard-adjacent launchd work in this repo.
+Enforced-by: — none yet (operational verification only)
+
 ### 2026-07-06 — Building the cross-agent memory protocol: a frontmatter `project:` slug that differs from the folder name silently fragments cross-referencing
 tags: #pattern:canonical-identity #project:trading-advisor
 
@@ -97,7 +112,9 @@ Enforced-by: — none yet
 ### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
 tags: #pattern:daemon-lifecycle #project:trading-advisor
 
-**Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8787**. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused.
+**SUPERSEDED 2026-07-07 — see the entry above.** Kept for history only.
+
+**Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8789** [corrected 2026-07-07 — port was 8789 all along, this note had a stale 8787]. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused.
 
 **How to launch:** double-click **`Trading Dashboard.command`** in the project root:
 ```sh
@@ -107,7 +124,7 @@ exec /usr/bin/env python3 ".claude/skills/dashboard/server.py" --lan --open
 
 **Do NOT install a LaunchAgent for autostart** without checking with Kenson first — manual launch is the standing preference. The historical reason why (a launchd/TCC failure mode, no longer a live constraint since the 2026-06-29 SSD move) is kept as reference in `notes/learned-archive.md`.
 
-**Verify after a manual launch:** `curl -sS -o /dev/null -w "%{http_code}\n" http://100.71.94.40:8787/` should return `200`. If `000`, either the dashboard isn't running or `--lan` got dropped — check `Trading Dashboard.command` first.
+**Verify after a manual launch:** `curl -sS -o /dev/null -w "%{http_code}\n" http://100.71.94.40:8789/` should return `200`. If `000`, either the dashboard isn't running or `--lan` got dropped — check `Trading Dashboard.command` first.
 Enforced-by: — none yet
 
 ### 2026-06-25 — Data builds need system `python3`, NOT `.venv-playwright` (pandas/yfinance)

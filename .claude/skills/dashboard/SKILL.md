@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Build a self-contained HTML trading dashboard at <project_root>/dashboard.html that consolidates all wired data sources (FRED macro regime, crypto regime, halt-window timeline, watchlist with live technicals/status, journal tail) into one decision-shaping surface. Use when the user wants to view their full trading state at a glance, refresh their dashboard, or audit which names on the watchlist are Phase 1-eligible. The dashboard is static HTML — refresh by re-running the script. Optionally, server.py serves it at localhost:8787 with refresh buttons + watchlist/journal forms for terminal-free operation.
+description: Build a self-contained HTML trading dashboard at <project_root>/dashboard.html that consolidates all wired data sources (FRED macro regime, crypto regime, halt-window timeline, watchlist with live technicals/status, journal tail) into one decision-shaping surface. Use when the user wants to view their full trading state at a glance, refresh their dashboard, or audit which names on the watchlist are Phase 1-eligible. The dashboard is static HTML — refresh by re-running the script. Optionally, server.py serves it at localhost:8789 with refresh buttons + watchlist/journal forms for terminal-free operation.
 ---
 
 # Dashboard Skill
@@ -70,7 +70,7 @@ Run from project root. The script logs progress through 8 phases and writes `das
 
 ## Control server (optional, terminal-free mode)
 
-`server.py` (same directory, stdlib-only) serves `dashboard.html` at `http://localhost:8787` and injects a control bar at serve time — `dashboard.py` and the generated HTML are untouched. Launch by double-clicking **`Trading Dashboard.command`** in the project root, or:
+`server.py` (same directory, stdlib-only) serves `dashboard.html` at `http://localhost:8789` and injects a control bar at serve time — `dashboard.py` and the generated HTML are untouched. As of 2026-07-07 this runs under launchd as `ai.hermes.trading-advisor-dashboard` (RunAtLoad + KeepAlive, GG-8-owned per `~/.hermes/shared/dashboards.json`) instead of being started per-session — double-clicking **`Trading Dashboard.command`** in the project root now just ensures that service is up and opens a browser tab. GG-8 can also start/stop/restart it via `gg8_dashctl.py` (finance-analyst profile scripts). For manual/ad-hoc runs outside the service:
 
 ```
 python3 .claude/skills/dashboard/server.py --open
@@ -83,7 +83,7 @@ What the control bar does:
 - **Watchlist form** — wraps `wl.py add/remove/update --yes` (removal reason still required, per doctrine). On success, queues a cache-friendly dashboard rebuild.
 - **Journal form** — wraps `j.py live/update/close --yes`, plus a "List entries" view. Also queues a rebuild on success.
 
-The server binds to 127.0.0.1 only, runs one job at a time, and dies with the terminal/launcher window — nothing persists in the background. Source-of-truth files are still only written by the existing CLIs.
+The server binds dual-stack (`--lan`) so it's reachable on the LAN/Tailscale, not just loopback, and runs one job at a time. Under the launchd service it persists across terminal/launcher sessions (KeepAlive-supervised); a bare manual `python3 server.py` run still dies with its terminal as before. Source-of-truth files are still only written by the existing CLIs.
 
 ## Companion tooling (same directory)
 

@@ -22,7 +22,7 @@ Do NOT trigger for:
 
 The doctrine's §4 confluence has technicals + fundamentals + news (professional) + positioning. Retail forum sentiment is a **distinct signal category** — most useful as a **contrarian filter**, not an additive bull signal. Extreme retail bullishness alongside extended technicals is a fade signal; extreme retail bearishness with a constructive P1 setup is a capitulation-buy signal. Mid-range sentiment is no-op (most names land here, which is correct).
 
-Reddit's JSON endpoints are free and unauthenticated for read access at retail-research scale. No API key needed. Polite User-Agent + sub-second delay between requests = no rate-limit issues observed.
+This skill uses Reddit's OAuth API when `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` are configured (real per-post/per-comment `score` values, full engagement weighting) and falls back to Reddit's public RSS feed (`search.rss`) when they aren't. RSS carries no scores — posts/comments come back with `score=None`, so the RSS leg's engagement weighting is flat (mention count + velocity only, no upvote-based ranking).
 
 This is the **raw fetcher**. It captures posts + metadata but does NOT score sentiment yet. LLM scoring is a separate layer (`lib/sentiment/llm_score.py`, built next) that consumes this cache and produces the bull/bear/neutral classifications. Splitting the layers means we can re-score without re-fetching.
 
@@ -31,6 +31,8 @@ This is the **raw fetcher**. It captures posts + metadata but does NOT score sen
 Reddit OAuth API: `https://oauth.reddit.com/r/{sub}/search?q={query}&restrict_sr=1&t=week&sort=new&limit=25` with a Bearer token from `client_credentials` grant.
 
 **Why OAuth, not public JSON:** As of 2023, Reddit returns HTTP 403 to all unauthenticated requests to `www.reddit.com/*.json`, regardless of User-Agent. OAuth (application-only, no user login required) is now the only path. Free tier is 100 QPM — far more than we need at ~20-30 tickers per refresh.
+
+**Re-verified 2026-07-06** (live probes from this machine, prompted by 2026-era blog posts claiming the `.json`-suffix trick still works): every `.json` shape tested returned HTTP 403 under both a descriptive UA (`trading-advisor:reddit-sentiment:0.2.0 (by /u/anonymous)`) and a Chrome 126 browser UA, on both `www.reddit.com` and `old.reddit.com` — search (`/r/stocks/search.json`), plain subreddit listing (`/r/stocks/new.json`), and a direct comment thread (`/comments/{id}.json`). PullPush.io (`api.pullpush.io/reddit/search/submission/`), sometimes cited as a scrape-friendly mirror, returned HTTP 429 on the first call and again after a 20s backoff retry — too throttled to serve as a pipeline leg. `search.rss` (the skill's current fallback path) returned HTTP 200 in the same session, confirming it as the only viable no-auth route. Before re-investigating scraping routes, re-run a single `curl -A '<UA>' https://www.reddit.com/r/stocks/new.json` — if that's still 403, nothing downstream will work.
 
 ## One-time setup (5 minutes)
 

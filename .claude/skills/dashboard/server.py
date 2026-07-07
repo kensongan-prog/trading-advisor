@@ -2,7 +2,7 @@
 """
 server.py — local control server for the trading dashboard.
 
-Serves dashboard.html at http://localhost:8787 with an injected control bar
+Serves dashboard.html at http://localhost:8789 with an injected control bar
 (refresh buttons, watchlist + journal forms, job log) so day-to-day data
 management needs no terminal. All actions shell out to the existing CLIs
 (dashboard.py, wl.py, j.py) — no logic is duplicated here.
@@ -15,7 +15,7 @@ Refresh policy:
     button press — free-tier LLM scoring can 429 and should be watched.
 
 Usage:
-  python3 server.py [--port 8787] [--open]
+  python3 server.py [--port 8789] [--open]
 """
 
 import argparse
@@ -711,7 +711,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--port", type=int, default=8789)
     ap.add_argument("--open", action="store_true", help="Open browser after starting")
     ap.add_argument("--lan", action="store_true",
                     help="Bind to 0.0.0.0 so phones/tablets on the same WiFi can view the dashboard. "

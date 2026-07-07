@@ -6488,11 +6488,11 @@ window.TA_FINNHUB_KEY = {json.dumps(os.environ.get("FINNHUB_API_KEY") or "")};
           + 'Open the live dashboard instead:\\n'
           + '  1. start the server — double-click "Trading Dashboard.command"\\n'
           + '     (or run: python3 .claude/skills/dashboard/server.py --lan)\\n'
-          + '  2. open  http://localhost:8787';
+          + '  2. open  http://localhost:8789';
   if(!window.taRefresh)       window.taRefresh       = function(){{ alert(MSG); }};
   if(!window.taRefreshSource) window.taRefreshSource = function(){{ alert(MSG); }};
   var bar = document.createElement('div');
-  bar.textContent = '⚠ Static snapshot — open http://localhost:8787 for live data + working refresh buttons';
+  bar.textContent = '⚠ Static snapshot — open http://localhost:8789 for live data + working refresh buttons';
   bar.style.cssText = 'position:sticky;top:0;z-index:99999;background:#3a2e12;color:#f5d98a;'
     + 'border-bottom:1px solid #5a4a1f;padding:6px 14px;text-align:center;'
     + 'font:12px/1.4 -apple-system,system-ui,sans-serif;';

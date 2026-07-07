@@ -3,7 +3,7 @@
 
 Usage: python3 .claude/skills/dashboard/snap.py [url] [out_dir]
 
-Defaults to http://localhost:8787/ and ./snaps/. Produces:
+Defaults to http://localhost:8789/ and ./snaps/. Produces:
   - fold.png       : 1440×900 above-the-fold (laptop viewport)
   - full.png       : full-page scroll capture
   - rail.png       : just the Action Rail
@@ -52,6 +52,6 @@ def snap(url: str, out: Path):
 
 
 if __name__ == "__main__":
-    url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8787/"
+    url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8789/"
     out = Path(sys.argv[2] if len(sys.argv) > 2 else "snaps")
     snap(url, out)
