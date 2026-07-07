@@ -80,8 +80,13 @@ FMP migrated their public endpoints from `/api/v3/` to `/stable/` in 2025. All s
 ---
 
 ### 2026-06-04 — Position sizing is operator-defined, not formula-dictated
-Re-evaluate: 2026-07-05 (overdue — the Risk Simulator has changed multiple times since this decision was recorded; re-confirm the "always pre-populated with max, editable" behavior still matches current UI before trusting it silently)
+Re-evaluate: 2026-10-05
 
 Doctrine §5 derives the *maximum permitted* size, not the obligatory size. Risk Simulator's Size field auto-prefills to the doctrine maximum but is editable — operators routinely down-size for correlation tax, lower conviction, or partial-fill plans.
 
 **Wrong abstraction we tried first:** "Empty field = use doctrine max, populated field = override." Three review agents (during `/simplify`) independently flagged this as the wrong altitude. Fixed in v1.1 by making the field always pre-populated with the max.
+
+**Re-confirmed 2026-07-07 (Kenson) — the decision stands; two clarifications from live-verifying the current v2.9.0+ Risk Simulator:**
+- Headline holds: `prefillFromTicker()` (`dashboard.py`) sets the Size field to the per-trade doctrine max on every ticker-select, and the field stays editable. No drift.
+- **The "empty = doctrine max" path was NOT removed — it is a deliberate defensive fallback.** `compute()` still falls back to `doctrineMaxShares` on a blank/invalid size, and the field's tooltip/placeholder ("auto = doctrine max") intentionally advertises it. So "Fixed in v1.1" above means always-prefill became the *primary* UX, not that empty-means-max was deleted. Operator: *"keep the empty-means-max path as a deliberate defensive fallback."*
+- **The prefilled max is the per-trade §5 cap only; it does NOT pre-subtract portfolio heat — intended.** The Heat gate independently checks `heat_used + risk ≤ heat_max` and renders `bad` when breached, so heat surfaces as a visible down-size prompt rather than being baked into the starting number. Operator: *"It is intended. This is not meant to be extremely rigid guardrails. Advisory more than mandatory."*
