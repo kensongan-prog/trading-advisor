@@ -103,28 +103,10 @@ tags: #provider:klsescreener #project:trading-advisor
 **2. KLSE *news* is ALREADY scraped programmatically by `news_glyph`, not the klse-news skill.** `us-news/news_glyph.py::refresh_klse` already scrapes `/v2/news/stock/{code}`. A standalone klse-news fetcher was built and then DELETED as redundant. **Recurring lesson: grep for the capability in the consuming module before building a fetcher** — the SKILL.md dir isn't the whole story.
 Enforced-by: tests/test_news_glyph_klse.py
 
-### 2026-06-29 — Project moved off `~/Documents` to the external SSD — corrects the 2026-06-26 entry below
+### 2026-06-29 — Project moved off `~/Documents` to the external SSD — corrects the 2026-06-26 entry (now in learned-archive.md)
 tags: #pattern:workspace-hygiene #project:trading-advisor
 
 The repo now lives at **`/Volumes/Mac Mini SSD/Projects/Claude/Trading Advisor`** (moved 2026-06-29). This corrects two now-stale claims: (1) "this folder isn't moving anytime soon" — it did move; the SSD must be mounted to reach the repo (and the vault). (2) The launchd `EX_CONFIG`/TCC trap documented below was specific to `~/Documents` (TCC-protected); the project is no longer there, so that failure mode no longer applies here — kept as general reference in `notes/learned-archive.md` (still true for any project under `~/Documents`/`~/Desktop`/`~/Downloads`). `/Volumes/…` external volumes aren't TCC-protected the same way, but a launchd job firing before the volume mounts would fail differently (path not found). Autostart remains unwanted regardless — manual launch is the standing preference.
-Enforced-by: — none yet
-
-### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
-tags: #pattern:daemon-lifecycle #project:trading-advisor
-
-**SUPERSEDED 2026-07-07 — see the entry above.** Kept for history only.
-
-**Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8789** [corrected 2026-07-07 — port was 8789 all along, this note had a stale 8787]. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused.
-
-**How to launch:** double-click **`Trading Dashboard.command`** in the project root:
-```sh
-exec /usr/bin/env python3 ".claude/skills/dashboard/server.py" --lan --open
-```
-`--lan` → dual-stack bind; `--open` → opens browser to localhost. Manual workflow only — close the Terminal window to stop the server.
-
-**Do NOT install a LaunchAgent for autostart** without checking with Kenson first — manual launch is the standing preference. The historical reason why (a launchd/TCC failure mode, no longer a live constraint since the 2026-06-29 SSD move) is kept as reference in `notes/learned-archive.md`.
-
-**Verify after a manual launch:** `curl -sS -o /dev/null -w "%{http_code}\n" http://100.71.94.40:8789/` should return `200`. If `000`, either the dashboard isn't running or `--lan` got dropped — check `Trading Dashboard.command` first.
 Enforced-by: — none yet
 
 ### 2026-06-25 — Data builds need system `python3`, NOT `.venv-playwright` (pandas/yfinance)

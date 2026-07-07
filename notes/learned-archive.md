@@ -4,6 +4,21 @@ Append-only overflow of `notes/learned.md` — grep target, never read at bootst
 
 ---
 
+### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
+> Archived 2026-07-07: SUPERSEDED by the 2026-07-07 "dashboard now runs under launchd, GG-8-owned" entry in `notes/learned.md`. The dashboard is now a launchd service (`ai.hermes.trading-advisor-dashboard`) started/monitored by GG-8, not a manual `Trading Dashboard.command` process — so the manual-launch instructions below are historical. Kept for the port-history (8787→8789) and the `--lan`/dual-stack rationale.
+tags: #pattern:daemon-lifecycle #project:trading-advisor
+
+**Decision (Kenson, 2026-06-26):** the dashboard does NOT need to auto-start on reboot. Manual start is fine. The only thing that must persist is the `--lan` flag, so every manual launch binds dual-stack (`::`) and is reachable on Tailscale at **http://100.71.94.40:8789** [corrected 2026-07-07 — port was 8789 all along, this note had a stale 8787]. Without `--lan` the server is loopback-only and the phone/iPad get connection-refused.
+
+**How to launch (historical):** double-click **`Trading Dashboard.command`** in the project root:
+```sh
+exec /usr/bin/env python3 ".claude/skills/dashboard/server.py" --lan --open
+```
+`--lan` → dual-stack bind; `--open` → opens browser to localhost. Manual workflow only — close the Terminal window to stop the server.
+
+**Verify after a manual launch:** `curl -sS -o /dev/null -w "%{http_code}\n" http://100.71.94.40:8789/` should return `200`. If `000`, either the dashboard isn't running or `--lan` got dropped.
+Enforced-by: — none yet (superseded)
+
 ### 2026-06-25 — klsescreener stock URL is `/v2/stocks/view/{code}`, not `/quote/`
 > Archived 2026-07-06: enforced-by-test.
 
