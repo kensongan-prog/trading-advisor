@@ -96,6 +96,9 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
+### In flight (2026-07-06)
+- **First paper trade staged, blocked on a MooMoo-side fix.** The AUPH prospectus (`journal/2026-06-03_AUPH.md`) is staged in MooMoo as a paper BUY (277 @ $15.70 limit, `approval_state: staged`, never submitted) — the first real end-to-end run of the TA↔MooMoo bridge. Blocked on a MooMoo (Codex) bug: SIMULATE orders were routing to the configured *real* account / an HK paper account instead of the per-market US paper account (acc 2506450); a work order was sent to Codex (see `notes/learned.md` Hot "moomoo paper accounts are per-market"). **Next step:** once Codex ships the account-routing fix, submit the staged order from the MooMoo dashboard → `broker-sync sync` should auto-flip this journal PROSPECTUS→LIVE (task M0). Nothing pending in the TA repo itself.
+
 **Carry-over watch-threads (still in flight after v2.0.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified. **2026-07-06 update:** no-auth `.json` and PullPush routes were probed live and are dead (403/429 across every shape/UA tested), so RSS stays the fallback until OAuth creds land.
 - **Reddit-comment scoring calibration watch.** Sub-point (c) the LLM relevance filter on comment off-topicness — addressed in v2.0.4 by adding a relevance gate to the classifier (works for HN, Reddit comments, and StockTwits). Sub-points (a) and (b) still require trade-outcome data to calibrate — deferred.
