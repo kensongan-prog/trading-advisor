@@ -1,9 +1,15 @@
 ---
 name: broker-sync
-description: TA-side Phase 2 of the Trading Advisor ↔ MooMoo bridge. Reads MooMoo's SIMULATE (paper) staged-order fills read-only via MOOMOO_ROOT and attributes them back into the correct journal entries — flips PROSPECTUS → LIVE on first fill, posts an Updates note on partial-fill growth, never auto-closes (win/loss classification is a human call). Idempotent; unmatched/ambiguous rows land in a review artifact instead of being silently dropped. REQUIRED before trusting journal state to reflect actual paper-broker fills once MooMoo staging is in use.
+description: DEPRECATED compatibility skill for the retired MooMoo-owned SIMULATE paper flow. MooMoo paper execution is disabled; Trading Advisor now uses manual paper journaling. Do not run this as part of the current workflow.
 ---
 
 # broker-sync — MooMoo paper fills → journal
+
+> **Deprecated 2026-07-14.** MooMoo no longer owns paper execution, and the
+> operator confirmed manual Trading Advisor paper journaling is sufficient.
+> This implementation remains only as historical compatibility code. Do not
+> run, schedule, or extend it unless a future architecture decision explicitly
+> introduces a new paper simulator contract.
 
 The feedback half of the Trading Advisor ↔ MooMoo bridge (see the vault note
 "Bridge Contract — Trading Advisor ↔ MooMoo" for the full cross-repo contract).

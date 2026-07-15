@@ -138,7 +138,10 @@ class TestRiskParams:
         journal("2026-06-11_CLSK", LIVE_TPL.format(ticker="CLSK"))
         journal("2026-05-01_A", "# A\n\n**Status:** CLOSED — win (+2.0R)\n")
         rp = portfolio.risk_params()
+        assert rp["equity_scope"] == "isolated_strategy_sleeve"
+        assert rp["strategy_sleeve_equity_usd"] == portfolio.ACCOUNT
         assert rp["account_equity_usd"] == portfolio.ACCOUNT
+        assert rp["heat_scope"] == "trading_advisor_live_journals"
         assert rp["max_risk_pct_per_trade"] == portfolio.RISK_PCT_PER_TRADE
         assert rp["heat_ceiling_usd"] == portfolio.HEAT_MAX
         assert rp["heat_ceiling_pct"] == pytest.approx(portfolio.HEAT_MAX / portfolio.ACCOUNT)
@@ -165,6 +168,8 @@ class TestRiskParams:
         assert result_path == out
         assert out.is_file()
         data = json.loads(out.read_text())
+        assert data["equity_scope"] == "isolated_strategy_sleeve"
+        assert data["strategy_sleeve_equity_usd"] == portfolio.ACCOUNT
         assert data["account_equity_usd"] == portfolio.ACCOUNT
         # No leftover temp file after the atomic replace.
         assert not out.with_suffix(".json.tmp").exists()

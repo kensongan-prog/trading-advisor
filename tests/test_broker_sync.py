@@ -289,6 +289,11 @@ class TestCliOrchestration:
     """cmd_sync / cmd_show themselves — confirm flow, state persistence, the
     parts build_plan/execute_plan tests above don't cover directly."""
 
+    def test_main_refuses_retired_workflow_without_explicit_legacy_override(self, monkeypatch, capsys):
+        monkeypatch.delenv(bs.LEGACY_ENABLE_ENV, raising=False)
+        assert bs.main() == 2
+        assert "deprecated" in capsys.readouterr().err
+
     def _patch_moomoo(self, monkeypatch, tmp_path, staged_rows):
         moomoo_dir = tmp_path / "moomoo_root" / "data" / "moomoo"
         moomoo_dir.mkdir(parents=True)

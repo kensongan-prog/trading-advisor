@@ -66,7 +66,7 @@ These live in `.claude/skills/dashboard/` alongside `dashboard.py` and are invok
 
 | Tool | Purpose |
 |---|---|
-| `server.py` | Local control server at `http://localhost:8787`. Serves `dashboard.html` with a control bar (Quick / Full refresh, Watchlist form, Journal form, watcher start/stop). **Per-panel fragment refresh** via `/api/panel/health` (v2.7.0 — re-render one panel in place, no reload). Hybrid auto-refresh: stale-by->12h triggers one quick refresh per session. `--lan` binds 0.0.0.0 for phone access (Tailscale-trusted networks). Launch via `Trading Dashboard.command` in project root. |
+| `server.py` | Local control server at `http://localhost:8789`, launchd-managed by GG-8. Serves `dashboard.html` with a control bar (Quick / Full refresh, Watchlist form, Journal form, watcher start/stop). **Per-panel fragment refresh** via `/api/panel/health` (v2.7.0 — re-render one panel in place, no reload). `/api/status` separates HTTP liveness from dashboard/data readiness (`ready`/`degraded`/`blocked`). Hybrid auto-refresh: stale-by->12h triggers one quick refresh per session. `--lan` binds 0.0.0.0 for phone access (Tailscale-trusted networks). `Trading Dashboard.command` ensures the managed service is up and opens it. |
 | `watcher.py` | Level/alert watcher — polls Finnhub during US market hours, fires macOS notifications on prospectus entry-trigger breaks, stop hits, TP1/TP2 touches, and watchlist names entering the Phase-1 band. Read-only and doctrine-clean: never trades, never writes journal. |
 | `setup_queue.py` | Turns Phase-1-band watchlist names into decision-ready prospectus drafts (ATR stop, 2R TP1, §5 size math) with one click via `j.py new`. Cuts friction from "P1-ready" to "logged paper trade." |
 | `portfolio.py` | Auto-derives portfolio heat + calibration metrics from the journal (source of truth). `j.py live` / `close` auto-regenerate `portfolio.md` — no hand-maintained drift. |
@@ -287,7 +287,7 @@ Each skill's `.env.template` shows the expected variable name.
 
 Open `AGENTS.md` and scroll to the bottom — the `USER CONFIG` block. Edit:
 
-- **Account size** (currently set to a placeholder)
+- **Strategy-sleeve equity** (currently set to a placeholder). This is an *isolated* sleeve dedicated to this system — deliberately NOT your brokerage account balance and NOT consolidated net worth. All heat and per-trade sizing derive only from TA LIVE journal entries inside this sleeve.
 - **Max risk per trade %** (doctrine default 2%)
 - **Max portfolio heat %** (doctrine default 6%)
 - **Drawdown circuit-breaker %** (doctrine default 15%)

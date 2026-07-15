@@ -27,6 +27,26 @@ class TestRefreshFlags:
         assert "--with-discovery" in server.FULL_FLAGS
 
 
+class TestDashboardReadiness:
+    def test_missing_dashboard_is_blocked(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(server, "DASHBOARD_HTML", tmp_path / "missing.html")
+        assert server.dashboard_readiness(now=100)["state"] == "blocked"
+
+    def test_source_flags_degrade_fresh_dashboard(self, tmp_path, monkeypatch):
+        path = tmp_path / "dashboard.html"
+        path.write_text('<div id="ta-health-data" data-stale="2" data-transient="0" data-permanent="0" data-server="2" data-agent="0"></div>')
+        monkeypatch.setattr(server, "DASHBOARD_HTML", path)
+        readiness = server.dashboard_readiness(now=path.stat().st_mtime)
+        assert readiness["state"] == "degraded"
+        assert readiness["source_counts"]["stale"] == 2
+
+    def test_fresh_dashboard_with_clean_sources_is_ready(self, tmp_path, monkeypatch):
+        path = tmp_path / "dashboard.html"
+        path.write_text('<div id="ta-health-data" data-stale="0" data-transient="0" data-permanent="0" data-server="0" data-agent="0"></div>')
+        monkeypatch.setattr(server, "DASHBOARD_HTML", path)
+        assert server.dashboard_readiness(now=path.stat().st_mtime)["state"] == "ready"
+
+
 class TestJobSemantics:
     @pytest.fixture(autouse=True)
     def _isolate_job_log(self, tmp_path, monkeypatch):

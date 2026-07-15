@@ -96,9 +96,6 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ## [Unreleased]
 
-### In flight (2026-07-06)
-- **First paper trade staged, blocked on a MooMoo-side fix.** The AUPH prospectus (`journal/2026-06-03_AUPH.md`) is staged in MooMoo as a paper BUY (277 @ $15.70 limit, `approval_state: staged`, never submitted) — the first real end-to-end run of the TA↔MooMoo bridge. Blocked on a MooMoo (Codex) bug: SIMULATE orders were routing to the configured *real* account / an HK paper account instead of the per-market US paper account (acc 2506450); a work order was sent to Codex (see `notes/learned.md` Hot "moomoo paper accounts are per-market"). **Next step:** once Codex ships the account-routing fix, submit the staged order from the MooMoo dashboard → `broker-sync sync` should auto-flip this journal PROSPECTUS→LIVE (task M0). Nothing pending in the TA repo itself.
-
 **Carry-over watch-threads (still in flight after v2.0.0):**
 - **Reddit OAuth upgrade pending.** Same status since v1.5.0 — RSS workaround running fine; OAuth path now ACTUALLY functions (v1.10.0 fixed the stub) so when `REDDIT_CLIENT_ID`/`SECRET` land in `.claude/skills/reddit-sentiment/.env` after Reddit's developer-app review (2-4 weeks total), per-comment upvote weighting auto-activates. Will cut as a PATCH once verified. **2026-07-06 update:** no-auth `.json` and PullPush routes were probed live and are dead (403/429 across every shape/UA tested), so RSS stays the fallback until OAuth creds land.
 - **Reddit-comment scoring calibration watch.** Sub-point (c) the LLM relevance filter on comment off-topicness — addressed in v2.0.4 by adding a relevance gate to the classifier (works for HN, Reddit comments, and StockTwits). Sub-points (a) and (b) still require trade-outcome data to calibrate — deferred.
@@ -107,6 +104,25 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+### Security
+
+---
+
+## [v2.10.0] — 2026-07-15
+
+**Theme: the broker bridge lands, the guardrails close, and paper trading comes home to TA.** Ships the full TA ↔ MooMoo bridge (Phases 0–4), the structural-quality guardrails (A+B), the analysis-certainty track (C1–C4), and Perf D — then re-scopes the architecture: MooMoo becomes a read-only broker monitor, paper trading is manual inside TA, and the $20,000 is now explicitly an isolated strategy sleeve.
+
+### Added
+- **Dashboard status now separates HTTP liveness from data readiness.** `/api/status` reports `ready`, `degraded`, or `blocked` based on the generated dashboard's presence, age, and data-health issues, allowing GG-8 to keep the process alive while honestly surfacing stale research inputs.
 - **Memory protocol (cross-agent retention/decay/promotion rules) added to AGENTS.md; learned.md gains a Hot/archive split.** See the vault's `Memory Protocol.md` and `Lessons — Cross-Project.md`.
 - **TA ↔ MooMoo bridge contract pinned (Phase 0 of the broker-bridge plan).** The MooMoo broker adapter (`Projects/Codex/MooMoo`) reads this repo's `watchlist.md` + `journal/*.md` to build trade intents — but nothing on this side guaranteed those formats stay parseable. New `tests/test_bridge_contract.py` (7 tests) mirrors MooMoo's parser regexes and pins the TA-side contract: every watchlist ticker bullet matches the bridge row pattern, the `j.py new` prospectus template carries every field MooMoo keys on (Action/structure, Entry-trigger/Stop-loss/TP1 table, Reference entry/Stop sizing lines, Max loss), a fresh stub is NOT detected as closed (empty Realized-R line), and the full `live → close` status-flip round-trip matches MooMoo's closed-detection. The cross-agent contract doc lives in the vault: "Bridge Contract — Trading Advisor ↔ MooMoo" (formats, gates, known gaps incl. the KLSE `_KL`-stem market-inference bug, and the Phase 0–4 bridge plan).
 - **Structural-quality risk flags (Guardrails Phase A).** A $0.17 penny stock with ~50% of its float sold short, beta 2.59, and zero analyst coverage (GPUS) went through the entire pipeline in a prior session with zero warnings anywhere — `wl.py add` validates existence only, and the Risk Simulator's gates are all technical/event/sentiment with no structural-quality check. New `quality_flags.py` module (dashboard skill dir) classifies every watchlist row against 6 equity flags (PENNY, LOW_MC, ILLIQUID, HIGH_SHORT, HIGH_BETA, NO_COVERAGE) and 2 crypto flags (LOW_MC_RANK, THIN_VOLUME), plus a 4-signal pump-and-dump composite (price spike + volume spike + EXTREME_BULL/FADE sentiment + thin structural quality — all four already ingested elsewhere). Every threshold field was already being fetched in the same API calls (yfinance `.info`, CoinGecko markets) — zero extra cost. Flags render as compact chips beside the ticker in all three watchlist tables (US/KLSE/crypto), with full explanations in the expanded-row detail. Warn-loudly-never-block: this is pure classification, nothing here blocks a trade. Live-verified: GPUS now shows 🪙🐜🎯🎢👻 (5 flags); SPY (a context gauge, never a trade candidate) correctly shows none — the analyst-coverage check would otherwise fire on every ETF, since none carry sell-side coverage; caught and fixed during verification, mirroring the existing `EARNINGS_SKIP_TICKERS` precedent. Regression tests `tests/test_quality_flags.py` (24 tests, incl. the real GPUS/AAPL numbers as fixtures).
@@ -119,12 +135,18 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 
 ### Changed
 
+- **Paper trading is now managed entirely inside Trading Advisor, by hand.** MooMoo no longer executes paper orders (its paper endpoints return `paper_trading_disabled` as of 2026-07-09), so a paper setup is now run with `j.py live --paper` → `update` → `close`, exactly as before but without any broker in the loop — portfolio heat and the 20-trade Phase-2 calibration still auto-derive from the journal. A true simulator is deliberately deferred until manual tracking proves insufficient. This keeps the founding doctrine intact: TA still never places a broker order.
+- The USD20,000 risk base is now explicitly an isolated Trading Advisor strategy sleeve. `risk_params.json` exports `equity_scope`, `strategy_sleeve_equity_usd`, and `heat_scope` while retaining `account_equity_usd` as a backward-compatible alias.
+- The read-only MooMoo dashboard panel now shows real broker positions and ledger context only; legacy SIMULATE intent and broker-sync review content is no longer part of the operator surface.
+
 ### Fixed
 
 ### Removed
 - **Dead `finnhub_client.upgrade_downgrade()` (Perf D2).** Verified live 2026-07-01: Finnhub's `/stock/upgrade-downgrade` returns HTTP 403 on the free tier (premium-gated). The function had zero call sites anywhere in the codebase — `news_glyph.py` already migrated to yfinance's `Ticker.upgrades_downgrades` (same output shape, so the rest of the pipeline stayed source-agnostic) in an earlier pass, but the dead Finnhub function and stale doc references (`finnhub/SKILL.md`, `news_glyph.py`'s header comment) were never cleaned up. Removed the function; corrected the docs to point at the actual yfinance-backed path. No behavior change — this was pure orphaned-code + doc-drift cleanup. **D1 (batching sentiment-LLM calls across tickers) evaluated and deliberately skipped:** the current classifier already batches multiple *messages* per ticker per call; batching multiple *tickers* into one call would require reworking the prompt into per-ticker segments, the response schema, and all 4 source processors (stocktwits/reddit/hn/klse) plus their orchestration — a real refactor for a payoff (fewer free-tier 429s) the existing dual-model fallback already mostly absorbs. The task's own stated alternative (lean on the manual `sentiment-inline` skill when automated scoring hits rate limits) covers the remaining gap without the refactor.
 
 ### Deprecated
+
+- The `broker-sync` skill is now historical compatibility code for the retired MooMoo SIMULATE flow. It is no longer part of the current paper workflow.
 
 ### Security
 

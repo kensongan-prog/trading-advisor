@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-broker_sync.py — TA-side Phase 2 of the Trading Advisor ↔ MooMoo bridge.
+broker_sync.py — deprecated compatibility implementation of the former
+TA-side Phase 2 Trading Advisor ↔ MooMoo SIMULATE bridge.
+
+MooMoo paper execution is disabled and manual TA paper journaling is the
+current workflow. The CLI refuses to run unless
+`TA_ENABLE_LEGACY_BROKER_SYNC=true` is set deliberately.
 
 Reads MooMoo's `staged_orders.json` (SIMULATE/paper only, read-only, via
 MOOMOO_ROOT) and attributes fills back into the correct journal entries via
@@ -33,7 +38,7 @@ Design (see notes/learned.md 2026-07-02 for the full rationale):
     filled_qty/approval_state per intent_id; a run that finds nothing new
     performs zero journal writes.
 
-Usage:
+Legacy maintenance only:
     python3 .claude/skills/broker-sync/broker_sync.py sync           # preview + confirm
     python3 .claude/skills/broker-sync/broker_sync.py sync --yes     # execute without prompting
     python3 .claude/skills/broker-sync/broker_sync.py show           # read-only: last sync state + review
@@ -53,6 +58,7 @@ PROJECT_ROOT = SKILLS_DIR.parent.parent
 STATE_DIR = PROJECT_ROOT / ".claude" / "cache" / "moomoo_sync"
 STATE_PATH = STATE_DIR / "sync_state.json"
 REVIEW_PATH = STATE_DIR / "review.json"
+LEGACY_ENABLE_ENV = "TA_ENABLE_LEGACY_BROKER_SYNC"
 
 sys.path.insert(0, str(SKILLS_DIR / "journal"))
 import j  # noqa: E402  — same-repo cross-skill import, mirrors j.py's own sync_portfolio() -> dashboard/portfolio.py
@@ -422,6 +428,14 @@ def cmd_show(args):
 
 
 def main():
+    if os.environ.get(LEGACY_ENABLE_ENV, "").strip().lower() != "true":
+        print(
+            "ERROR: broker-sync is deprecated because MooMoo paper execution is disabled. "
+            "Use Trading Advisor's manual journal lifecycle. Set "
+            f"{LEGACY_ENABLE_ENV}=true only for deliberate legacy-data maintenance.",
+            file=sys.stderr,
+        )
+        return 2
     ap = argparse.ArgumentParser(description="TA-side broker-sync: MooMoo paper fills -> journal.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

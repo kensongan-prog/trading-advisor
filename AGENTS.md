@@ -28,7 +28,7 @@ Then orient out loud with **three short bullets** (current version / most recent
 
 Full doctrine: `/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Memory Protocol.md` (read on demand). The rules that fire every session:
 
-**Bootstrap additions** (after learned.md/CHANGELOG/git/tests): read only the `## Hot` section of `notes/learned.md`; read the `## Hot` section of the vault's `Lessons — Cross-Project.md`; check this project's last row in the vault's `Sync Ledger.md` and flag in the orientation if it lags the repo.
+**Bootstrap additions** (after learned.md/CHANGELOG/git/tests): read `Memory Router.md`; read only the `## Hot` sections of `notes/learned.md` and the vault's `Lessons — Cross-Project.md`; check this project's latest `Sync Ledger — Generated.md` receipt and flag staleness. Use qmd `documents` and `cross-harness` only to discover the exact canonical source.
 
 **Capture (same session, before close):** burn ≥10 min or repeated failure → `notes/learned.md` Hot entry (anatomy: Symptom → Root cause → Fix → Validation → Watchpoint, plus a `tags:` line with `#tool:/#provider:/#pattern:/#project:` and `Enforced-by:`). Operator corrections → quote verbatim, dated. Non-obvious choices → `notes/decisions.md` with `Re-evaluate: <date>`. Deferred ideas → `notes/ideas.md` with `Status: parked` + `Re-surface: <date>`. Tool/harness/platform lessons that would bite any project → write directly to the vault's `Lessons — Cross-Project.md` + one pointer line here.
 
@@ -36,9 +36,9 @@ Full doctrine: `/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Memory 
 
 **Promotion:** a lesson seen in ≥2 projects, or any tool/platform-level lesson, moves to `Lessons — Cross-Project.md` (siblings become one-line pointers). A documented lesson that recurs anyway MUST become an enforced guard (test → assertion → doctor rule → doctrine rule).
 
-**End-of-session additions:** after the vault sync, run `python3 "/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/scripts/vault_index.py"` then the same path's `scripts/vault_doctor.py`; act on cheap WARNs; append one row to the vault's `Sync Ledger.md` (`date | project | agent | synced/skipped: reason | recalls`).
+**End-of-session additions:** write shared-vault changes through the locked memory-fabric writer; refresh the catalog; record one idempotent structured sync receipt; render `Sync Ledger — Generated.md`; run `vault_index.py`, `vault_doctor.py`, and memory-fabric health; act on cheap warnings. Legacy `Sync Ledger.md` is never a write target.
 
-**Recall:** before debugging a tool/provider error >5 min, grep `notes/learned*.md` and the vault's `Lessons — Cross-Project.md` by tag first; cite any entry you use and count it in the ledger row.
+**Recall:** before debugging a tool/provider error >5 min, search qmd across `documents` and `cross-harness`, then open the exact repo/vault source; cite any entry used and count it in the structured receipt.
 
 **Private memory is a scratch cache.** Anything durable must land in repo notes or the vault in the same session — Claude memory dirs and Codex auto-memory are never the only copy.
 
@@ -272,9 +272,9 @@ This section is the point. Returns are a byproduct of surviving and compounding.
 - **Reality anchor:** Targeting 5–10x in a single year requires bets where total
   loss is the base case. Do not construct portfolios that *need* that to work.
   Optimize for risk-adjusted compounding, not for hitting a hero number.
-- **Risk per trade:** Default max **1–2% of account equity** at risk per
+- **Risk per trade:** Default max **1–2% of the configured strategy-sleeve equity** at risk per
   position (distance from entry to SL × size). Never exceed a user-set ceiling.
-- **Position sizing is derived, not guessed:** size = (account × risk%) ÷
+- **Position sizing is derived, not guessed:** size = (strategy sleeve × risk%) ÷
   (entry − stop). Show this math every time.
 - **Portfolio heat:** total simultaneous risk across all open positions capped
   (default 6%). Account for correlation — five tech longs is one bet.
@@ -387,8 +387,10 @@ No hype, no hedging-everything mush, no false precision. When the honest answer
 is "unclear" or "no edge here," say it plainly. Your credibility is the product.
 
 ---
-USER CONFIG (set 2026-06-03):
-- Account size: **$20,000** (set 2026-06-03; override anytime)
+USER CONFIG (confirmed 2026-07-14):
+- Isolated Trading Advisor strategy sleeve: **$20,000**. This is deliberately
+  separate from Moomoo brokerage equity and consolidated net worth. TA heat and
+  per-trade risk apply only to TA LIVE journal entries inside this sleeve.
 
 PHASED RAMP (set 2026-06-03):
 The doctrine is designed for an experienced operator running the full structure
@@ -411,7 +413,7 @@ on logged-trade count + realized expectancy, NOT on calendar time or vibes.
 
 - **Demotion rule**: if the trailing 20 trades show negative expectancy or any drawdown circuit-breaker trip → demote one phase. Earn the next phase back the same way you earned it the first time.
 
-**Cross-repo doctrine alignment (Bridge Phase 4, set 2026-07-02):** this project has a companion broker adapter, MooMoo (`Projects/Codex/MooMoo`), that stages and can execute real-money orders. **`MOOMOO_LIVE_TRADING_ENABLED=true` must require the SAME 20-trade paper-calibration gate above (≥20 closed trades, ≥0R cumulative) to have passed — one unified ramp, not a separately-invented criterion for real-money execution.** `portfolio.py sync` (also triggered by every `j.py live`/`update`/`close`) writes `risk_params.json` at the repo root — a machine-readable export of account equity, the 2%/6% caps, and this gate's live pass/fail state (`live_trading_unlock_eligible`) — which MooMoo reads read-only via its existing `TRADING_ADVISOR_ROOT`, the same bridge pattern as `watchlist.md`/`journal/*.md`. Full field-by-field contract: vault note "Bridge Contract — Trading Advisor ↔ MooMoo". Crypto stays out of this bridge (MooMoo's Malaysia brokerage has no crypto rails).
+**Cross-repo doctrine alignment (Bridge Phase 4, updated 2026-07-14):** this project has a companion broker monitor, MooMoo (`Projects/Codex/MooMoo`). MooMoo paper execution is disabled; manual paper journaling in TA is sufficient for now. **Any future `MOOMOO_LIVE_TRADING_ENABLED=true` path must require the SAME 20-trade paper-calibration gate above (≥20 closed trades, ≥0R cumulative) to have passed — one unified ramp, not a separately-invented criterion for real-money execution.** `portfolio.py sync` writes `risk_params.json` with `equity_scope=isolated_strategy_sleeve`, the $20,000 sleeve, TA-journal heat, the 2%/6% caps, and `live_trading_unlock_eligible`. Existing `account_equity_usd` is a compatibility field whose value means strategy-sleeve equity, never brokerage or consolidated net-worth equity. Crypto, SportsBet, and Codex Trader stay outside this bridge and outside TA heat.
 - Max risk per trade: **2%**   | Max portfolio heat: **6%**
 - Drawdown circuit-breaker: **15%** from peak equity
 - Instruments in scope:
@@ -502,3 +504,28 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+<!-- memory-router:start -->
+## Federated memory router
+
+Before relying on durable context, read `/Volumes/Mac Mini SSD/Projects/Vaults/Claude Codex Vault/Memory Router.md`. Use the hot/private memory
+only as a routing clue, search local qmd collections `documents` and
+`cross-harness`, then open and cite the exact canonical note or repository file.
+Repositories own project truth; the Documents Obsidian vault owns fleet
+operations/personal context/chronology; the Claude Codex Vault owns project and
+cross-harness knowledge/doctrine; live files own exact runtime state.
+
+Write only to the canonical owner. Shared vault writes must use `/Users/aiagent/.hermes/shared/memory-fabric/bin/memory_fabric.py` with
+a per-note lock, an immediately observed expected hash, and a unique event ID.
+A stale-hash failure must be reconciled, never overwritten. qmd is local-only
+discovery and never a source of truth. Private/compact memory is a fallback
+cache and never the only durable copy.
+
+At a fresh project session, also read only `notes/learned.md` `## Hot`, the
+cross-project Lessons `## Hot`, and the project's latest `Sync Ledger —
+Generated` receipt. At close, apply the capture/promotion rules in `Memory
+Protocol.md`, write through the locked writer, refresh the catalog, record one
+idempotent structured sync receipt, render the generated ledger, regenerate the
+vault index, and run both vault-doctor and memory-fabric health checks. The old
+`Sync Ledger.md` is historical compatibility evidence, never a write target.
+<!-- memory-router:end -->

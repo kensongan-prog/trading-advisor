@@ -3914,66 +3914,16 @@ def _classify_btfd_str_shared(chg, vol_ratio, rsi, asset_kind):
 
 
 def render_broker_panel_html(status):
-    """Read-only 'Broker (MooMoo)' panel (Bridge Phase 3). `status` is the dict
-    from moomoo_status.collect_broker_status(). No order controls, ever — see
-    the vault note "Bridge Contract — Trading Advisor ↔ MooMoo": execution
-    stays in MooMoo only. This is visibility, not a second control surface.
-    """
+    """Read-only real-account context from MooMoo Broker Monitor."""
     if status is None or not status.get("configured"):
         err = (status or {}).get("error")
         msg = (f"MOOMOO_ROOT not configured — set it in "
-               f".claude/skills/broker-sync/.env to see paper-fill sync status here."
+               f".claude/skills/broker-sync/.env or the environment to see real broker context here."
                + (f" ({html.escape(err)})" if err else ""))
         return (f'<div class="panel"><h2>🔗 Broker (MooMoo)</h2>'
                 f'<div class="dim">{msg}</div></div>')
 
-    sync = status["sync"]; review = status["review"]; real = status["real"]
-    intents = sync["intents"]
-    review_items = review["items"]
-
-    # Paper (SIMULATE) tracked intents table
-    if intents:
-        rows = []
-        for it in intents[:20]:
-            action = it.get("last_action") or "—"
-            action_cls = {"flip_live": "green", "update_partial": "green",
-                         "review": "yellow", "execution_failed": "red"}.get(action, "dim")
-            rows.append(
-                f'<tr><td><b>{html.escape(it["ticker"])}</b></td>'
-                f'<td class="{action_cls}">{html.escape(action)}</td>'
-                f'<td>{fmt_num(it.get("filled_qty"), 0)}</td>'
-                f'<td class="dim">{html.escape(it.get("broker_status") or "—")}</td>'
-                f'<td class="dim">{fmt_fetched(it.get("synced_at"))}</td></tr>')
-        intents_html = (
-            '<table><thead><tr><th>Ticker</th><th>Last action</th><th>Filled</th>'
-            '<th>Broker status</th><th>Synced</th></tr></thead><tbody>'
-            + "".join(rows) + '</tbody></table>')
-        if len(intents) > 20:
-            intents_html += f'<div class="dim" style="font-size:11px">…and {len(intents)-20} more</div>'
-    else:
-        intents_html = '<div class="dim">No SIMULATE staged orders tracked yet — run broker-sync after staging a paper order in MooMoo.</div>'
-
-    # Review items — same visual language as Data Health's problem rows
-    review_html = ""
-    if review_items:
-        rows_html = []
-        for it in review_items[:15]:
-            rows_html.append(
-                f'<div class="hl-row hl-err-transient">'
-                f'<span class="hl-row-t">{html.escape(str(it.get("code") or it.get("intent_id") or "—"))}</span>'
-                f'<span class="hl-row-s">{html.escape(str(it.get("review_reason") or it.get("action") or "review"))}</span>'
-                f'<span class="hl-row-d dim">{html.escape((it.get("note") or it.get("detail") or "")[:100])}</span>'
-                f'</div>')
-        if len(review_items) > 15:
-            rows_html.append(f'<div class="dim hl-more">… and {len(review_items)-15} more</div>')
-        review_html = (
-            f'<details class="hl-source" open><summary>'
-            f'<span class="hl-src-name">⚠ Needs review</span>'
-            f'<span class="hl-src-chips"><span class="hl-chip hl-err-transient">{len(review_items)}</span></span>'
-            f'</summary><div class="hl-rows">{"".join(rows_html)}</div></details>'
-        )
-
-    # Real broker context — collapsed by default, clearly separated from paper state
+    real = status["real"]
     real_positions = real.get("positions") or []
     pos_rows = "".join(
         f'<tr><td><b>{html.escape(p.get("code") or "—")}</b></td>'
@@ -3988,8 +3938,8 @@ def render_broker_panel_html(status):
     issue_note = (f' · <span class="yellow">{real["issue_count"]} ledger issue(s)</span>'
                   if real.get("issue_count") else "")
     real_html = f"""
-<details class="hl-source">
-  <summary><span class="hl-src-name">Real broker account — NOT paper trading, informational only</span></summary>
+<details class="hl-source" open>
+  <summary><span class="hl-src-name">Real broker account — read-only</span></summary>
   <div class="sub" style="margin-top:6px">
     {len(real_positions)} position(s) as of {fmt_fetched(real.get("positions_as_of"))} ·
     realized P&amp;L <b class="{real_pl_cls}">{fmt_money(real_pl)}</b>
@@ -3997,21 +3947,19 @@ def render_broker_panel_html(status):
     {fmt_money(real.get("total_fees"))} fees, {real.get("open_lot_count") if real.get("open_lot_count") is not None else "—"} open lots)
     as of {fmt_fetched(real.get("ledger_as_of"))}{issue_note}
   </div>
-  {'<table><thead><tr><th>Code</th><th>Name</th><th>Qty</th><th>Value</th><th>Unrealized</th></tr></thead><tbody>' + pos_rows + '</tbody></table>' if real_positions else ''}
+  {'<table><thead><tr><th>Code</th><th>Name</th><th>Qty</th><th>Value</th><th>Unrealized</th></tr></thead><tbody>' + pos_rows + '</tbody></table>' if real_positions else '<div class="dim" style="margin-top:8px">No real broker positions are available in the latest MooMoo snapshot.</div>'}
 </details>
 """
 
     return f"""
 <div class="panel">
   <h2>🔗 Broker (MooMoo)
-    <span class="dim" style="font-size:12px">— paper sync {fmt_fetched(sync.get("as_of"))}</span>
+    <span class="dim" style="font-size:12px">— real account context</span>
     <a href="http://localhost:8788" target="_blank" rel="noopener" class="ta-quote-btn"
-       title="Open the MooMoo dashboard (read-only cross-link — order controls live there, not here)">🔗 MooMoo dashboard</a>
+       title="Open the read-only MooMoo Broker Monitor">🔗 MooMoo Broker Monitor</a>
   </h2>
-  {intents_html}
-  {review_html}
   {real_html}
-  <div class="dim" style="font-size:10.5px;margin-top:6px">Read-only. Refresh with <code>python3 .claude/skills/broker-sync/broker_sync.py sync</code>. No order controls here by design — see the Bridge Contract vault note.</div>
+  <div class="dim" style="font-size:10.5px;margin-top:6px">Read-only broker facts. Manual paper journaling stays in Trading Advisor; legacy MooMoo SIMULATE data is intentionally not shown.</div>
 </div>
 """
 

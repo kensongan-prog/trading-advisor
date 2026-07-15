@@ -4,6 +4,15 @@ Append-only log of why we did things the way we did. Newest at top. Read this wh
 
 ---
 
+### 2026-07-14 — Strategy sleeve and manual paper journaling are deliberate boundaries
+Re-evaluate: 2026-10-14
+
+The configured USD20,000 is an isolated Trading Advisor strategy sleeve, not Moomoo brokerage equity and not consolidated net worth. Per-trade risk and heat derive only from TA LIVE journal entries in that sleeve. `risk_params.json` now makes this scope machine-readable while retaining `account_equity_usd` as a compatibility alias.
+
+Manual paper journaling is sufficient for now. MooMoo paper execution remains disabled, and TA's old SIMULATE `broker-sync` is deprecated compatibility code rather than an active workflow. A true simulator stays deferred until evidence shows manual lifecycle tracking is inadequate.
+
+SportsBet and Codex Trader are separate systems. They do not contribute to TA heat, its strategy sleeve, or finance-team consolidated risk.
+
 ### 2026-06-25 — Live-dashboard upgrade (v2.7.0): incremental, client-driven, no daemon
 Re-evaluate: 2026-10-04
 

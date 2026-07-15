@@ -34,8 +34,11 @@ DASH_CACHE = PROJECT_ROOT / ".claude" / "cache" / "dashboard"
 PORTFOLIO_MD = PROJECT_ROOT / "portfolio.md"
 RISK_PARAMS_JSON = PROJECT_ROOT / "risk_params.json"
 
-ACCOUNT = 20000.0
-HEAT_MAX = 1200.0  # 6% of account, per AGENTS.md USER CONFIG
+STRATEGY_SLEEVE_EQUITY_USD = 20000.0
+# Backward-compatible internal alias. This is an isolated TA strategy sleeve,
+# not the operator's brokerage balance or consolidated net worth.
+ACCOUNT = STRATEGY_SLEEVE_EQUITY_USD
+HEAT_MAX = 1200.0  # 6% of the strategy sleeve, per AGENTS.md USER CONFIG
 RISK_PCT_PER_TRADE = 0.02  # 2% max risk per trade, per AGENTS.md USER CONFIG
 PHASE2_GATE_TARGET = 20    # closed trades needed to exit Phase 1, per AGENTS.md Phased Ramp
 
@@ -190,6 +193,8 @@ def state():
     h = heat()
     return {
         "account": ACCOUNT,
+        "equity_scope": "isolated_strategy_sleeve",
+        "heat_scope": "trading_advisor_live_journals",
         "heat": h,
         "expectancy": expectancy(),
         "open_positions": open_positions(),
@@ -237,9 +242,10 @@ def write_portfolio_md():
         "",
         "## Portfolio heat",
         "",
+        f"- Strategy sleeve equity: **${ACCOUNT:,.0f}** (isolated from broker and consolidated net-worth equity)",
         f"- Total $ at risk across open positions: **${h['used']:.2f}**",
-        f"- Total % equity at risk: **{h['pct_equity']:.2f}%**",
-        f"- Heat ceiling (6% of ${ACCOUNT:,.0f}): **${h['max']:.0f}**",
+        f"- Total % sleeve equity at risk: **{h['pct_equity']:.2f}%**",
+        f"- Heat ceiling (6% of ${ACCOUNT:,.0f} strategy sleeve): **${h['max']:.0f}**",
         f"- Headroom: **${h['headroom']:.2f}**",
         "",
         "## Correlation notes",
@@ -277,8 +283,9 @@ def risk_params():
     MooMoo (a separate repo/process) reads read-only via its existing
     TRADING_ADVISOR_ROOT — same bridge pattern as watchlist.md/journal/*.md,
     just machine-readable. Lets MooMoo's staging validate against the
-    operator's ACTUAL current account size/caps instead of whatever number
-    was baked into a prospectus's prose at draft time, and gives it a single
+    operator's current TA strategy-sleeve size/caps instead of whatever number
+    was baked into a prospectus's prose at draft time. The sleeve is deliberately
+    isolated from brokerage and consolidated net-worth equity. This also gives a single
     boolean to gate MOOMOO_LIVE_TRADING_ENABLED on (doctrine alignment: real-
     money execution unlocks on the SAME 20-trade paper gate that unlocks
     TA's own Phase 2, not a separately-invented criterion).
@@ -287,7 +294,12 @@ def risk_params():
     h = heat()
     gate_passed = phase2_gate_passed()
     return {
+        "equity_scope": "isolated_strategy_sleeve",
+        "strategy_sleeve_equity_usd": ACCOUNT,
+        # Compatibility alias retained for existing MooMoo readers. Semantically
+        # this is strategy-sleeve equity, not whole-account equity.
         "account_equity_usd": ACCOUNT,
+        "heat_scope": "trading_advisor_live_journals",
         "max_risk_pct_per_trade": RISK_PCT_PER_TRADE,
         "heat_ceiling_pct": HEAT_MAX / ACCOUNT,
         "heat_ceiling_usd": HEAT_MAX,
@@ -318,7 +330,7 @@ def write_risk_params():
 def cmd_show():
     s = state()
     h, exp = s["heat"], s["expectancy"]
-    print(f"Account: ${ACCOUNT:,.0f}")
+    print(f"Strategy sleeve: ${ACCOUNT:,.0f}")
     print(f"Heat: ${h['used']:.2f} / ${h['max']:.0f} used ({h['pct_equity']:.2f}% equity), "
           f"headroom ${h['headroom']:.2f}, {h['n_positions']} open position(s)")
     if s["correlation_note"]:

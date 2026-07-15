@@ -26,6 +26,7 @@ import sys
 import threading
 import time
 import webbrowser
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -55,6 +56,29 @@ J_PY = SKILLS_DIR / "journal" / "j.py"
 LAST_JOB_LOG = PROJECT_ROOT / ".claude" / "cache" / "dashboard" / "last_job.log"  # persisted job output for post-mortem
 
 AUTO_REFRESH_AGE_H = 12  # quick-refresh auto-fires when dashboard.html is older
+
+
+def dashboard_readiness(now=None):
+    now = time.time() if now is None else now
+    if not DASHBOARD_HTML.is_file():
+        return {"state": "blocked", "ready": False, "blocking": ["dashboard_html"], "stale": []}
+    age_hours = max(0.0, (now - DASHBOARD_HTML.stat().st_mtime) / 3600.0)
+    html = DASHBOARD_HTML.read_text(encoding="utf-8", errors="ignore")
+    match = re.search(
+        r'id="ta-health-data"[^>]*data-stale="(\d+)"[^>]*data-transient="(\d+)"[^>]*data-permanent="(\d+)"[^>]*data-server="(\d+)"[^>]*data-agent="(\d+)"',
+        html,
+    )
+    counts = {"stale": 0, "transient": 0, "permanent": 0, "server": 0, "agent": 0}
+    if match:
+        counts = dict(zip(counts, (int(value) for value in match.groups())))
+    stale = []
+    if age_hours > AUTO_REFRESH_AGE_H:
+        stale.append("dashboard_html")
+    if sum(counts.values()):
+        stale.append("data_sources")
+    state = "degraded" if stale else "ready"
+    return {"state": state, "ready": state == "ready", "blocking": [], "stale": stale,
+            "dashboard_age_hours": round(age_hours, 1), "source_counts": counts}
 
 # Quick = stale-driven: inspects the Data Health panel state at build time and
 # refreshes exactly what is flagged (stale/transient/missing), skipping fresh
@@ -564,7 +588,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/status":
             self._json({"job": JOB.status(),
                         "watcher": WATCHER.status(),
-                        "dashboard_mtime": DASHBOARD_HTML.stat().st_mtime if DASHBOARD_HTML.is_file() else 0})
+                        "dashboard_mtime": DASHBOARD_HTML.stat().st_mtime if DASHBOARD_HTML.is_file() else 0,
+                        "readiness": dashboard_readiness()})
         elif self.path == "/api/journal/list":
             rc, out = run_cli([sys.executable, str(J_PY), "list"])
             self._json({"ok": rc == 0, "rc": rc, "output": out})
