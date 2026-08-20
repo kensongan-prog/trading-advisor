@@ -4,6 +4,36 @@ Parking lot. Newest at top. **Do not act on these without explicit operator go-a
 
 ---
 
+### 2026-07-29 — last30days shadow comparison against current research pulls
+Status: shipped (assessment completed 2026-08-20; no cutover)
+
+Run a bounded, **no-cookie** `last30days` comparison against Trading Advisor's
+current research and data pulls. Evaluate:
+
+- freshness and coverage
+- source provenance and precision
+- ticker / entity mapping accuracy
+- cost and cache-reuse behavior
+- transient, permanent, and no-coverage failure behavior
+
+Keep the experiment **supplement/shadow-only**: its output must not change
+recommendations, data-source precedence, dashboard inputs, or any runtime
+source configuration. Any source cutover requires a separate operator decision
+after the comparison results are reviewed.
+
+**Prerequisite state:** `last30days` first-run setup is complete with browser
+cookies disabled; preflight confirms no browser-store reads.
+
+**Outcome:** keep `last30days` supplement/shadow-only. It added a fresh,
+high-engagement Reddit pulse for SOL, but failed replacement-grade precision
+for AUPH, returned no coverage for 9431.KL, did not reuse retrieval work on an
+identical repeat, and reported X as available in diagnostics while omitting it
+from actual runs. See
+[`last30days-shadow-assessment-2026-08-20.md`](last30days-shadow-assessment-2026-08-20.md).
+No runtime, cache, recommendation, or data-source precedence changed.
+
+---
+
 ### 2026-06-11 — X (Twitter) as a 4th retail-sentiment leg
 Status: parked
 Re-surface: 2026-07-20
