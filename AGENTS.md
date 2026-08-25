@@ -528,9 +528,17 @@ cache and never the only durable copy.
 
 At a fresh project session, also read only `notes/learned.md` `## Hot`, the
 cross-project Lessons `## Hot`, and the project's latest `Sync Ledger —
-Generated` receipt. At close, apply the capture/promotion rules in `Memory
-Protocol.md`, write through the locked writer, refresh the catalog, record one
-idempotent structured sync receipt, render the generated ledger, regenerate the
-vault index, and run both vault-doctor and memory-fabric health checks. The old
-`Sync Ledger.md` is historical compatibility evidence, never a write target.
+Generated` receipt. Interactive harnesses (`codex`, `claude`) inspect their
+pending feed at bootstrap. After reading the exact routed sources, they may use
+`ack-reviewed` with the returned cursor, feed head, and review token as standing
+SOP without another operator approval; any cursor, head, or token mismatch must
+fail closed. At close, apply the capture/promotion rules in `Memory Protocol.md`,
+prepare exact hash-guarded note writes, then run `/Users/aiagent/.hermes/scripts/vault_freshness.py closeout
+--manifest <json>`. That resumable transaction binds the source repository SHA
+to exact vault path hashes, records one idempotent structured receipt, refreshes
+the generated ledger/index/qmd, runs Vault Doctor and Memory Fabric health, creates only an
+allowlisted local vault commit, and checkpoints its Git SHA. It fails closed on
+unrelated dirty or staged vault work and routes reconciliation to R2G2; never
+stage broadly or push automatically. The old `Sync Ledger.md` is historical
+compatibility evidence, never a write target.
 <!-- memory-router:end -->
