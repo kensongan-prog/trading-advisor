@@ -3,13 +3,10 @@
 sentiment_cache.py — LLM-score raw retail sentiment and produce composite per-ticker reads.
 
 Consumes the raw caches from reddit-sentiment and stocktwits-sentiment skills, sends
-untagged message bodies to OpenRouter for sentiment classification, combines into a
-composite output with the §4 contrarian-filter flag.
+untagged message bodies through the authenticated OpenAI/Codex route for sentiment
+classification, and combines them into a composite with the §4 contrarian-filter flag.
 
 Output: .claude/cache/sentiment/{TICKER}.json — canonical sentiment cache the dashboard reads.
-
-Setup:
-    .claude/skills/sentiment-cache/.env  with OPENROUTER_API_KEY=sk-or-v1-...
 
 Usage:
     python3 .claude/skills/sentiment-cache/sentiment_cache.py             # all watchlist
@@ -21,14 +18,20 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
-import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+from openai_codex_client import (
+    DEFAULT_MODEL,
+    PROVIDER as LLM_PROVIDER,
+    classify_json,
+    get_model,
+)
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -43,10 +46,6 @@ HACKERNEWS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "hn_sentiment"
 KLSE_COMMENTS_CACHE = PROJECT_ROOT / ".claude" / "cache" / "klse_sentiment"
 ENV_FILE = SCRIPT_DIR / ".env"
 
-DEFAULT_MODEL = "google/gemma-4-31b-it:free"
-FALLBACK_MODEL = "openai/gpt-oss-120b:free"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
 MAX_MESSAGES_PER_TICKER = 60  # cap to keep classification call snappy + within token budget
                               # (bumped 25→60 in v1.9.2 to accommodate Reddit
                               # comment-tree scoring: 10 posts × ~6 items each)
@@ -54,6 +53,7 @@ MAX_MESSAGES_PER_TICKER = 60  # cap to keep classification call snappy + within 
 
 # ── .env loader ───────────────────────────────────────────────────────────
 def load_env():
+    """Compatibility loader for sentiment-inline; never loads provider secrets."""
     if not ENV_FILE.exists():
         return
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
@@ -62,19 +62,15 @@ def load_env():
             continue
         k, _, v = line.partition("=")
         k = k.strip(); v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
+        if k in {"OPENAI_CODEX_MODEL", "HERMES_AGENT_ROOT"} and k not in os.environ:
             os.environ[k] = v
 
 
-def get_model():
-    return os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL)
-
-
-# ── OpenRouter classification ─────────────────────────────────────────────
+# ── OpenAI/Codex classification ──────────────────────────────────────────
 SYSTEM_PROMPT = (
     "You are a financial sentiment classifier. You receive a numbered list of short "
-    "messages about a single ticker, and return ONLY a JSON array, one object per "
-    "message in the same order. Each object: "
+    "messages about a single ticker, and return ONLY a JSON object with an 'items' "
+    "array containing one object per message in the same order. Each item: "
     '{"relevance": "primary"|"mention"|"none", "sentiment": "bullish"|"bearish"|"neutral", "conviction": 0.0-1.0}. '
     "relevance='primary' = the TICKER (or its commonly-known company name) is the main "
     "subject. relevance='mention' = the ticker appears but isn't the focus (peer mention, "
@@ -83,6 +79,27 @@ SYSTEM_PROMPT = (
     "Conviction reflects how clear the sentiment is, NOT how strong the directional view. "
     "Sarcasm, irony, hedge-language reduce conviction. No prose, no markdown."
 )
+
+SENTIMENT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "relevance": {"type": "string", "enum": ["primary", "mention", "none"]},
+                    "sentiment": {"type": "string", "enum": ["bullish", "bearish", "neutral"]},
+                    "conviction": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                },
+                "required": ["relevance", "sentiment", "conviction"],
+            },
+        }
+    },
+    "required": ["items"],
+}
 
 
 # Pulled from .claude/skills/us-news/news_glyph.py:COMPANY_LABELS. Sentiment lives
@@ -109,23 +126,6 @@ def _company_label(ticker, asset_class=None):
         return ticker
 
 
-def _is_transient_error(err_msg):
-    """Decide if an LLM error is worth retrying against the fallback model.
-    429 (rate limit) and 5xx (server-side) are transient; 4xx other than 429
-    (bad request, auth failure) and JSON parse failures are not — the fallback
-    would just produce the same error."""
-    if not err_msg:
-        return False
-    # urllib errors come back as "HTTP 429: ..." or "HTTP 503: ..."
-    for code in ("429", "500", "502", "503", "504"):
-        if f"HTTP {code}" in err_msg:
-            return True
-    # Network-level errors (timeout, connection reset) — worth a fallback attempt
-    if "URLError" in err_msg or "timeout" in err_msg.lower():
-        return True
-    return False
-
-
 def classify_messages(messages, ticker, model=None, timeout=60, asset_class=None):
     """Classify a list of message body strings. Returns (results, error_or_none, raw_response_str).
 
@@ -134,88 +134,41 @@ def classify_messages(messages, ticker, model=None, timeout=60, asset_class=None
     Each result now includes `relevance` (primary|mention|none) which the
     aggregator uses to downweight off-topic items.
 
-    On a 429/5xx from the primary model, automatically falls back to
-    FALLBACK_MODEL. The pattern mirrors news_glyph's _llm_score_batch fallback.
+    Provider failures return an error and preserve the caller's cache/stale
+    behavior. There is deliberately no cross-provider fallback.
     """
     if not messages:
         return [], None, ""
-    primary = model or get_model()
-    # Try primary; on a transient failure, retry against the fallback model.
-    out, err, raw = _classify_one_attempt(messages, ticker, primary, timeout, asset_class)
-    if err and primary != FALLBACK_MODEL and _is_transient_error(err):
-        # Brief pace + retry. The fallback uses a different provider so a
-        # 429 on Gemma doesn't preclude GPT-OSS-120B succeeding.
-        time.sleep(1.5)
-        out2, err2, raw2 = _classify_one_attempt(
-            messages, ticker, FALLBACK_MODEL, timeout, asset_class)
-        if not err2:
-            return out2, None, raw2
-        # Both failed — return the SECOND error (more recent) but mention both
-        return None, f"primary={primary} {err[:120]} ; fallback={FALLBACK_MODEL} {err2[:120]}", raw2 or raw
-    return out, err, raw
+    return _classify_one_attempt(
+        messages, ticker, model or get_model(), timeout, asset_class
+    )
 
 
 def _classify_one_attempt(messages, ticker, model, timeout, asset_class):
     """A single LLM call with the relevance-gated prompt. Returns the same
     shape as classify_messages."""
-    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if not api_key:
-        return None, f"OPENROUTER_API_KEY missing — set in {ENV_FILE}", ""
-
     subject = _company_label(ticker, asset_class)
 
     # Truncate each message body to 400 chars; trim collection to cap
     msgs = messages[:MAX_MESSAGES_PER_TICKER]
     numbered = "\n".join(f"{i+1}. {m[:400]}" for i, m in enumerate(msgs))
-    user = f"TICKER: {subject}\nClassify these {len(msgs)} messages. Return JSON only.\n{numbered}"
+    user = f"TICKER: {subject}\nClassify these {len(msgs)} messages into the items array. Return JSON only.\n{numbered}"
 
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500,
-    }).encode()
-
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/local/trading-advisor",  # OpenRouter etiquette
-            "X-Title": "trading-advisor sentiment scorer",
-        },
-        method="POST",
+    payload, err, content, _metadata = classify_json(
+        instructions=SYSTEM_PROMPT,
+        user_text=user,
+        schema=SENTIMENT_SCHEMA,
+        schema_name="ta_retail_sentiment",
+        model=model,
+        timeout=timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            d = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:300]}", ""
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}", ""
-
-    content = (d.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
-    # Strip optional markdown fence
-    if content.startswith("```"):
-        parts = content.split("```", 2)
-        content = parts[1].lstrip()
-        if content.startswith("json"):
-            content = content[4:].lstrip()
-        content = content.rsplit("```", 1)[0].strip()
-
-    try:
-        parsed = json.loads(content)
-    except Exception as e:
-        return None, f"JSON parse failed: {e}", content
-
+    if err:
+        return None, err, content
+    parsed = payload.get("items")
     if not isinstance(parsed, list):
-        return None, f"Expected list, got {type(parsed).__name__}", content
-    # v1.9.2: LLMs occasionally miscount items on larger batches (Gemma 4 31B
-    # returned 64 for a 60-item input). Tolerate length drift — truncate to the
+        return None, f"Expected items list, got {type(parsed).__name__}", content
+    # Models can occasionally miscount items on larger batches. Tolerate
+    # length drift — truncate to the
     # request length when the LLM over-produces; pad with neutrals when under.
     if len(parsed) != len(msgs):
         if len(parsed) > len(msgs):
@@ -702,7 +655,156 @@ def build_rationale(st, rd, composite, hn=None, klse=None):
 
 
 # ── Per-ticker orchestration ──────────────────────────────────────────────
-def score_ticker(ticker, model=None, verbose=True):
+def _classification_input_fingerprint(
+    ticker, model, asset_class, st_raw, rd_raw, hn_raw, klse_raw
+):
+    """Hash only fields that can change the classifier/composite output.
+
+    Fetch timestamps and other transport metadata are deliberately excluded so
+    a refresh that returns the same messages can reuse the paid LLM result.
+    """
+    def _stocktwits(raw):
+        if not raw:
+            return None
+        return {
+            "no_coverage": bool(raw.get("no_coverage")),
+            "messages": [
+                {
+                    "body": m.get("body"),
+                    "likes": m.get("likes"),
+                    "reshares": m.get("reshares"),
+                }
+                for m in (raw.get("messages") or [])
+            ],
+            "tagged_bull_pct": raw.get("tagged_bull_pct"),
+            "tagged_counts": raw.get("tagged_counts"),
+        }
+
+    def _reddit(raw):
+        if not raw:
+            return None
+        return {
+            "mention_count": raw.get("mention_count"),
+            "posts": [
+                {
+                    "title": p.get("title"),
+                    "selftext_excerpt": p.get("selftext_excerpt"),
+                    "score": p.get("score"),
+                    "num_comments": p.get("num_comments"),
+                    "source": p.get("source"),
+                    "top_comments": [
+                        {"body": c.get("body"), "score": c.get("score")}
+                        for c in (p.get("top_comments") or [])
+                    ],
+                }
+                for p in (raw.get("posts") or [])
+            ],
+        }
+
+    def _hackernews(raw):
+        if not raw:
+            return None
+        return {
+            "no_coverage": bool(raw.get("no_coverage")),
+            "error": raw.get("error"),
+            "stories": [
+                {
+                    "title": s.get("title"),
+                    "story_text_excerpt": s.get("story_text_excerpt"),
+                    "engagement": s.get("engagement"),
+                    "top_comments": [
+                        {"body": c.get("body"), "points": c.get("points")}
+                        for c in (s.get("top_comments") or [])
+                    ],
+                }
+                for s in (raw.get("stories") or [])
+            ],
+        }
+
+    def _klse(raw):
+        if not raw:
+            return None
+        return {
+            "no_coverage": bool(raw.get("no_coverage")),
+            "messages": [
+                {"body": m.get("body")}
+                for m in (raw.get("messages") or [])
+            ],
+        }
+
+    payload = {
+        "provider": LLM_PROVIDER,
+        "model": model,
+        "prompt": SYSTEM_PROMPT,
+        "max_messages": MAX_MESSAGES_PER_TICKER,
+        "ticker": ticker.upper(),
+        "subject": _company_label(ticker, asset_class),
+        "asset_class": asset_class,
+        "stocktwits": _stocktwits(st_raw),
+        "reddit": _reddit(rd_raw),
+        "hackernews": _hackernews(hn_raw),
+        "klse": _klse(klse_raw),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cache_contract_valid(cached, model):
+    if not isinstance(cached, dict):
+        return False
+    if cached.get("provider") != LLM_PROVIDER or cached.get("model") != model:
+        return False
+    sources = cached.get("sources")
+    if not isinstance(sources, dict) or not isinstance(cached.get("composite"), dict):
+        return False
+    # Provider failures must remain retryable; legitimate no-coverage has no error.
+    return not any((source or {}).get("error") for source in sources.values())
+
+
+def _reusable_cache(cached, model, input_fingerprint):
+    return (
+        _cache_contract_valid(cached, model)
+        and cached.get("input_fingerprint") == input_fingerprint
+    )
+
+
+def _parse_timestamp(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _can_adopt_fingerprint(cached, model, raw_inputs):
+    """Safely migrate a pre-fingerprint Codex cache without re-scoring.
+
+    Adoption is allowed only when every present raw input has a parseable fetch
+    timestamp no newer than the successful composite score.
+    """
+    if not _cache_contract_valid(cached, model) or cached.get("input_fingerprint"):
+        return False
+    scored_at = _parse_timestamp(cached.get("scored_at"))
+    if scored_at is None:
+        return False
+    saw_raw = False
+    for raw in raw_inputs:
+        if raw is None:
+            continue
+        saw_raw = True
+        fetched_at = _parse_timestamp(raw.get("fetched_at") or raw.get("_fetched_at"))
+        if fetched_at is None or fetched_at > scored_at:
+            return False
+    return saw_raw
+
+
+def score_ticker(ticker, model=None, verbose=True, force=False):
     model = model or get_model()
     st_raw = load_stocktwits(ticker)
     rd_raw = load_reddit(ticker)
@@ -733,6 +835,22 @@ def score_ticker(ticker, model=None, verbose=True):
         if raw is not None and "asset_class" not in raw:
             raw["asset_class"] = inferred_asset_class
 
+    input_fingerprint = _classification_input_fingerprint(
+        ticker, model, inferred_asset_class, st_raw, rd_raw, hn_raw, klse_raw
+    )
+    cached = load_cache(ticker)
+    if not force and _reusable_cache(cached, model, input_fingerprint):
+        if verbose:
+            print("  LLM input unchanged — reusing OpenAI/Codex score")
+        return cached
+    if not force and _can_adopt_fingerprint(
+        cached, model, (st_raw, rd_raw, hn_raw, klse_raw)
+    ):
+        cached["input_fingerprint"] = input_fingerprint
+        if verbose:
+            print("  LLM inputs predate cached score — adopting reuse fingerprint")
+        return cached
+
     st_summary, st_err = process_stocktwits(st_raw, model) if st_raw else (None, None)
     if st_err and verbose:
         print(f"  stocktwits LLM error: {st_err}")
@@ -755,7 +873,9 @@ def score_ticker(ticker, model=None, verbose=True):
         "ticker": ticker.upper(),
         "asset_class": asset_class,
         "scored_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "provider": LLM_PROVIDER,
         "model": model,
+        "input_fingerprint": input_fingerprint,
         "sources": {
             "stocktwits":  st_summary or {"present": False, "error": st_err},
             "reddit":      rd_summary or {"present": False, "error": rd_err},
@@ -800,21 +920,18 @@ def load_cache(ticker):
 
 # ── Commands ──────────────────────────────────────────────────────────────
 def cmd_check_auth():
-    print(f"ENV file: {ENV_FILE}  (exists: {ENV_FILE.exists()})")
-    print(f"OPENROUTER_API_KEY: {'set' if os.environ.get('OPENROUTER_API_KEY') else 'MISSING'}")
-    print(f"OPENROUTER_MODEL: {get_model()}")
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        return 1
+    print(f"Provider: {LLM_PROVIDER}")
+    print(f"Model: {get_model()}")
     # Tiny probe
     res, err, _ = classify_messages(["This stock is going to the moon!"], "TEST")
     if err:
         print(f"\nAUTH/PROBE FAILED: {err}")
         return 1
-    print(f"\nAUTH OK — probe returned: {res}")
+    print(f"\nAUTH OK — structured probe returned: {res}")
     return 0
 
 
-def cmd_score(tickers, model=None):
+def cmd_score(tickers, model=None, force=False):
     if not tickers:
         tickers = parse_watchlist()
         if not tickers:
@@ -827,7 +944,7 @@ def cmd_score(tickers, model=None):
     summary = []
     for i, t in enumerate(tickers, 1):
         print(f"[{i}/{len(tickers)}] {t}")
-        result = score_ticker(t, model=model, verbose=True)
+        result = score_ticker(t, model=model, verbose=True, force=force)
         save_cache(t, result)
         c = result["composite"]
         bs = f"{c['bull_score']:.0%}" if c['bull_score'] is not None else "—"
@@ -903,12 +1020,13 @@ def main():
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--clear", action="store_true")
     ap.add_argument("--check-auth", action="store_true")
-    ap.add_argument("--model", help="Override OPENROUTER_MODEL for this run")
+    ap.add_argument("--model", help="Override OPENAI_CODEX_MODEL for this run")
+    ap.add_argument("--force", action="store_true", help="Re-score even when classifier inputs are unchanged")
     args = ap.parse_args()
     if args.clear: return cmd_clear()
     if args.check_auth: return cmd_check_auth()
     if args.show: return cmd_show([t.upper() for t in args.tickers])
-    return cmd_score([t.upper() for t in args.tickers], model=args.model)
+    return cmd_score([t.upper() for t in args.tickers], model=args.model, force=args.force)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,17 @@ Newest at top. The agent reads only `## Hot` at session start (budget ≤150 lin
 
 ## Hot
 
+### 2026-08-25 — Sentiment provider boundaries must be enforced in code, not only stated in doctrine
+tags: #provider:openai-codex #pattern:provider-boundary #project:trading-advisor
+
+**Operator correction (verbatim):** “Your pending implementation explicitly routes through OpenRouter, conflicting with your standing instruction to use OpenAI-codex. It needs reconciliation in the TA project before committing.”
+**Symptom:** the pending retail/news classifiers still called OpenRouter even though the approved TA provider was OpenAI/Codex.
+**Root cause:** provider choice remained embedded independently in two classifiers, so prose-level policy could drift from active code.
+**Fix:** route both classifiers through one strict-schema `openai-codex` helper using the existing Hermes/Codex OAuth client; allow no cross-provider fallback and preserve stale cache on failure. Fingerprint exact retail message/engagement inputs so unchanged refreshes reuse successful scores; never reuse a prior provider error.
+**Validation:** focused provider/parser/reuse tests passed; bounded retail and news smokes returned schema-valid results; 26 affected composite caches were repaired and the 32 obsolete provider failures cleared. The initial changed-input cycle hit the wrapper's 300s cap after 15 names; after fingerprint migration, all 31 unchanged composites reused in ~0.1s with zero model calls. Final live health: 98%, 0 stale/transient/missing, 5 separate raw StockTwits 403s.
+**Watchpoint:** any active sentiment/news module that mentions an OpenRouter endpoint, key, model, or fallback is a regression, even if historical documentation still records the former design.
+Enforced-by: tests/test_openai_codex_client.py, tests/test_classifier_fallback.py, tests/test_news_glyph_llm_fallback.py
+
 ### 2026-07-06 — Dashboard "yfinance not installed" on every ticker = the server's python lacks yfinance/pandas (3rd interpreter to hit this class)
 tags: #tool:yfinance #pattern:interpreter-deps #project:trading-advisor #cross-agent:GG-8
 

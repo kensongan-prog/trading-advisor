@@ -220,13 +220,18 @@ Crypto = CoinDesk + Cointelegraph + Decrypt aggregate RSS, filtered by
 per-coin keyword (BTC/ETH/SOL/etc. — long-tail alts with no RSS coverage
 render ⚪ no-news, which is accurate degraded behavior).
 
-Sentiment scoring: **LLM-scored per item via OpenRouter free models** (Gemma 4 31B
-primary, GPT-OSS 120B fallback) — same key as `sentiment-cache`. The LLM also
+Sentiment scoring: **LLM-scored per item through the authenticated OpenAI/Codex
+route** (`openai-codex/gpt-5.6-luna`, low reasoning) — shared with
+`sentiment-cache`. The direct Responses client uses strict structured output and
+exposes no tools; there is no OpenRouter fallback. Provider or parse failures
+preserve the cache/stale result. The LLM also
 returns a `relevance` field (`primary` / `mention` / `none`) which solves the
 cross-attribution problem keyword scoring couldn't (e.g. a headline about Axon
 that lists KTOS in the body is correctly given `relevance=none, score=0.0`
 for KTOS). Per-item scores are cached forever — headlines don't change once
-published, so the OpenRouter spend is essentially zero after warmup.
+published, so model usage is limited to genuinely new items after warmup.
+Retail composites likewise fingerprint the exact message/engagement inputs and
+reuse a successful Codex score when a source refresh returns unchanged content.
 
 Refresh: `python3 .claude/skills/dashboard/dashboard.py --refresh-news-glyph`
 runs the full chain (fetch sources at hourly TTL → LLM-score truly-new items →

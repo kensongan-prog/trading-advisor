@@ -101,13 +101,18 @@ gh release create vX.Y --title "vX.Y — <theme>" --notes "<excerpt from changel
 - **Reddit-comment scoring calibration watch.** Sub-point (c) the LLM relevance filter on comment off-topicness — addressed in v2.0.4 by adding a relevance gate to the classifier (works for HN, Reddit comments, and StockTwits). Sub-points (a) and (b) still require trade-outcome data to calibrate — deferred.
 - **Threshold calibration watch.** A few weeks of operator use across changing market regimes to confirm sentiment 0.80/0.70 + alignment thresholds, plus BTFD/STR equity/crypto tiers.
 - **HN coverage + 1.2× source weight calibration watch.** Coverage half addressed in v2.0.2 (filter floor relaxed, RYDE skip). Source-weight (1.2×) tuning still requires trade-outcome data; deferred.
-- **News-glyph LLM scoring quality watch.** Tracking the Gemma 4 31B / GPT-OSS 120B free-tier models on edge cases (non-English KLSE headlines, sector roundups). Tracking 429s / fallback frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
+- **News-glyph LLM scoring quality watch.** Tracking the OpenAI/Codex Luna structured-output route on edge cases (non-English KLSE headlines, sector roundups) plus provider-failure frequency. *(KLSE non-English handling addressed in v2.0.1 — watch downgraded to: monitor for any new edge cases as watchlist evolves.)*
+
+### In flight
+
+The OpenAI/Codex provider reconciliation is implemented and runtime-validated; the next step is to monitor genuinely new retail/news items under ordinary refreshes before assigning a release version. The five remaining raw StockTwits HTTP 403 rows are a separate source-access issue and remain honestly degraded.
 
 ### Added
 
 ### Changed
 
 ### Fixed
+- **Retail and news sentiment scoring now uses the existing authenticated `openai-codex/gpt-5.6-luna` route at low reasoning.** Both classifiers call Hermes' supported Codex Responses client directly with strict JSON Schema and no tools, avoiding the generic agent wrapper's large prompt overhead. OpenRouter was removed from both active paths and is not a fallback; provider or parse failures preserve cache/stale output. Retail composites now fingerprint the exact message/engagement inputs, so an unchanged 31-ticker cycle reuses all successful scores with zero model calls instead of exceeding the refresh wrapper's 300-second bound. No trading, threshold, source-fetch, schedule, or execution behavior changed.
 
 ### Removed
 

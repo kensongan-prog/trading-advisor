@@ -1,120 +1,137 @@
-"""
-test_classifier_fallback.py — LLM fallback path in classify_messages.
+"""OpenAI/Codex provider and parser contract for retail sentiment."""
 
-Why these tests exist: v2.0.6 found that RGLD's StockTwits source was reported
-as "no source data" despite 30 messages being cached — the classifier hit a
-single 429 on the primary model (`gemma-4-31b-it:free`) and gave up without
-trying the fallback (`gpt-oss-120b:free`). The FALLBACK_MODEL constant was
-defined but never referenced anywhere. These tests pin the contract: any
-transient HTTP failure on the primary model triggers a retry on the fallback.
-"""
-import pytest
 from unittest.mock import patch
+
 import sentiment_cache as sc
 
 
-class TestTransientErrorClassifier:
-    """The _is_transient_error helper decides which errors get a retry."""
-
-    @pytest.mark.parametrize("err", [
-        "HTTP 429: Provider returned error rate limit",
-        "HTTP 500: internal server error",
-        "HTTP 502: bad gateway",
-        "HTTP 503: gemma-4-31b-it:free is temporarily rate-limited",
-        "HTTP 504: gateway timeout",
-        "URLError: connection refused",
-        "TimeoutError: connection timeout",
-    ])
-    def test_known_transient_returns_true(self, err):
-        assert sc._is_transient_error(err) is True
-
-    @pytest.mark.parametrize("err", [
-        "HTTP 401: unauthorized",
-        "HTTP 403: forbidden",
-        "HTTP 404: not found",
-        "JSON parse failed: Expecting value",
-        "Expected list, got dict",
-        "OPENROUTER_API_KEY missing",
-    ])
-    def test_non_transient_returns_false(self, err):
-        # Permanent failures — the fallback would produce the same error
-        assert sc._is_transient_error(err) is False
-
-    def test_empty_or_none_returns_false(self):
-        assert sc._is_transient_error("") is False
-        assert sc._is_transient_error(None) is False
+def _payload(items):
+    return {"items": items}, None, '{"items":[]}', {
+        "provider": "openai-codex",
+        "model": sc.DEFAULT_MODEL,
+    }
 
 
-class TestFallbackTriggers:
-    """classify_messages should retry the fallback model when primary fails
-    transiently, and NOT retry when the failure is permanent."""
+class TestParserSafety:
+    def test_structured_items_are_normalized(self):
+        result = [{"sentiment": "bullish", "conviction": 0.8, "relevance": "primary"}]
+        with patch.object(sc, "classify_json", return_value=_payload(result)) as mocked:
+            out, err, _raw = sc._classify_one_attempt(
+                ["bull case"], "TEST", sc.DEFAULT_MODEL, 1, None
+            )
+        assert err is None
+        assert out == result
+        kwargs = mocked.call_args.kwargs
+        assert kwargs["schema"] == sc.SENTIMENT_SCHEMA
+        assert kwargs["model"] == sc.DEFAULT_MODEL
 
-    def test_fallback_called_on_429(self):
-        """Primary 429 → fallback gets called, returns success."""
-        ok_result = ([{"sentiment": "bullish", "conviction": 1.0, "relevance": "primary"}],
-                     None, "raw-fallback-response")
-        err_result = (None, "HTTP 429: rate limited", "")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[err_result, ok_result]) as mock:
-            out, err, _raw = sc.classify_messages(["msg"], "TEST", model="gemma")
-            assert mock.call_count == 2
-            # First call was primary model
-            assert mock.call_args_list[0].args[2] == "gemma"
-            # Second call was the fallback
-            assert mock.call_args_list[1].args[2] == sc.FALLBACK_MODEL
-            assert err is None
-            assert out == ok_result[0]
+    def test_non_list_payload_is_reported_not_coerced(self):
+        payload = ({"items": "not a list"}, None, "raw", {})
+        with patch.object(sc, "classify_json", return_value=payload):
+            out, err, raw = sc._classify_one_attempt(
+                ["hedged case"], "TEST", sc.DEFAULT_MODEL, 1, None
+            )
+        assert out is None
+        assert "Expected items list" in err
+        assert raw == "raw"
 
-    def test_no_fallback_on_permanent_error(self):
-        """Primary 401 → no fallback, error returned directly."""
-        err_result = (None, "HTTP 401: unauthorized — bad API key", "")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[err_result]) as mock:
-            out, err, _raw = sc.classify_messages(["msg"], "TEST", model="gemma")
-            assert mock.call_count == 1
-            assert "HTTP 401" in err
 
-    def test_no_fallback_when_primary_already_is_fallback(self):
-        """Caller explicitly invoked the fallback model — don't loop."""
-        err_result = (None, "HTTP 429: rate limited", "")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[err_result]) as mock:
-            out, err, _raw = sc.classify_messages(["msg"], "TEST", model=sc.FALLBACK_MODEL)
-            assert mock.call_count == 1
-            assert "HTTP 429" in err
+class TestProviderSelection:
+    def test_openai_codex_luna_is_default(self):
+        assert sc.LLM_PROVIDER == "openai-codex"
+        assert sc.DEFAULT_MODEL == "gpt-5.6-luna"
 
-    def test_both_fail_reports_both_errors(self):
-        """Primary AND fallback both 429 → error mentions both attempts."""
-        err1 = (None, "HTTP 429: gemma rate limited", "")
-        err2 = (None, "HTTP 503: gpt-oss provider down", "")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[err1, err2]) as mock:
-            out, err, _raw = sc.classify_messages(["msg"], "TEST", model="gemma")
-            assert mock.call_count == 2
-            assert "primary=" in err
-            assert "fallback=" in err
-            assert "429" in err
-            assert "503" in err
-
-    def test_primary_success_skips_fallback(self):
-        """Primary returns clean → no fallback call."""
-        ok = ([{"sentiment": "neutral", "conviction": 0.5, "relevance": "primary"}], None, "raw")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[ok]) as mock:
+    def test_provider_error_is_not_rerouted(self):
+        failure = (None, "OpenAI/Codex request failed: HTTP 429", "", {})
+        with patch.object(sc, "classify_json", return_value=failure) as mocked:
             out, err, _raw = sc.classify_messages(["msg"], "TEST")
-            assert mock.call_count == 1
-            assert err is None
-
-    def test_no_retry_on_parse_failure(self):
-        """JSON parse error on primary → no fallback (would just fail again)."""
-        err = (None, "JSON parse failed: Expecting value at line 1", "garbage")
-        with patch.object(sc, "_classify_one_attempt", side_effect=[err]) as mock:
-            out, e, _raw = sc.classify_messages(["msg"], "TEST", model="gemma")
-            assert mock.call_count == 1
-            assert "JSON parse failed" in e
+        assert mocked.call_count == 1
+        assert out is None
+        assert "429" in err
 
 
 class TestEmptyInput:
-    """Empty message list short-circuits before any LLM call."""
-
     def test_empty_returns_immediately(self):
-        with patch.object(sc, "_classify_one_attempt") as mock:
+        with patch.object(sc, "_classify_one_attempt") as mocked:
             out, err, _raw = sc.classify_messages([], "TEST")
-            assert mock.call_count == 0
-            assert out == []
-            assert err is None
+        assert mocked.call_count == 0
+        assert out == []
+        assert err is None
+
+
+class TestClassifierInputCache:
+    def test_fingerprint_ignores_fetch_timestamp_but_tracks_message_changes(self):
+        raw = {
+            "ticker": "TEST",
+            "asset_class": "us_equity",
+            "fetched_at": "2026-08-25T00:00:00Z",
+            "messages": [{"body": "bull case", "likes": 2, "reshares": 0}],
+        }
+        fp1 = sc._classification_input_fingerprint(
+            "TEST", sc.DEFAULT_MODEL, "us_equity", raw, None, None, None
+        )
+        raw["fetched_at"] = "2026-08-25T12:00:00Z"
+        fp2 = sc._classification_input_fingerprint(
+            "TEST", sc.DEFAULT_MODEL, "us_equity", raw, None, None, None
+        )
+        raw["messages"][0]["body"] = "bear case"
+        fp3 = sc._classification_input_fingerprint(
+            "TEST", sc.DEFAULT_MODEL, "us_equity", raw, None, None, None
+        )
+        assert fp1 == fp2
+        assert fp2 != fp3
+
+    def test_unchanged_codex_input_reuses_cache_without_llm_call(self):
+        raw = {
+            "ticker": "TEST",
+            "asset_class": "us_equity",
+            "messages": [{"body": "bull case", "likes": 2, "reshares": 0}],
+        }
+        fingerprint = sc._classification_input_fingerprint(
+            "TEST", sc.DEFAULT_MODEL, "us_equity", raw, None, None, None
+        )
+        cached = {
+            "ticker": "TEST",
+            "provider": "openai-codex",
+            "model": sc.DEFAULT_MODEL,
+            "input_fingerprint": fingerprint,
+            "sources": {
+                "stocktwits": {"present": True},
+                "reddit": {"present": False, "error": None},
+                "hackernews": {"present": False, "error": None},
+                "klse": {"present": False, "error": None},
+            },
+            "composite": {"label": "BULL"},
+        }
+        with patch.object(sc, "load_stocktwits", return_value=raw), \
+             patch.object(sc, "load_reddit", return_value=None), \
+             patch.object(sc, "load_hackernews", return_value=None), \
+             patch.object(sc, "load_klse_comments", return_value=None), \
+             patch.object(sc, "load_cache", return_value=cached), \
+             patch.object(sc, "process_stocktwits") as scorer:
+            result = sc.score_ticker("TEST", verbose=False)
+        assert result is cached
+        scorer.assert_not_called()
+
+    def test_provider_failure_cache_is_never_reused(self):
+        cached = {
+            "provider": "openai-codex",
+            "model": sc.DEFAULT_MODEL,
+            "input_fingerprint": "abc",
+            "sources": {"stocktwits": {"present": False, "error": "HTTP 429"}},
+            "composite": {},
+        }
+        assert sc._reusable_cache(cached, sc.DEFAULT_MODEL, "abc") is False
+
+    def test_prefingerprint_cache_adopts_only_when_raw_inputs_are_older(self):
+        cached = {
+            "provider": "openai-codex",
+            "model": sc.DEFAULT_MODEL,
+            "scored_at": "2026-08-25T12:00:00Z",
+            "sources": {"stocktwits": {"present": True}},
+            "composite": {},
+        }
+        older = {"fetched_at": "2026-08-25T11:59:00Z"}
+        newer = {"fetched_at": "2026-08-25T12:01:00Z"}
+        assert sc._can_adopt_fingerprint(cached, sc.DEFAULT_MODEL, (older,)) is True
+        assert sc._can_adopt_fingerprint(cached, sc.DEFAULT_MODEL, (newer,)) is False

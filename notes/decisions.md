@@ -4,6 +4,13 @@ Append-only log of why we did things the way we did. Newest at top. Read this wh
 
 ---
 
+### 2026-08-25 — Use direct OpenAI/Codex structured calls for sentiment classification
+Re-evaluate: 2026-11-23
+
+Retail-message and professional-news scoring use the existing authenticated Hermes `openai-codex` route with `gpt-5.6-luna` at low reasoning. The classifiers call the supported Codex Responses client directly with strict JSON Schema, no tools, and no cross-provider fallback. A provider or parse failure preserves the existing cache/stale result. Retail composites fingerprint the exact message/engagement inputs; unchanged inputs reuse the successful result with zero calls, while changed inputs and prior provider failures are always re-scored.
+
+This is the lowest-overhead viable route tested in the project: a direct structured probe used 108 input tokens and produced valid JSON, while the generic Hermes agent wrapper consumed roughly 15.9k input tokens for a one-item classification because it loaded the full agent scaffold. The first full refresh exposed the existing 300-second scorer cap after 15 changed tickers; after fingerprint migration, the unchanged 31-ticker validation completed in roughly 0.1 seconds with zero model calls. Re-evaluate if Luna loses the schema/relevance contract, pricing changes materially, or Hermes exposes a cheaper supported OpenAI/Codex model with equivalent bounded structured output.
+
 ### 2026-07-14 — Strategy sleeve and manual paper journaling are deliberate boundaries
 Re-evaluate: 2026-10-14
 

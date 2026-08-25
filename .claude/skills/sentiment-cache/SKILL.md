@@ -1,6 +1,6 @@
 ---
 name: sentiment-cache
-description: LLM-score raw retail-sentiment data (from reddit-sentiment and stocktwits-sentiment caches) into a composite per-ticker sentiment read with contrarian flag. Uses OpenRouter free models (Gemma 4 31B IT primary, GPT-OSS 120B fallback) — no metered API spend. Output is the canonical sentiment.json that the dashboard reads. Final leg of the retail-sentiment build — consumes the raw fetchers, produces the §4 contrarian-filter signal. Manual by design — no automatic refresh, no cron.
+description: LLM-score raw retail-sentiment data (from reddit-sentiment and stocktwits-sentiment caches) into a composite per-ticker sentiment read with contrarian flag. Uses the authenticated OpenAI/Codex route with strict structured output and no cross-provider fallback. Output is the canonical sentiment.json that the dashboard reads. Final leg of the retail-sentiment build — consumes the raw fetchers, produces the §4 contrarian-filter signal. Manual by design — no automatic refresh, no cron.
 ---
 
 # Sentiment Cache Skill
@@ -24,33 +24,22 @@ The raw fetchers (`reddit-sentiment`, `stocktwits-sentiment`) collect posts and 
 
 This skill:
 1. Reads the raw caches from both sources
-2. Sends untagged message bodies to an OpenRouter free LLM for sentiment classification (bull/bear/neutral with conviction 0-1)
+2. Sends untagged message bodies through the authenticated OpenAI/Codex route for sentiment classification (bull/bear/neutral with conviction 0-1)
 3. Combines user-tagged labels + LLM scores + Reddit post sentiment into a per-ticker composite
 4. Applies the contrarian-filter logic (extreme bull → fade flag; extreme bear with constructive setup → buy flag)
 5. Writes the canonical `sentiment.json` that the dashboard reads
 
 Per AGENTS.md §4, retail sentiment is a **contrarian filter**, not an additive bull signal. Extreme retail bullishness + extended technicals = downgrade conviction; extreme retail bearishness + Phase 1 setup = upgrade conviction.
 
-## Model selection
+## Provider and model
 
-Verified via bake-off on the 5-message NVDA classification test:
+- Provider: `openai-codex`, using the existing Hermes/Codex OAuth credential route.
+- Default model: `gpt-5.6-luna` at low reasoning. A direct structured-output probe used 108 input tokens and returned schema-valid JSON; the generic agent wrapper was rejected for this path because its scaffold consumed roughly 15.9k input tokens for the same one-item task.
+- Override only the model with `OPENAI_CODEX_MODEL`. No project API key is required.
+- Calls go directly through the supported Responses client with strict JSON Schema and no tools. OpenRouter is not a fallback. Provider or parse failure preserves cached/stale data.
+- Each composite stores a deterministic fingerprint of the exact message/engagement inputs. Unchanged raw data reuses the successful Codex result with zero model calls; transport timestamps do not invalidate it. Use `--force` only for an intentional re-score.
 
-| Model | Latency | JSON valid | Reliable? |
-|---|---|---|---|
-| **`google/gemma-4-31b-it:free`** ✅ primary | 2.8s | yes | ✅ |
-| `openai/gpt-oss-120b:free` ✅ fallback | 4.4s | yes | ✅ |
-| `meta-llama/llama-3.3-70b-instruct:free` | — | — | ❌ upstream 429 (saturated) |
-| `qwen/qwen3-next-80b-a3b-instruct:free` | — | — | ❌ upstream 429 (saturated) |
-
-Override via `OPENROUTER_MODEL` env var. Free-tier limits: 1000 requests/day for accounts with ≥$10 lifetime credit (which this account has).
-
-## Setup
-
-`.env` at `.claude/skills/sentiment-cache/.env`:
-```
-OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=google/gemma-4-31b-it:free   # optional, defaults to this
-```
+Runtime requirement: run under the managed Hermes Python used by the dashboard, or set `HERMES_AGENT_ROOT` to the existing Hermes Agent install. Authentication remains owned by Hermes/Codex; this skill never reads or stores the OAuth token.
 
 ## Usage
 
@@ -82,7 +71,8 @@ This skill **does not refetch** — it consumes whatever's in the raw caches. Ru
   "ticker": "AUPH",
   "asset_class": "us_equity",
   "scored_at": "2026-06-08T12:34:56Z",
-  "model": "google/gemma-4-31b-it:free",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-luna",
   "sources": {
     "stocktwits": {
       "present": true,

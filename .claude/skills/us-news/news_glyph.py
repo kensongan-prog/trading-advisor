@@ -51,10 +51,14 @@ CRYPTO_NEWS_CACHE = CACHE_ROOT / "crypto_news"
 US_NEWS_CACHE = CACHE_ROOT / "us_news"  # AV cache (existing)
 LLM_SCORE_CACHE = CACHE_ROOT / "news_llm_scores"  # per-ticker, item-immutable
 
-# OpenRouter free-tier scoring (shares the key with sentiment-cache).
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-LLM_DEFAULT_MODEL = "google/gemma-4-31b-it:free"
-LLM_FALLBACK_MODEL = "openai/gpt-oss-120b:free"
+# Authenticated OpenAI/Codex scoring. The shared helper makes a direct,
+# structured Responses call with no tools and no cross-provider fallback.
+sys.path.insert(0, str(_THIS.parent.parent / "sentiment-cache"))
+from openai_codex_client import (  # noqa: E402
+    DEFAULT_MODEL as LLM_DEFAULT_MODEL,
+    PROVIDER as LLM_PROVIDER,
+    classify_json,
+)
 LLM_BATCH_SIZE = 10  # headlines per call; keeps latency + token budget tight
 
 # Allow importing finnhub_client and us-news/news_cache helpers.
@@ -144,29 +148,10 @@ def _keyword_score(headline):
     return 0.0
 
 
-# ── LLM scoring (OpenRouter, item-immutable cache) ──────────────────────
+# ── LLM scoring (OpenAI/Codex, item-immutable cache) ───────────────────
 # Per-item cache keyed by hash(headline) — once a (ticker, headline) is scored
 # the result is banked forever; the headline never changes. The hourly TTL
 # lives in the *fetch* step (refresh_us/refresh_klse/refresh_crypto), not here.
-
-def _load_llm_env():
-    """Load OPENROUTER_API_KEY from sentiment-cache's .env if not in environ.
-    Single source of truth — operator manages one OpenRouter key for the project."""
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return True
-    env_path = PROJECT_ROOT / ".claude" / "skills" / "sentiment-cache" / ".env"
-    if not env_path.is_file():
-        return False
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        k = k.strip(); v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
-    return bool(os.environ.get("OPENROUTER_API_KEY"))
-
 
 def _item_hash(headline):
     """Stable cache key for an item. Headline-only; the same article reaching
@@ -261,12 +246,33 @@ LLM_SYSTEM = (
     "score range: -1=strongly bearish, -0.3=somewhat bearish, 0=neutral, "
     "+0.3=somewhat bullish, +1=strongly bullish. "
     "When relevance is 'mention' or 'none', set score=0.0. "
-    "Return ONLY a JSON array of objects, one per headline, same order. No prose, no markdown."
+    "Return ONLY a JSON object with an 'items' array of objects, one per headline, "
+    "same order. No prose, no markdown."
 )
+
+NEWS_SCORE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "relevance": {"type": "string", "enum": ["primary", "mention", "none"]},
+                    "score": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+                },
+                "required": ["relevance", "score"],
+            },
+        }
+    },
+    "required": ["items"],
+}
 
 
 def _llm_score_batch(ticker, headlines, model=None, timeout=60, asset_class=None):
-    """POST a batch of headlines to OpenRouter. Returns (list_of_dicts, error).
+    """Score a batch through OpenAI/Codex. Returns (list_of_dicts, error).
 
     asset_class is used to look up a curated company label (resolves Bursa
     codes and disambiguates non-English headlines). Without it the prompt
@@ -274,50 +280,21 @@ def _llm_score_batch(ticker, headlines, model=None, timeout=60, asset_class=None
     from pre-training, lossy for opaque codes like KLSE 9431."""
     if not headlines:
         return [], None
-    if not _load_llm_env():
-        return None, "OPENROUTER_API_KEY missing (set in .claude/skills/sentiment-cache/.env)"
     model = model or LLM_DEFAULT_MODEL
-    api_key = os.environ["OPENROUTER_API_KEY"]
     subject = _company_label(ticker, asset_class) if asset_class else ticker
     numbered = "\n".join(f"{i+1}. {h[:300]}" for i, h in enumerate(headlines))
-    user = f"TICKER: {subject}\nHeadlines (n={len(headlines)}):\n{numbered}\n\nReturn JSON array only."
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": LLM_SYSTEM},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.0,
-        "max_tokens": 800,
-    }).encode()
-    req = urllib.request.Request(
-        OPENROUTER_URL, data=body, method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/local/trading-advisor",
-            "X-Title": "trading-advisor news-glyph scorer",
-        },
+    user = f"TICKER: {subject}\nHeadlines (n={len(headlines)}):\n{numbered}\n\nReturn a JSON object with an items array only."
+    payload, err, _raw, _metadata = classify_json(
+        instructions=LLM_SYSTEM,
+        user_text=user,
+        schema=NEWS_SCORE_SCHEMA,
+        schema_name="ta_news_sentiment",
+        model=model,
+        timeout=timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            d = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}"
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
-    content = (d.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
-    # Strip markdown fence if present
-    if content.startswith("```"):
-        parts = content.split("```", 2)
-        content = parts[1].lstrip()
-        if content.startswith("json"):
-            content = content[4:].lstrip()
-        content = content.rsplit("```", 1)[0].strip()
-    try:
-        parsed = json.loads(content)
-    except Exception as e:
-        return None, f"JSON parse failed: {e} (content: {content[:120]})"
+    if err:
+        return None, err
+    parsed = payload.get("items")
     if not isinstance(parsed, list) or len(parsed) != len(headlines):
         return None, f"Expected list of {len(headlines)}, got {type(parsed).__name__} len={len(parsed) if isinstance(parsed,list) else '?'}"
     out = []
@@ -367,27 +344,23 @@ def llm_score_items_for_ticker(ticker, items, force=False, verbose=False, asset_
     for start in range(0, len(needed), LLM_BATCH_SIZE):
         chunk = needed[start:start + LLM_BATCH_SIZE]
         headlines = [c[2] for c in chunk]
-        # Try primary model, fall back to secondary on hard failure
-        for model in (LLM_DEFAULT_MODEL, LLM_FALLBACK_MODEL):
-            out, err = _llm_score_batch(ticker, headlines, model=model, asset_class=asset_class)
-            if not err:
-                break
-            if verbose:
-                print(f"    [llm] {model} failed: {err[:80]}; trying fallback")
+        model = LLM_DEFAULT_MODEL
+        out, err = _llm_score_batch(ticker, headlines, model=model, asset_class=asset_class)
         if err:
             last_err = err
             if verbose:
-                print(f"    [llm] batch failed both models: {err[:120]}")
+                print(f"    [llm] OpenAI/Codex batch failed; preserving cache: {err[:120]}")
             continue
         for (idx, h, _hl), result in zip(chunk, out):
             cache[h] = {
                 "relevance": result["relevance"],
                 "score": result["score"],
                 "scored_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "provider": LLM_PROVIDER,
                 "model": model,
             }
             n_fetched += 1
-        # Small pace between batches — OpenRouter free is ~20 req/min depending on model
+        # Small pace between batches to avoid bursty provider usage.
         time.sleep(1.0)
     _llm_cache_save(ticker, cache)
     return n_cached, n_fetched, last_err
