@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-score_inline.py — re-score sentiment using the *current Claude Code session* as
-the classifier, instead of OpenRouter's free models.
+score_inline.py — manually re-score sentiment using classifications supplied by
+the current analyst session instead of the normal headless scorer.
 
 Why this exists
 ---------------
-sentiment-cache's normal path calls OpenRouter free models (Gemma 4 31B IT /
-GPT-OSS 120B) to classify each batch of social messages. That's the slow leg of a
-build (free-tier 429 backoffs + serial calls) and the only externally-paid option
-to speed it up. But during an interactive session you ARE talking to a capable
-model — so for a manual, one-off refresh, the session can do the classification
-itself: no OpenRouter, no metered API, no spend, and a stronger model than Haiku.
+sentiment-cache's normal path uses the authenticated OpenAI/Codex route to
+classify each batch of social messages. For an explicit manual diagnostic, an
+interactive analyst session can instead supply reviewed classifications through
+this dump/ingest round trip without creating a second headless provider path.
 
 The catch: this only works while a session is driving it. It is NOT a headless
 scorer — automated builds/watcher refreshes still use sentiment_cache.py.
@@ -242,7 +240,7 @@ def stale_tickers(ttl_hours=24.0):
 
 def main():
     sc.load_env()
-    ap = argparse.ArgumentParser(description="Session-scored sentiment (no OpenRouter, no spend).")
+    ap = argparse.ArgumentParser(description="Session-supplied manual sentiment classification.")
     ap.add_argument("mode", choices=["dump", "ingest"])
     ap.add_argument("args", nargs="*", help="dump: tickers; ingest: scored-inbox path")
     ap.add_argument("--stale", action="store_true", help="dump: select stale/missing watchlist names")

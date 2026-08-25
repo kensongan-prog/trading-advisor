@@ -6736,8 +6736,8 @@ def build_dashboard(force=False, skip_news=False, refresh_news=False, refresh_se
     # Sentiment refresh — auto-fill missing watchlist tickers (e.g. after a `wl.py add`).
     # Pass --refresh-sentiment to force-refresh all watchlist tickers.
     # Pass --no-sentiment to skip the auto-fill entirely.
-    # Sentiment is an optional enrichment layer — a transient failure (OpenRouter
-    # 429, network drop) must NOT crash the whole refresh. Degrade to cached data
+    # Sentiment is an optional enrichment layer — an OpenAI/Codex provider/parse
+    # failure or network drop must NOT crash the whole refresh. Degrade to cached data
     # and record it so the build still completes and the operator sees what broke.
     if not skip_sentiment:
         try:
@@ -7051,7 +7051,7 @@ def main():
     ap.add_argument("--force", action="store_true", help="Bypass cache; refetch all non-news sources.")
     ap.add_argument("--refresh-news", action="store_true", help="Pull fresh AV news for stale tickers (uses budget; respects 8-call on-demand reserve).")
     ap.add_argument("--refresh-sentiment", action="store_true", help="Force-refresh retail sentiment (reddit + stocktwits + scorer) for ALL watchlist tickers. Without this flag the dashboard auto-fills only tickers missing from the sentiment cache.")
-    ap.add_argument("--no-sentiment", action="store_true", help="Skip the sentiment auto-fill step entirely (e.g. if Reddit RSS or OpenRouter is down). Dashboard still renders whatever's already cached.")
+    ap.add_argument("--no-sentiment", action="store_true", help="Skip the sentiment auto-fill step entirely (e.g. if Reddit RSS or OpenAI/Codex authentication is unavailable). Dashboard still renders whatever's already cached.")
     ap.add_argument("--refresh-polymarket", action="store_true", help="Pull fresh Polymarket event probabilities (no auth, ~5s). Without this flag the dashboard uses whatever's cached.")
     ap.add_argument("--no-news", action="store_true", help="Skip news entirely (cache-only, no panel update).")
     ap.add_argument("--refresh-news-glyph", action="store_true", help="Pull fresh per-row news glyph data (Finnhub headlines + yfinance analyst actions for US, klsescreener for KLSE, RSS for crypto). 60-call/min Finnhub free tier — runs on full watchlist.")

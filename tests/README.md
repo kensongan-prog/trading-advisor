@@ -39,7 +39,7 @@ If pytest isn't installed system-wide, use the project's Playwright venv:
 
 ## What's intentionally NOT tested
 
-- **Network-dependent code** (Algolia, Finnhub, OpenRouter, yfinance, CoinGecko). Those need integration tests / VCR — separate concern.
+- **Network-dependent code** (Algolia, Finnhub, OpenAI/Codex, yfinance, CoinGecko). Those need integration tests / VCR — separate concern.
 - **HTML rendering**. Covered by Playwright snapshots in `.claude/skills/dashboard/snap.py`; not unit-test material.
 - **CLI argparse plumbing**. Test the underlying functions, not the argument-parser.
 - **Anything that requires LLM responses**. Deterministic only.

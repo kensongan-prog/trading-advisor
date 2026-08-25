@@ -1,13 +1,13 @@
 ---
 name: sentiment-inline
-description: Re-score retail sentiment using the current Claude Code session as the classifier instead of OpenRouter's free models — no metered API, no spend, and a stronger model than the free Gemma/GPT-OSS pair. A manual, session-driven alternative to the sentiment-cache LLM leg (the slow part of a build). Use when the operator wants fresh sentiment NOW without waiting on the free-tier 429 backoffs and without paying for a model. Re-scores the EXISTING raw social caches (stocktwits/reddit/hn) in place; it does not fetch new social data and does not run during automated builds.
+description: Manually re-score retail sentiment with classifications supplied by the current analyst session. This is an explicit, operator-invoked diagnostic alternative to the normal authenticated OpenAI/Codex scorer, not a headless runtime path. It re-scores EXISTING raw social caches (stocktwits/reddit/hn) in place; it does not fetch new social data or run during automated builds.
 ---
 
 # Sentiment Inline Skill
 
 ## When to use
-- The operator wants the stale watchlist sentiment refreshed **now**, and the normal
-  sentiment-cache pass (OpenRouter free tier) is too slow or the operator doesn't want spend.
+- The operator explicitly wants an interactive, manually reviewed re-score instead of the normal
+  authenticated OpenAI/Codex `sentiment-cache` path.
 - A session is active (this skill needs a session model to do the classification — it is **not**
   headless). Automated builds / the watcher still use the normal `sentiment-cache` path.
 

@@ -1,8 +1,8 @@
 """
 test_sentiment_inline.py — the session-scored sentiment round-trip.
 
-score_inline.py re-scores sentiment using the session model instead of OpenRouter
-by monkeypatching only sentiment_cache.classify_messages: `dump` captures the body
+score_inline.py re-scores sentiment using classifications supplied by the current
+analyst session, monkeypatching only sentiment_cache.classify_messages: `dump` captures the body
 batches the real scorer would send, `ingest` replays score_ticker with supplied
 classifications. Everything else (llm_pcts, compute_composite, coverage haircut,
 cache format) is the real pipeline. These tests pin: (1) the content key, (2) the

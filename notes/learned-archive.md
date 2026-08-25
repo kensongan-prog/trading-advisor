@@ -4,6 +4,17 @@ Append-only overflow of `notes/learned.md` — grep target, never read at bootst
 
 ---
 
+### 2026-07-06 — Building the cross-agent memory protocol: a frontmatter `project:` slug that differs from the folder name silently fragments cross-referencing
+> Archived 2026-08-25: the regression test is now the durable guard.
+tags: #pattern:canonical-identity #project:trading-advisor
+
+**Symptom:** while building the vault's `vault_doctor.py`/`vault_index.py` (cross-project retention/decay tooling), Sync Ledger rows written under folder-name project labels ("Codex Trader", "SportsBet") didn't match the doctor's internal per-project key, producing spurious "last synced never" warnings even right after syncing.
+**Root cause:** two vault Home notes carry an optional frontmatter `project:` slug (`codex-trader`, `sportsbet`) that the indexer preferred over the folder name; the other two Home notes have no such field and fall back to the folder name — so "project identity" silently had two different resolution rules depending on which note you looked at.
+**Fix:** made the top-level folder name always canonical for cross-referencing (matches the Vault Guide's own "one folder per project, globally unique" rule); kept the frontmatter slug as a separate `project_slug` field for display only, never for matching.
+**Validation:** live-verified — after the fix, `repo-drift` and `sync-ledger` checks agreed with the ledger rows on the first try.
+**Watchpoint:** whenever two notes describing "the same kind of thing" have an optional field that overrides a mandatory, always-present one (here: slug vs. folder), pick the always-present one as the identity key — the optional field will eventually exist on some notes and not others.
+Enforced-by: scripts/tests/test_vault_doctor.py (vault repo, not this one)
+
 ### 2026-06-26 — Dashboard launches manually via `Trading Dashboard.command`; `--lan` is the persistent piece
 > Archived 2026-07-07: SUPERSEDED by the 2026-07-07 "dashboard now runs under launchd, GG-8-owned" entry in `notes/learned.md`. The dashboard is now a launchd service (`ai.hermes.trading-advisor-dashboard`) started/monitored by GG-8, not a manual `Trading Dashboard.command` process — so the manual-launch instructions below are historical. Kept for the port-history (8787→8789) and the `--lan`/dual-stack rationale.
 tags: #pattern:daemon-lifecycle #project:trading-advisor

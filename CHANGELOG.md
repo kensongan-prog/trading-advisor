@@ -113,6 +113,7 @@ The OpenAI/Codex provider reconciliation is implemented and runtime-validated; t
 
 ### Fixed
 - **Retail and news sentiment scoring now uses the existing authenticated `openai-codex/gpt-5.6-luna` route at low reasoning.** Both classifiers call Hermes' supported Codex Responses client directly with strict JSON Schema and no tools, avoiding the generic agent wrapper's large prompt overhead. OpenRouter was removed from both active paths and is not a fallback; provider or parse failures preserve cache/stale output. Retail composites now fingerprint the exact message/engagement inputs, so an unchanged 31-ticker cycle reuses all successful scores with zero model calls instead of exceeding the refresh wrapper's 300-second bound. No trading, threshold, source-fetch, schedule, or execution behavior changed.
+- **Operator-facing sentiment help now names the active OpenAI/Codex route consistently.** The dashboard and manual inline-scoring documentation no longer describe the retired OpenRouter runtime, and one test-enforced vault lesson moved from Hot to the archive to restore the 150-line bootstrap budget.
 
 ### Removed
 

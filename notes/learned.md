@@ -38,16 +38,6 @@ tags: #pattern:daemon-lifecycle #project:trading-advisor
 **Watchpoint:** the historical no-LaunchAgent reason in the archived 2026-06-26 entry is now doubly moot (SSD move + this explicit re-authorization) — do not resurrect it as a blocker for future dashboard-adjacent launchd work in this repo.
 Enforced-by: — none yet (operational verification only)
 
-### 2026-07-06 — Building the cross-agent memory protocol: a frontmatter `project:` slug that differs from the folder name silently fragments cross-referencing
-tags: #pattern:canonical-identity #project:trading-advisor
-
-**Symptom:** while building the vault's `vault_doctor.py`/`vault_index.py` (cross-project retention/decay tooling), Sync Ledger rows written under folder-name project labels ("Codex Trader", "SportsBet") didn't match the doctor's internal per-project key, producing spurious "last synced never" warnings even right after syncing.
-**Root cause:** two vault Home notes carry an optional frontmatter `project:` slug (`codex-trader`, `sportsbet`) that the indexer preferred over the folder name; the other two Home notes have no such field and fall back to the folder name — so "project identity" silently had two different resolution rules depending on which note you looked at.
-**Fix:** made the top-level folder name always canonical for cross-referencing (matches the Vault Guide's own "one folder per project, globally unique" rule); kept the frontmatter slug as a separate `project_slug` field for display only, never for matching.
-**Validation:** live-verified — after the fix, `repo-drift` and `sync-ledger` checks agreed with the ledger rows on the first try.
-**Watchpoint:** whenever two notes describing "the same kind of thing" have an optional field that overrides a mandatory, always-present one (here: slug vs. folder), pick the always-present one as the identity key — the optional field will eventually exist on some notes and not others.
-Enforced-by: scripts/tests/test_vault_doctor.py (vault repo, not this one)
-
 ### 2026-07-06 — moomoo paper accounts are per-market with their own acc_ids; the SDK's trade context is HK-filtered BY DEFAULT
 tags: #tool:moomoo-sdk #pattern:context-filter #project:trading-advisor
 
